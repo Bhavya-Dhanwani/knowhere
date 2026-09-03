@@ -16,3 +16,10 @@ spec:
                 name: auth-service
                 port:
                   number: 80
+          - pathType: Prefix
+            path: '/api/users'
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 80

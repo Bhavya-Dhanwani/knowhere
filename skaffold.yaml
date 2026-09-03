@@ -19,6 +19,17 @@ build:
           - src: 'src/**/*.ts'
             dest: /app
 
+    - image: user-image
+      context: userService
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - src: 'server.ts'
+            dest: /app
+          - src: 'src/**/*.ts'
+            dest: /app
+
 # ── Manifests ──────────────────────────────────────
 manifests:
   rawYaml:
@@ -28,6 +39,8 @@ manifests:
     - k8s/redis-service.yml
     - k8s/auth-deployment.yml
     - k8s/auth-service.yml
+    - k8s/user-deployment.yml
+    - k8s/user-service.yml
     - k8s/ingress.yml
 
 # ── Port Forwarding ────────────────────────────────
@@ -36,3 +49,7 @@ portForward:
     resourceName: auth-service
     port: 80
     localPort: 4000
+  - resourceType: service
+    resourceName: user-service
+    port: 80
+    localPort: 5001

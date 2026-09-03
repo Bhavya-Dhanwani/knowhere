@@ -147,6 +147,106 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
+  userService:
+    dependencies:
+      compression:
+        specifier: ^1.8.0
+        version: 1.8.1
+      cookie-parser:
+        specifier: ^1.4.7
+        version: 1.4.7
+      cors:
+        specifier: ^2.8.5
+        version: 2.8.6
+      dotenv:
+        specifier: ^16.4.7
+        version: 16.6.1
+      express:
+        specifier: ^5.0.1
+        version: 5.2.1
+      express-validator:
+        specifier: ^7.2.1
+        version: 7.3.2
+      helmet:
+        specifier: ^8.0.0
+        version: 8.3.0
+      hpp:
+        specifier: ^0.2.3
+        version: 0.2.3
+      jsonwebtoken:
+        specifier: ^9.0.2
+        version: 9.0.3
+      mongoose:
+        specifier: ^8.10.0
+        version: 8.24.4
+      morgan:
+        specifier: ^1.10.0
+        version: 1.12.0
+      pino:
+        specifier: ^9.6.0
+        version: 9.14.0
+      pino-http:
+        specifier: ^10.4.0
+        version: 10.5.0
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+    devDependencies:
+      '@types/compression':
+        specifier: ^1.7.5
+        version: 1.8.1
+      '@types/cookie-parser':
+        specifier: ^1.4.8
+        version: 1.4.10(@types/express@5.0.6)
+      '@types/cors':
+        specifier: ^2.8.17
+        version: 2.8.19
+      '@types/express':
+        specifier: ^5.0.0
+        version: 5.0.6
+      '@types/hpp':
+        specifier: ^0.2.6
+        version: 0.2.7
+      '@types/jest':
+        specifier: ^30.0.0
+        version: 30.0.0
+      '@types/jsonwebtoken':
+        specifier: ^9.0.8
+        version: 9.0.10
+      '@types/morgan':
+        specifier: ^1.9.9
+        version: 1.9.10
+      '@types/node':
+        specifier: ^22.15.0
+        version: 22.20.1
+      '@types/supertest':
+        specifier: ^6.0.2
+        version: 6.0.3
+      eslint:
+        specifier: ^10.8.0
+        version: 10.9.1
+      jest:
+        specifier: ^30.0.0
+        version: 30.5.1(@types/node@22.20.1)
+      pino-pretty:
+        specifier: ^13.0.0
+        version: 13.1.3
+      prettier:
+        specifier: ^3.4.2
+        version: 3.9.6
+      supertest:
+        specifier: ^7.2.2
+        version: 7.2.2
+      ts-jest:
+        specifier: ^29.4.12
+        version: 29.4.12(@babel/core@7.29.7)(@jest/transform@30.5.1)(@jest/types@30.5.1)(babel-jest@30.5.1(@babel/core@7.29.7))(jest-util@30.5.1)(jest@30.5.1(@types/node@22.20.1))(typescript@5.9.3)
+      tsx:
+        specifier: ^4.23.1
+        version: 4.23.13
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
 packages:
   '@azu/format-text@1.0.2':
     resolution:

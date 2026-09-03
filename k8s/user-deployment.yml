@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-deployment
+  labels:
+    name: user-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user
+  template:
+    metadata:
+      labels:
+        app: user
+    spec:
+      containers:
+        - image: user-image
+          name: user-main
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: '120m'
+              memory: '120M'
+            limits:
+              cpu: '250m'
+              memory: '250M'
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5001
+            initialDelaySeconds: 90
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5001
+            initialDelaySeconds: 30
+            timeoutSeconds: 10
+          env:
+            - name: ACCESS_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth
+                  key: ACCESS_TOKEN_SECRET
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: database
+                  key: USER_DB
+            - name: PORT
+              value: '5001'
+          ports:
+            - containerPort: 5001
+              name: http
