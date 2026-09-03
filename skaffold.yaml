@@ -1,0 +1,38 @@
+apiVersion: skaffold/v4beta13
+kind: Config
+metadata:
+  name: knowhere-app
+
+# ── Build ──────────────────────────────────────────
+build:
+  local:
+    push: false # build locally and don't push to any registry
+  artifacts:
+    - image: auth-image
+      context: authService
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - src: 'server.ts'
+            dest: /app
+          - src: 'src/**/*.ts'
+            dest: /app
+
+# ── Manifests ──────────────────────────────────────
+manifests:
+  rawYaml:
+    - k8s/secrets.yml
+    - k8s/rbac.yml
+    - k8s/redis-deployment.yml
+    - k8s/redis-service.yml
+    - k8s/auth-deployment.yml
+    - k8s/auth-service.yml
+    - k8s/ingress.yml
+
+# ── Port Forwarding ────────────────────────────────
+portForward:
+  - resourceType: service
+    resourceName: auth-service
+    port: 80
+    localPort: 4000
