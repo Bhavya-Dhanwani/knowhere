@@ -1,55 +1,60 @@
-apiVersion: skaffold/v4beta13
+apiVersion: skaffold/v4beta11
 kind: Config
 metadata:
-  name: knowhere-app
-
-# ── Build ──────────────────────────────────────────
+  name: lms-backend
 build:
-  local:
-    push: false # build locally and don't push to any registry
   artifacts:
-    - image: auth-image
-      context: authService
+    - image: auth-service
+      context: .
       docker:
-        dockerfile: Dockerfile
+        dockerfile: packages/auth-service/Dockerfile
       sync:
         manual:
-          - src: 'server.ts'
-            dest: /app
-          - src: 'src/**/*.ts'
-            dest: /app
-
-    - image: user-image
-      context: userService
+          - src: 'packages/auth-service/src/**/*.ts'
+            dest: '/app'
+    - image: user-service
+      context: .
       docker:
-        dockerfile: Dockerfile
+        dockerfile: packages/user-service/Dockerfile
       sync:
         manual:
-          - src: 'server.ts'
-            dest: /app
-          - src: 'src/**/*.ts'
-            dest: /app
-
-# ── Manifests ──────────────────────────────────────
+          - src: 'packages/user-service/src/**/*.ts'
+            dest: '/app'
+    - image: course-service
+      context: .
+      docker:
+        dockerfile: packages/course-service/Dockerfile
+      sync:
+        manual:
+          - src: 'packages/course-service/src/**/*.ts'
+            dest: '/app'
+    - image: media-service
+      context: .
+      docker:
+        dockerfile: packages/media-service/Dockerfile
+      sync:
+        manual:
+          - src: 'packages/media-service/src/**/*.ts'
+            dest: '/app'
+    - image: mcq-service
+      context: .
+      docker:
+        dockerfile: packages/mcq-service/Dockerfile
+      sync:
+        manual:
+          - src: 'packages/mcq-service/src/**/*.ts'
+            dest: '/app'
+    - image: coding-service
+      context: .
+      docker:
+        dockerfile: packages/coding-service/Dockerfile
+      sync:
+        manual:
+          - src: 'packages/coding-service/src/**/*.ts'
+            dest: '/app'
 manifests:
-  rawYaml:
-    - k8s/secrets.yml
-    - k8s/rbac.yml
-    - k8s/redis-deployment.yml
-    - k8s/redis-service.yml
-    - k8s/auth-deployment.yml
-    - k8s/auth-service.yml
-    - k8s/user-deployment.yml
-    - k8s/user-service.yml
-    - k8s/ingress.yml
-
-# ── Port Forwarding ────────────────────────────────
-portForward:
-  - resourceType: service
-    resourceName: auth-service
-    port: 80
-    localPort: 4000
-  - resourceType: service
-    resourceName: user-service
-    port: 80
-    localPort: 5001
+  kustomize:
+    paths:
+      - k8s
+deploy:
+  kubectl: {}

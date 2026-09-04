@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coding-deployment
+  labels:
+    name: coding-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: coding
+  template:
+    metadata:
+      labels:
+        app: coding
+    spec:
+      containers:
+        - image: coding-image
+          name: coding-main
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: '120m'
+              memory: '120M'
+            limits:
+              cpu: '250m'
+              memory: '250M'
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5005
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5005
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          env:
+            - name: ACCESS_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth
+                  key: ACCESS_TOKEN_SECRET
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: database
+                  key: CODING_DB
+            - name: PORT
+              value: '5005'
+          ports:
+            - containerPort: 5005
+              name: http

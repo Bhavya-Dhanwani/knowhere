@@ -1,18 +1,24 @@
 {
-  "name": "knowhere-monorepo",
-  "version": "1.0.0",
+  "name": "lms-monorepo",
   "private": true,
-  "description": "Monorepo for Knowhere services and applications",
   "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
     "prepare": "husky"
   },
   "devDependencies": {
     "@secretlint/secretlint-rule-preset-recommend": "^9.0.0",
-    "eslint": "^10.8.0",
+    "@typescript-eslint/eslint-plugin": "^8.69.0",
+    "@typescript-eslint/parser": "^8.69.0",
+    "eslint": "^8.57.0",
     "husky": "^9.1.5",
     "lint-staged": "^15.4.3",
-    "prettier": "^3.4.2",
-    "secretlint": "^9.0.0"
+    "prettier": "^3.3.0",
+    "secretlint": "^9.0.0",
+    "typescript": "^5.5.0"
   },
   "lint-staged": {
     "*": [

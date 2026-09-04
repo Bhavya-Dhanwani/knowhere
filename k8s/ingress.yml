@@ -10,16 +10,65 @@ spec:
     - http:
         paths:
           - pathType: Prefix
-            path: '/api/auth'
+            path: '/api/v1/auth'
             backend:
               service:
                 name: auth-service
                 port:
                   number: 80
           - pathType: Prefix
-            path: '/api/users'
+            path: '/api/profiles'
             backend:
               service:
                 name: user-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/competencies'
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/courses'
+            backend:
+              service:
+                name: course-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/submodules'
+            backend:
+              service:
+                name: course-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/content-items'
+            backend:
+              service:
+                name: course-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/resources'
+            backend:
+              service:
+                name: media-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/questions'
+            backend:
+              service:
+                name: mcq-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/coding'
+            backend:
+              service:
+                name: coding-service
                 port:
                   number: 80

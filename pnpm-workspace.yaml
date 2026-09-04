@@ -1,9 +1,9 @@
 packages:
-  - 'authService'
-  - '*Service'
-  - 'services/*'
+  - 'packages/*'
+
 allowBuilds:
   '@parcel/watcher': true
   '@scarf/scarf': true
   esbuild: true
+  mongodb-memory-server: set this to true or false
   unrs-resolver: true

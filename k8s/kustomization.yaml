@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - secrets.yml
+  - rbac.yml
+  - auth-deployment.yml
+  - auth-service.yml
+  - user-deployment.yml
+  - user-service.yml
+  - course-deployment.yml
+  - course-service.yml
+  - media-deployment.yml
+  - media-service.yml
+  - mcq-deployment.yml
+  - mcq-service.yml
+  - coding-deployment.yml
+  - coding-service.yml
+  - redis-deployment.yml
+  - redis-service.yml
+  - ingress.yml

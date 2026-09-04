@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcq-deployment
+  labels:
+    name: mcq-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mcq
+  template:
+    metadata:
+      labels:
+        app: mcq
+    spec:
+      containers:
+        - image: mcq-image
+          name: mcq-main
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: '120m'
+              memory: '120M'
+            limits:
+              cpu: '250m'
+              memory: '250M'
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5004
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5004
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          env:
+            - name: ACCESS_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth
+                  key: ACCESS_TOKEN_SECRET
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: database
+                  key: MCQ_DB
+            - name: PORT
+              value: '5004'
+          ports:
+            - containerPort: 5004
+              name: http

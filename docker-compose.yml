@@ -1,0 +1,109 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: knowhere-mongo
+    ports:
+      - '27017:27017'
+    environment:
+      MONGO_INITDB_DATABASE: knowhere
+    volumes:
+      - mongo_data:/data/db
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: packages/auth-service/Dockerfile
+    container_name: auth-service
+    ports:
+      - '5000:5000'
+    environment:
+      - PORT=5000
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongodb:27017/authService
+      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+    depends_on:
+      - mongodb
+
+  user-service:
+    build:
+      context: .
+      dockerfile: packages/user-service/Dockerfile
+    container_name: user-service
+    ports:
+      - '5001:5001'
+    environment:
+      - PORT=5001
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongodb:27017/userService
+      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+    depends_on:
+      - mongodb
+
+  course-service:
+    build:
+      context: .
+      dockerfile: packages/course-service/Dockerfile
+    container_name: course-service
+    ports:
+      - '5002:5002'
+    environment:
+      - PORT=5002
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongodb:27017/courseService
+      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+    depends_on:
+      - mongodb
+
+  media-service:
+    build:
+      context: .
+      dockerfile: packages/media-service/Dockerfile
+    container_name: media-service
+    ports:
+      - '5003:5003'
+    environment:
+      - PORT=5003
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongodb:27017/mediaService
+      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test_access_key
+      - AWS_SECRET_ACCESS_KEY=test_secret_key
+      - S3_RAW_BUCKET=lms-raw-media
+      - S3_TRANSCODED_BUCKET=lms-transcoded-media
+      - CLOUDFRONT_DOMAIN=https://cdn.example.com
+    depends_on:
+      - mongodb
+
+  mcq-service:
+    build:
+      context: .
+      dockerfile: packages/mcq-service/Dockerfile
+    container_name: mcq-service
+    ports:
+      - '5004:5004'
+    environment:
+      - PORT=5004
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongodb:27017/mcqService
+      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+    depends_on:
+      - mongodb
+
+  coding-service:
+    build:
+      context: .
+      dockerfile: packages/coding-service/Dockerfile
+    container_name: coding-service
+    ports:
+      - '5005:5005'
+    environment:
+      - PORT=5005
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongodb:27017/codingService
+      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+    depends_on:
+      - mongodb
+
+volumes:
+  mongo_data:

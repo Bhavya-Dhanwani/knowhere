@@ -27,16 +27,16 @@ spec:
               memory: '250M'
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: /health
               port: 5001
-            initialDelaySeconds: 90
-            timeoutSeconds: 10
+            initialDelaySeconds: 20
+            periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /health
               port: 5001
-            initialDelaySeconds: 30
-            timeoutSeconds: 10
+            initialDelaySeconds: 10
+            periodSeconds: 5
           env:
             - name: ACCESS_TOKEN_SECRET
               valueFrom:
