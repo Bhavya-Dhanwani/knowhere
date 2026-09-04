@@ -15,7 +15,7 @@ spec:
         app: auth
     spec:
       containers:
-        - image: auth-image
+        - image: auth-service
           name: auth-main
           imagePullPolicy: IfNotPresent
           resources:
@@ -55,6 +55,8 @@ spec:
                   key: AUTH_DB
             - name: PORT
               value: '5000'
+            - name: NODE_ENV
+              value: 'production'
           ports:
             - containerPort: 5000
               name: http

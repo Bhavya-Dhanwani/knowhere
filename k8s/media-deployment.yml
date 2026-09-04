@@ -15,7 +15,7 @@ spec:
         app: media
     spec:
       containers:
-        - image: media-image
+        - image: media-service
           name: media-main
           imagePullPolicy: IfNotPresent
           resources:
@@ -50,6 +50,8 @@ spec:
                   key: MEDIA_DB
             - name: PORT
               value: '5003'
+            - name: NODE_ENV
+              value: 'production'
             - name: AWS_REGION
               valueFrom:
                 secretKeyRef:

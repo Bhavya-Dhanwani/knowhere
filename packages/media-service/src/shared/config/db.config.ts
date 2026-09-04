@@ -9,7 +9,6 @@ async function connectDB(): Promise<void> {
     logger.info('Connected to MongoDB database (mediaService)');
   } catch (error) {
     logger.error({ err: error }, 'Failed to connect to MongoDB');
-    process.exit(1);
   }
 }
 

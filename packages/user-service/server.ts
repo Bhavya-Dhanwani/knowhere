@@ -8,11 +8,12 @@ import logger from './src/shared/config/logger.config.js';
 async function startServer() {
   const app = createApp();
 
-  await connectDB();
-
-  app.listen(env.PORT || 5001, () => {
-    logger.info(`User service is running on port ${env.PORT || 5001}`);
+  const port = env.PORT || 5001;
+  app.listen(port, () => {
+    logger.info(`User service is running on port ${port}`);
   });
+
+  await connectDB();
 }
 
 startServer();

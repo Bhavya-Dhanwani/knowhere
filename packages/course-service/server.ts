@@ -8,12 +8,12 @@ import logger from './src/shared/config/logger.config.js';
 async function startServer() {
   const app = createApp();
 
-  await connectDB();
-
   const port = env.PORT || 5002;
   app.listen(port, () => {
     logger.info(`Course service is running on port ${port}`);
   });
+
+  await connectDB();
 }
 
 startServer();

@@ -15,7 +15,7 @@ spec:
         app: coding
     spec:
       containers:
-        - image: coding-image
+        - image: coding-service
           name: coding-main
           imagePullPolicy: IfNotPresent
           resources:
@@ -50,6 +50,8 @@ spec:
                   key: CODING_DB
             - name: PORT
               value: '5005'
+            - name: NODE_ENV
+              value: 'production'
           ports:
             - containerPort: 5005
               name: http

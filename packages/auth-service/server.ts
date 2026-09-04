@@ -6,11 +6,12 @@ import logger from './src/shared/config/logger.config.js';
 async function startServer() {
   const app = createApp();
 
-  await connectDB();
-
-  app.listen(env.PORT || 5000, () => {
-    logger.info(`Server is running on port ${env.PORT || 5000}`);
+  const port = env.PORT || 5000;
+  app.listen(port, () => {
+    logger.info(`Server is running on port ${port}`);
   });
+
+  await connectDB();
 }
 
 startServer();

@@ -15,7 +15,7 @@ spec:
         app: course
     spec:
       containers:
-        - image: course-image
+        - image: course-service
           name: course-main
           imagePullPolicy: IfNotPresent
           resources:
@@ -50,6 +50,8 @@ spec:
                   key: COURSE_DB
             - name: PORT
               value: '5002'
+            - name: NODE_ENV
+              value: 'production'
           ports:
             - containerPort: 5002
               name: http

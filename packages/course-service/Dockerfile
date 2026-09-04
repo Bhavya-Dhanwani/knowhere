@@ -1,18 +1,18 @@
 # --- build stage ---
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
-RUN corepack enable
-COPY pnpm-workspace.yaml package.json ./
+RUN npm install -g pnpm@11.5.2
+COPY pnpm-workspace.yaml package.json tsconfig.base.json ./
 COPY packages/shared ./packages/shared
 COPY packages/course-service ./packages/course-service
-RUN pnpm install
+RUN pnpm install --ignore-scripts
+RUN pnpm --filter @lms/shared build
 RUN pnpm --filter @lms/course-service build
+RUN pnpm --filter @lms/course-service deploy --legacy /prod/course-service --prod --ignore-scripts
 
 # --- runtime stage ---
-FROM node:20-alpine
+FROM node:22-alpine
 WORKDIR /app
-COPY --from=build /app/packages/course-service/dist ./dist
-COPY --from=build /app/packages/course-service/node_modules ./node_modules
-COPY --from=build /app/packages/shared ./node_modules/@lms/shared
+COPY --from=build /prod/course-service ./
 EXPOSE 5002
 CMD ["node", "dist/server.js"]

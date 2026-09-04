@@ -15,7 +15,7 @@ spec:
         app: user
     spec:
       containers:
-        - image: user-image
+        - image: user-service
           name: user-main
           imagePullPolicy: IfNotPresent
           resources:
@@ -50,6 +50,8 @@ spec:
                   key: USER_DB
             - name: PORT
               value: '5001'
+            - name: NODE_ENV
+              value: 'production'
           ports:
             - containerPort: 5001
               name: http

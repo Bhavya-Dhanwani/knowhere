@@ -15,7 +15,7 @@ spec:
         app: mcq
     spec:
       containers:
-        - image: mcq-image
+        - image: mcq-service
           name: mcq-main
           imagePullPolicy: IfNotPresent
           resources:
@@ -50,6 +50,8 @@ spec:
                   key: MCQ_DB
             - name: PORT
               value: '5004'
+            - name: NODE_ENV
+              value: 'production'
           ports:
             - containerPort: 5004
               name: http
