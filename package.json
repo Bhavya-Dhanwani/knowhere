@@ -4,7 +4,11 @@
   "packageManager": "pnpm@11.5.2",
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
+    "dev:backend": "skaffold dev",
+    "dev:frontend": "pnpm --filter @lms/frontend dev",
     "build": "pnpm -r run build",
+    "build:frontend": "pnpm --filter @lms/frontend build",
+    "deploy:frontend": "pnpm --filter @lms/frontend deploy:s3",
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",

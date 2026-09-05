@@ -10,10 +10,24 @@ spec:
     - http:
         paths:
           - pathType: Prefix
+            path: '/api/auth'
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 80
+          - pathType: Prefix
             path: '/api/v1/auth'
             backend:
               service:
                 name: auth-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/profile'
+            backend:
+              service:
+                name: user-service
                 port:
                   number: 80
           - pathType: Prefix
@@ -32,6 +46,13 @@ spec:
                   number: 80
           - pathType: Prefix
             path: '/api/courses'
+            backend:
+              service:
+                name: course-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/modules'
             backend:
               service:
                 name: course-service
