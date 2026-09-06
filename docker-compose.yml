@@ -105,5 +105,22 @@ services:
     depends_on:
       - mongodb
 
+  project-review-service:
+    build:
+      context: .
+      dockerfile: packages/project-review-service/Dockerfile
+    container_name: project-review-service
+    ports:
+      - '5006:5006'
+    environment:
+      - PORT=5006
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongodb:27017/projectReviewService
+      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+      - CORS_ORIGIN=*
+      - TEMPORAL_ADDRESS=temporal:7233
+    depends_on:
+      - mongodb
+
 volumes:
   mongo_data:

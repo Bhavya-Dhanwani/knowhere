@@ -26,7 +26,7 @@ async function createSession(user: Record<string, unknown> | object, res: Respon
 
   const accessToken = generateAccessToken(tokenPayload);
   res.cookie('refreshToken', refreshToken, REFRESH_TOKEN_COOKIE_OPTIONS);
-  return { sanitizedUser: tokenPayload, accessToken };
+  return { sanitizedUser: tokenPayload, accessToken, refreshToken };
 }
 
 export default createSession;

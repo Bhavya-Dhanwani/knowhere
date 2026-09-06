@@ -10,6 +10,20 @@ spec:
     - http:
         paths:
           - pathType: Prefix
+            path: '/docs'
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/openapi.json'
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 80
+          - pathType: Prefix
             path: '/api/auth'
             backend:
               service:
@@ -91,5 +105,19 @@ spec:
             backend:
               service:
                 name: coding-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/review'
+            backend:
+              service:
+                name: project-review-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/'
+            backend:
+              service:
+                name: frontend-service
                 port:
                   number: 80

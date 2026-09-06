@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router';
 import { Logo } from './Logo';
 import { Avatar } from './Avatar';
 import { User } from '../types';
@@ -14,8 +15,27 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, onNavigateHome }
 
   return (
     <header className="h-16 bg-surface/50 backdrop-blur-md border-b border-white/10 px-4 md:px-8 flex items-center justify-between sticky top-0 z-40">
-      <div className="cursor-pointer" onClick={onNavigateHome}>
-        <Logo size="sm" />
+      <div className="flex items-center gap-6">
+        <div className="cursor-pointer" onClick={onNavigateHome}>
+          <Logo size="sm" />
+        </div>
+        <nav className="hidden md:flex items-center gap-4 text-xs font-medium">
+          <Link to="/dashboard" className="text-muted hover:text-white transition-colors">
+            Dashboard
+          </Link>
+          <Link to="/review" className="text-muted hover:text-white transition-colors">
+            Project Review
+          </Link>
+          <Link
+            to="/docs"
+            className="text-primary hover:text-primary-hover transition-colors flex items-center gap-1 font-semibold"
+          >
+            <span>API Docs</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 border border-primary/30">
+              Scalar
+            </span>
+          </Link>
+        </nav>
       </div>
 
       <div className="flex items-center gap-4">

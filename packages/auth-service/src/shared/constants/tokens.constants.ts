@@ -10,17 +10,19 @@ export const EXPIRY = {
 export const COOKIE_EXPIRY_TIME =
   env.NODE_ENV === 'development' ? 2 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
 
+const isCookieSecure = process.env.COOKIE_SECURE === 'true';
+
 export const REFRESH_TOKEN_COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: env.NODE_ENV === 'production',
-  sameSite: env.NODE_ENV === 'production' ? ('none' as const) : ('lax' as const),
+  secure: isCookieSecure,
+  sameSite: (isCookieSecure ? 'none' : 'lax') as 'none' | 'lax',
   maxAge: COOKIE_EXPIRY_TIME
 };
 
 export const SINGLE_TOKEN_COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: env.NODE_ENV === 'production',
-  sameSite: env.NODE_ENV === 'production' ? ('none' as const) : ('lax' as const),
+  secure: isCookieSecure,
+  sameSite: (isCookieSecure ? 'none' : 'lax') as 'none' | 'lax',
   maxAge: 30 * 24 * 60 * 60 * 1000
 };
 

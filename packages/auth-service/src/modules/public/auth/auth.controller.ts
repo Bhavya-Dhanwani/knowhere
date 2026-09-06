@@ -111,12 +111,13 @@ class AuthController {
     }
 
     // creating session and tokens
-    const { sanitizedUser, accessToken } = await createSession(user, res);
+    const { sanitizedUser, accessToken, refreshToken } = await createSession(user, res);
 
     // returning the logged in user with access token
     return Ok(res, 'User Logged in Successfully', {
       user: sanitizedUser,
-      accessToken: accessToken
+      accessToken: accessToken,
+      refreshToken: refreshToken
     });
   };
 
@@ -151,8 +152,15 @@ class AuthController {
     }
 
     // getting the user from the session
-    const dbUserId = String((dbSession as unknown as Record<string, unknown>).userId || '');
-    const user = await this.userDao.findUserById(dbUserId);
+    const sessionRecord = dbSession as unknown as Record<string, unknown>;
+    const populatedUser = sessionRecord.userId;
+    let user: unknown;
+    if (populatedUser && typeof populatedUser === 'object' && '_id' in populatedUser) {
+      user = populatedUser;
+    } else {
+      const dbUserId = String(populatedUser || '');
+      user = await this.userDao.findUserById(dbUserId);
+    }
 
     // checking if the user exists
     if (!user) {
@@ -160,7 +168,11 @@ class AuthController {
     }
 
     // creating session and tokens
-    const { sanitizedUser, accessToken } = await createSession(user, res);
+    const {
+      sanitizedUser,
+      accessToken,
+      refreshToken: newRefreshToken
+    } = await createSession(user, res);
 
     // deleting the old session
     await this.sessionDao.deleteSessionByRefreshTokenandSessionId(refreshToken, sessionId);
@@ -168,7 +180,8 @@ class AuthController {
     // returning the refreshed tokens
     return Ok(res, 'Token refreshed successfully', {
       user: sanitizedUser,
-      accessToken: accessToken
+      accessToken: accessToken,
+      refreshToken: newRefreshToken
     });
   };
 

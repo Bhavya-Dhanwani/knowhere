@@ -24,14 +24,14 @@ function createApp(): Express {
   // health check endpoint for kubernetes probes
   app.get('/health', (_req, res) => res.status(200).json({ status: 'ok' }));
 
+  // setting up swagger / scalar documentation
+  setupSwagger(app);
+
   // adding the index router to the app
   app.use('/api', router);
 
   // API routes must continue returning JSON 404 responses instead of the SPA shell.
   app.use('/api', notFoundHandler);
-
-  // setting up swagger documentation
-  setupSwagger(app);
 
   // Serve a built frontend copied into server/public, when present.
   if (existsSync(frontendIndex)) {

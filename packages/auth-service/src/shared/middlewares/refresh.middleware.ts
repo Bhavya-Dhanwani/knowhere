@@ -10,13 +10,18 @@ function getRefreshTokenFromCookie(
   res: Response,
   next: NextFunction
 ) {
-  // getting the refresh token from the cookie
-  const refreshToken = req.cookies?.refreshToken;
+  // getting the refresh token from cookie, request body, or header
+  const bodyToken = (req.body as Record<string, unknown> | undefined)?.refreshToken;
+  const headerToken = req.headers['x-refresh-token'];
+  const refreshToken =
+    req.cookies?.refreshToken ||
+    (typeof bodyToken === 'string' ? bodyToken : undefined) ||
+    (typeof headerToken === 'string' ? headerToken : undefined);
 
   // if the refresh token is not present, return an error
   if (!refreshToken) {
     // if the refresh token is not present, throw an unauthorized error
-    throw new Unauthorized('Refresh token not found in cookie.');
+    throw new Unauthorized('Refresh token not provided.');
   }
 
   // decoding the refresh token to check if it is valid

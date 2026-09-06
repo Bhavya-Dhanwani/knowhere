@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: project-review-deployment
+  labels:
+    name: project-review-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: project-review
+  template:
+    metadata:
+      labels:
+        app: project-review
+    spec:
+      containers:
+        - image: project-review-service
+          name: project-review-main
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: '150m'
+              memory: '200M'
+            limits:
+              cpu: '500m'
+              memory: '512M'
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5006
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5006
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          env:
+            - name: ACCESS_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth
+                  key: ACCESS_TOKEN_SECRET
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: database
+                  key: PROJECT_REVIEW_DB
+            - name: MISTRAL_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: ai-secrets
+                  key: MISTRAL_API_KEYS
+                  optional: true
+            - name: PORT
+              value: '5006'
+            - name: NODE_ENV
+              value: 'production'
+            - name: CORS_ORIGIN
+              value: '*'
+          ports:
+            - containerPort: 5006
+              name: http

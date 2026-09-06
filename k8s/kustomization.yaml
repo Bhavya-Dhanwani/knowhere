@@ -16,6 +16,10 @@ resources:
   - mcq-service.yml
   - coding-deployment.yml
   - coding-service.yml
+  - project-review-deployment.yml
+  - project-review-service.yml
+  - frontend-deployment.yml
+  - frontend-service.yml
   - redis-deployment.yml
   - redis-service.yml
   - ingress.yml

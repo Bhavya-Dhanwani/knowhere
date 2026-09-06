@@ -8,6 +8,11 @@ import { SignupPage } from '../features/auth/ui/SignupPage';
 import { DashboardPage } from '../features/dashboard/ui/DashboardPage';
 import { CoursePage } from '../features/course/ui/CoursePage';
 
+import { ReviewDashboard } from '../features/review/ui/ReviewDashboard';
+import { PublicSubmissionPage } from '../features/review/ui/PublicSubmissionPage';
+
+import { ApiDocsPage } from '../features/docs/ui/ApiDocsPage';
+
 export const requireAuth = async () => {
   const state = store.getState().auth;
   if (state.isAuthenticated && state.accessToken) {
@@ -65,6 +70,18 @@ export const router = createBrowserRouter([
     path: '/course/:courseId',
     loader: requireAuth,
     element: <CoursePage />
+  },
+  {
+    path: '/review',
+    element: <ReviewDashboard />
+  },
+  {
+    path: '/review/submit/:eventId',
+    element: <PublicSubmissionPage />
+  },
+  {
+    path: '/docs',
+    element: <ApiDocsPage />
   },
   {
     path: '*',
