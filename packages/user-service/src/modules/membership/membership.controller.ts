@@ -74,6 +74,14 @@ class MembershipController {
       const actorRole = req.courseMembership!.role;
       const { userId: targetUserId, role: targetRole } = req.body;
 
+      const existing = await this.membershipDao.findMembership(courseId, targetUserId);
+      if (existing?.role === COURSE_ROLES.ADMIN && targetRole !== COURSE_ROLES.ADMIN) {
+        const adminCount = await this.membershipDao.countAdminsInCourse(courseId);
+        if (adminCount <= 1) {
+          throw new BadRequest('Cannot demote the sole course administrator.');
+        }
+      }
+
       // ARBAC check
       if (!checkArbacCanAssign(actorRole, targetRole as CourseRole)) {
         throw new Forbidden(

@@ -54,6 +54,23 @@ spec:
                   name: ai-secrets
                   key: MISTRAL_API_KEYS
                   optional: true
+            - name: REDIS_URL
+              value: 'redis://redis-service:6379'
+            - name: EVALUATION_WORKER_CONCURRENCY
+              value: '2'
+            - name: STATIC_ANALYSIS_RUNNER_URL
+              value: 'http://evaluation-runner-service:7002/static'
+            - name: EXECUTION_EVALUATION_RUNNER_URL
+              value: 'http://evaluation-runner-service:7002/execute'
+            - name: BROWSER_EVALUATION_RUNNER_URL
+              value: 'http://evaluation-runner-service:7002/browser'
+            - name: API_EVALUATION_RUNNER_URL
+              value: 'http://evaluation-runner-service:7002/api'
+            - name: EVALUATION_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: evaluation-runners
+                  key: EVALUATION_RUNNER_TOKEN
             - name: PORT
               value: '5006'
             - name: NODE_ENV

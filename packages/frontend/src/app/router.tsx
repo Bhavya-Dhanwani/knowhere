@@ -1,10 +1,12 @@
 import { createBrowserRouter, redirect } from 'react-router';
 import { store } from './store';
 import { authApi } from '../features/auth/api/authApi';
-import { setAccessToken } from '../features/auth/state/authSlice';
+import { setCredentials } from '../features/auth/state/authSlice';
 import { LandingPage } from '../features/landing/ui/LandingPage';
 import { LoginPage } from '../features/auth/ui/LoginPage';
 import { SignupPage } from '../features/auth/ui/SignupPage';
+import { ResetPasswordPage } from '../features/auth/ui/ResetPasswordPage';
+import { VerifyEmailPage } from '../features/auth/ui/VerifyEmailPage';
 import { DashboardPage } from '../features/dashboard/ui/DashboardPage';
 import { CoursePage } from '../features/course/ui/CoursePage';
 
@@ -23,7 +25,7 @@ export const requireAuth = async () => {
   try {
     const res = await authApi.refresh();
     if (res?.accessToken) {
-      store.dispatch(setAccessToken(res.accessToken));
+      store.dispatch(setCredentials({ accessToken: res.accessToken, user: res.user }));
       return null;
     }
   } catch {
@@ -60,6 +62,14 @@ export const router = createBrowserRouter([
     path: '/signup',
     loader: requireGuest,
     element: <SignupPage />
+  },
+  {
+    path: '/verify-email',
+    element: <VerifyEmailPage />
+  },
+  {
+    path: '/reset-password/:token',
+    element: <ResetPasswordPage />
   },
   {
     path: '/dashboard',

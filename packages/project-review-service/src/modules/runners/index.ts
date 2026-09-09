@@ -4,3 +4,7 @@ export * from './discovery.runner.js';
 export * from './code-analysis.runner.js';
 export * from './frontend.runner.js';
 export * from './backend.runner.js';
+export * from './trusted-process.runner.js';
+export * from './repository.runner.js';
+export * from './remote-runner.client.js';
+export * from './build-test.runner.js';

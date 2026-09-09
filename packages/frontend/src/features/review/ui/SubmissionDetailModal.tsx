@@ -19,7 +19,8 @@ import {
   Target,
   Sparkles,
   Check,
-  BarChart3
+  BarChart3,
+  Download
 } from 'lucide-react';
 import {
   ReviewSubmission,
@@ -116,6 +117,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     try {
       setEvaluating(true);
       await reviewApi.evaluateSubmission(submissionId);
+      await reviewApi.waitForEvaluation(submissionId);
       await fetchDetails();
       onUpdated();
     } catch (err) {
@@ -146,6 +148,22 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         {/* Top Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/80">
           <div className="flex items-center gap-3">
+            {evaluation && (
+              <>
+                <button
+                  onClick={() => reviewApi.downloadReport(submissionId, 'csv')}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" /> CSV
+                </button>
+                <button
+                  onClick={() => reviewApi.downloadReport(submissionId, 'md')}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" /> Markdown
+                </button>
+              </>
+            )}
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-white">
@@ -215,6 +233,13 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                 ? `${evaluation.overallScore}/100`
                 : 'Not Evaluated'}
             </span>
+            {evaluation && (
+              <span className="text-[10px] text-slate-400">
+                {(evaluation.overallConfidence * 100).toFixed(0)}% confidence ·{' '}
+                {(evaluation.evidenceCoverage * 100).toFixed(0)}% evidence coverage ·{' '}
+                {evaluation.evaluationStatus}
+              </span>
+            )}
           </div>
         </div>
 
@@ -359,6 +384,32 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     </div>
                   )}
 
+                  {evaluation.review && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {[
+                        ['Strengths', evaluation.review.strengths, 'text-emerald-300'],
+                        ['Weaknesses / gaps', evaluation.review.weaknesses, 'text-amber-300'],
+                        ['Next actions', evaluation.review.suggestions, 'text-indigo-300']
+                      ].map(([title, items, color]) => (
+                        <div
+                          key={title as string}
+                          className="p-4 bg-slate-950 border border-slate-800 rounded-xl"
+                        >
+                          <h3
+                            className={`text-[10px] uppercase tracking-wider font-semibold ${color}`}
+                          >
+                            {title as string}
+                          </h3>
+                          <ul className="mt-2 space-y-1 text-xs text-slate-300 list-disc pl-4">
+                            {(items as string[]).map((item) => (
+                              <li key={item}>{item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Criteria Scores */}
                   <div>
                     <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
@@ -380,7 +431,8 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                                 {cs.rawScore}/100
                               </span>
                               <span className="text-[10px] text-slate-400 block">
-                                Weighted: {cs.weightedScore}
+                                Weighted: {cs.weightedScore} · Confidence:{' '}
+                                {(cs.confidence * 100).toFixed(0)}%
                               </span>
                             </div>
                           </div>
@@ -1044,20 +1096,31 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                   {/* Semgrep */}
                   <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
                     <h4 className="text-xs font-bold text-indigo-400 uppercase">Semgrep SAST</h4>
-                    <p className="text-sm font-semibold text-white">
-                      {evidence.codeAnalysis?.semgrep?.totalIssues || 0} Total Issues
-                    </p>
-                    <div className="flex gap-2 text-xs">
-                      <span className="text-red-400 font-mono">
-                        Crit: {evidence.codeAnalysis?.semgrep?.criticalCount || 0}
-                      </span>
-                      <span className="text-amber-400 font-mono">
-                        High: {evidence.codeAnalysis?.semgrep?.highCount || 0}
-                      </span>
-                      <span className="text-slate-400 font-mono">
-                        Med: {evidence.codeAnalysis?.semgrep?.mediumCount || 0}
-                      </span>
-                    </div>
+                    {evidence.codeAnalysis?.semgrep?.execution.status === 'SUCCEEDED' ? (
+                      <>
+                        <p className="text-sm font-semibold text-white">
+                          {evidence.codeAnalysis.semgrep.totalIssues} Total Issues
+                        </p>
+                        <div className="flex gap-2 text-xs">
+                          <span className="text-red-400 font-mono">
+                            Crit: {evidence.codeAnalysis.semgrep.criticalCount}
+                          </span>
+                          <span className="text-amber-400 font-mono">
+                            High: {evidence.codeAnalysis.semgrep.highCount}
+                          </span>
+                          <span className="text-slate-400 font-mono">
+                            Med: {evidence.codeAnalysis.semgrep.mediumCount}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-xs text-amber-300">
+                        Scan{' '}
+                        {evidence.codeAnalysis?.semgrep?.execution.status?.toLowerCase() ||
+                          'unavailable'}{' '}
+                        — no zero-result inferred.
+                      </p>
+                    )}
                   </div>
 
                   {/* Gitleaks & Trivy */}
@@ -1065,20 +1128,36 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     <h4 className="text-xs font-bold text-indigo-400 uppercase">
                       Secrets & Dependencies
                     </h4>
-                    <p className="text-xs text-slate-300">
-                      Gitleaks:{' '}
-                      <span className="font-mono text-white font-bold">
-                        {evidence.codeAnalysis?.gitleaks?.secretsFoundCount || 0}
-                      </span>{' '}
-                      secrets
-                    </p>
-                    <p className="text-xs text-slate-300">
-                      Trivy CVEs:{' '}
-                      <span className="font-mono text-white font-bold">
-                        {evidence.codeAnalysis?.trivy?.vulnerabilityCount || 0}
-                      </span>{' '}
-                      total
-                    </p>
+                    {evidence.codeAnalysis?.gitleaks?.execution.status === 'SUCCEEDED' ? (
+                      <p className="text-xs text-slate-300">
+                        Gitleaks:{' '}
+                        <span className="font-mono text-white font-bold">
+                          {evidence.codeAnalysis.gitleaks.secretsFoundCount}
+                        </span>{' '}
+                        secrets
+                      </p>
+                    ) : (
+                      <p className="text-xs text-amber-300">
+                        Gitleaks{' '}
+                        {evidence.codeAnalysis?.gitleaks?.execution.status?.toLowerCase() ||
+                          'unavailable'}
+                      </p>
+                    )}
+                    {evidence.codeAnalysis?.trivy?.execution.status === 'SUCCEEDED' ? (
+                      <p className="text-xs text-slate-300">
+                        Trivy CVEs:{' '}
+                        <span className="font-mono text-white font-bold">
+                          {evidence.codeAnalysis.trivy.vulnerabilityCount}
+                        </span>{' '}
+                        total
+                      </p>
+                    ) : (
+                      <p className="text-xs text-amber-300">
+                        Trivy{' '}
+                        {evidence.codeAnalysis?.trivy?.execution.status?.toLowerCase() ||
+                          'unavailable'}
+                      </p>
+                    )}
                   </div>
 
                   {/* Lighthouse (Frontend) */}

@@ -12,6 +12,27 @@ class AttemptDao {
   async createAttempt(data: Partial<IMCQAttempt>): Promise<IMCQAttempt> {
     return await MCQAttempt.create(data);
   }
+
+  async createNextAttempt(
+    data: Omit<Partial<IMCQAttempt>, 'attemptNumber'>,
+    maximumAttempts = 3
+  ): Promise<IMCQAttempt | null> {
+    for (let retry = 0; retry < maximumAttempts + 2; retry++) {
+      const latest = await MCQAttempt.findOne({
+        questionId: data.questionId,
+        userId: data.userId
+      }).sort({ attemptNumber: -1 });
+      const attemptNumber = (latest?.attemptNumber || 0) + 1;
+      if (attemptNumber > maximumAttempts) return null;
+      try {
+        return await MCQAttempt.create({ ...data, attemptNumber });
+      } catch (error: any) {
+        if (error?.code === 11000) continue;
+        throw error;
+      }
+    }
+    throw new Error('Unable to allocate an MCQ attempt after repeated conflicts.');
+  }
 }
 
 export default AttemptDao;

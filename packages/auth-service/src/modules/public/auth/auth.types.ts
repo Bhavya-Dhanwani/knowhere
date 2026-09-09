@@ -33,7 +33,6 @@ export interface SignupRequestBody {
   name: string;
   email: string;
   password?: string;
-  token?: string;
 }
 
 // Login request body interface
@@ -59,6 +58,11 @@ export interface ResetPasswordRequestBody {
   password?: string;
 }
 
+export interface VerifyEmailRequestBody {
+  email: string;
+  token: string;
+}
+
 export type SignupRequest = Request<Record<string, string>, unknown, SignupRequestBody>;
 export type LoginRequest = Request<Record<string, string>, unknown, LoginRequestBody>;
 export type GoogleLoginRequest = Request<Record<string, string>, unknown, GoogleLoginRequestBody>;
@@ -72,3 +76,4 @@ export type ResetPasswordRequest = Request<
   unknown,
   ResetPasswordRequestBody
 >;
+export type VerifyEmailRequest = Request<Record<string, string>, unknown, VerifyEmailRequestBody>;

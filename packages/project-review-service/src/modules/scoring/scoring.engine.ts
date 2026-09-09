@@ -1,19 +1,25 @@
 import { Types } from 'mongoose';
-import { EvaluationResultSchema, EvaluationResult } from './types.js';
+import { createHash } from 'node:crypto';
+import { EvaluationResultSchema, EvaluationResult, CriterionScore } from './types.js';
 import { ICriterion, IRequirement } from '../../models/Event.model.js';
 import { IEvidence } from '../../models/Evidence.model.js';
 import { ExtractedNeutralClaims } from '../sanitization/types.js';
 import { ReviewEvaluation } from '../../models/Evaluation.model.js';
-import { ReviewSubmission } from '../../models/Submission.model.js';
 import logger from '../../shared/config/logger.config.js';
-
+import env from '../../shared/config/env.config.js';
 import MistralScoringAgent from '../ai/scoring.agent.js';
 
+type WeightedCriterionScore = CriterionScore & { weightedScore: number };
+
+interface ScoringOutput extends EvaluationResult {
+  overallScore: number;
+  overallConfidence: number;
+  evidenceCoverage: number;
+  evaluationStatus: 'COMPLETE' | 'PARTIAL';
+  weightedCriterionScores: WeightedCriterionScore[];
+}
+
 export class ScoringEngine {
-  /**
-   * Evidence-grounded scoring engine that uses structured tool outputs and extracted neutral claims.
-   * Leverages LangChain + ChatMistralAI with Round-Robin key rotation and strict Zod validation.
-   */
   public static async evaluateSubmission(
     submissionId: string | Types.ObjectId,
     eventId: string | Types.ObjectId,
@@ -26,27 +32,15 @@ export class ScoringEngine {
       description?: string;
       problemStatement?: string;
       projectType: string;
+      strictScoring: boolean;
     }
-  ): Promise<
-    EvaluationResult & {
-      overallScore: number;
-      weightedCriterionScores: Array<{
-        criterionId: string;
-        name: string;
-        rawScore: number;
-        weightedScore: number;
-        confidence: number;
-        evidenceCitations: string[];
-        justification: string;
-      }>;
-    }
-  > {
-    logger.info({ submissionId }, 'Starting Evidence-Grounded Scoring Engine');
+  ): Promise<ScoringOutput> {
+    logger.info({ submissionId }, 'Starting evidence-grounded scoring engine');
 
-    // 1. Attempt AI scoring via ChatMistralAI agent with Round-Robin key pool
-    let evaluationData: EvaluationResult | null = null;
+    const deterministic = this.computeEvidenceGroundedScores(criteria, requirements, evidence);
+    let aiResult: EvaluationResult | null = null;
     try {
-      evaluationData = await MistralScoringAgent.evaluateWithMistral(
+      aiResult = await MistralScoringAgent.evaluateWithMistral(
         submissionId.toString(),
         eventId.toString(),
         criteria,
@@ -55,308 +49,415 @@ export class ScoringEngine {
         claims,
         eventContext
       );
-    } catch (err) {
-      logger.warn(
-        { err },
-        'Mistral scoring agent error; falling back to deterministic computation'
-      );
+    } catch (error) {
+      logger.warn({ error, submissionId }, 'Qualitative scoring unavailable');
     }
 
-    // If AI evaluation was not available or failed, use deterministic evidence-grounded rubric
-    if (!evaluationData) {
-      evaluationData = this.computeEvidenceGroundedScores(criteria, requirements, evidence, claims);
-    }
-
-    // 2. Strict Zod Schema Validation with automatic error checking
-    const validation = EvaluationResultSchema.safeParse(evaluationData);
+    const merged = this.mergeGroundedQualitativeScores(criteria, deterministic, aiResult, evidence);
+    const ranged = this.applyConfiguredRanges(criteria, merged);
+    const validation = EvaluationResultSchema.safeParse(ranged);
     if (!validation.success) {
-      logger.error(
-        { errors: validation.error.format() },
-        'Scoring output failed schema validation, repairing schema...'
-      );
       throw new Error(`Scoring validation failure: ${JSON.stringify(validation.error.issues)}`);
     }
 
-    const validated = validation.data;
+    const totalWeight = criteria.reduce((sum, criterion) => sum + criterion.weight, 0);
+    let availableWeight = 0;
+    let weightedTotal = 0;
+    let confidenceTotal = 0;
 
-    // 3. Compute weighted overall score according to event configuration
-    let calculatedOverallScore = 0;
-    const weightedCriterionScores = validated.criterionScores.map((scoreItem) => {
-      const criterionConfig = criteria.find((c) => c.id === scoreItem.criterionId) || {
-        weight: 1 / Math.max(1, criteria.length),
-        name: scoreItem.name
-      };
-
-      const weightedScore = parseFloat((scoreItem.rawScore * criterionConfig.weight).toFixed(2));
-      calculatedOverallScore += weightedScore;
-
-      return {
-        criterionId: scoreItem.criterionId,
-        name: scoreItem.name,
-        rawScore: scoreItem.rawScore,
-        weightedScore,
-        confidence: scoreItem.confidence,
-        evidenceCitations: scoreItem.evidenceCitations,
-        justification: scoreItem.justification
-      };
+    const weightedCriterionScores = validation.data.criterionScores.map((score) => {
+      const criterion = criteria.find((item) => item.id === score.criterionId);
+      const weight = criterion?.weight ?? 0;
+      const minScore = criterion?.minScore ?? 0;
+      const maxScore = criterion?.maxScore ?? 100;
+      const normalizedScore =
+        maxScore > minScore ? ((score.rawScore - minScore) / (maxScore - minScore)) * 100 : 0;
+      const weightedScore = Number((normalizedScore * weight).toFixed(2));
+      if (score.confidence > 0) {
+        availableWeight += weight;
+        weightedTotal += weightedScore;
+        confidenceTotal += score.confidence * weight;
+      }
+      return { ...score, weightedScore };
     });
 
-    const finalOverallScore = Math.min(
-      100,
-      Math.max(0, parseFloat(calculatedOverallScore.toFixed(2)))
+    const executionCoverage = this.executionCoverage(evidence);
+    const normalizedOverall = availableWeight > 0 ? weightedTotal / availableWeight : 0;
+    const overallScore = Number(
+      (eventContext?.strictScoring
+        ? normalizedOverall *
+          Math.min(availableWeight / Math.max(totalWeight, 1), executionCoverage)
+        : normalizedOverall
+      ).toFixed(2)
     );
+    const overallConfidence =
+      availableWeight > 0 ? Number((confidenceTotal / availableWeight).toFixed(3)) : 0;
+    const rubricCoverage = totalWeight > 0 ? availableWeight / totalWeight : 0;
+    const evidenceCoverage = Number(Math.min(rubricCoverage, executionCoverage).toFixed(3));
+    const requirementsComplete = validation.data.requirementCompliance.every(
+      (requirement) => requirement.status === 'FULFILLED' || requirement.status === 'NOT_FULFILLED'
+    );
+    const evaluationStatus =
+      evidenceCoverage >= 0.999 && requirementsComplete ? 'COMPLETE' : 'PARTIAL';
+    const review = this.buildActionableReview(
+      validation.data.synthesisSummary,
+      weightedCriterionScores
+    );
+    const digest = (value: unknown) =>
+      createHash('sha256').update(JSON.stringify(value)).digest('hex');
+    const provenance = {
+      engineVersion: '3.0.0',
+      evaluator: aiResult ? 'LANGCHAIN_MISTRAL_PLUS_DETERMINISTIC' : 'DETERMINISTIC',
+      ...(aiResult ? { modelName: env.MISTRAL_MODEL } : {}),
+      promptVersion: 'scoring-v2-technology-neutral',
+      criteriaConfigSha256: digest(criteria),
+      evidenceSha256: digest({
+        repository: evidence.repository,
+        discovery: evidence.discovery,
+        codeAnalysis: evidence.codeAnalysis,
+        buildTest: evidence.buildTest,
+        frontendEval: evidence.frontendEval,
+        backendEval: evidence.backendEval
+      })
+    };
 
-    // 4. Save to Evaluation model in MongoDB
+    const existingEvaluation = await ReviewEvaluation.findOne({ submissionId }).lean();
+    const preservedOverride = existingEvaluation?.judgeOverride?.overridden
+      ? existingEvaluation.judgeOverride
+      : { overridden: false };
+    const persistedOverallScore = preservedOverride.overridden
+      ? (preservedOverride.newScore ?? overallScore)
+      : overallScore;
+
     await ReviewEvaluation.findOneAndUpdate(
       { submissionId },
       {
         submissionId,
         eventId,
-        overallScore: finalOverallScore,
+        overallScore: persistedOverallScore,
+        overallConfidence,
+        evidenceCoverage,
+        evaluationStatus,
         criterionScores: weightedCriterionScores,
-        requirementCompliance: validated.requirementCompliance,
-        synthesisSummary: validated.synthesisSummary,
-        judgeOverride: { overridden: false }
+        requirementCompliance: validation.data.requirementCompliance,
+        synthesisSummary: validation.data.synthesisSummary,
+        review,
+        provenance,
+        judgeOverride: preservedOverride
       },
-      { upsert: true, new: true }
+      { upsert: true, new: true, runValidators: true }
     );
 
-    // 5. Update submission state
-    await ReviewSubmission.findByIdAndUpdate(submissionId, {
-      status: 'EVALUATED'
-    });
-
     return {
-      ...validated,
-      overallScore: finalOverallScore,
+      ...validation.data,
+      overallScore,
+      overallConfidence,
+      evidenceCoverage,
+      evaluationStatus,
       weightedCriterionScores
     };
   }
 
-  /**
-   * Deterministic evidence-grounded evaluation mapping tool findings directly to rubric criteria.
-   */
+  private static applyConfiguredRanges(
+    criteria: ICriterion[],
+    result: EvaluationResult
+  ): EvaluationResult {
+    const criteriaById = new Map(criteria.map((criterion) => [criterion.id, criterion]));
+    return {
+      ...result,
+      criterionScores: result.criterionScores.map((score) => {
+        const criterion = criteriaById.get(score.criterionId);
+        const minScore = criterion?.minScore ?? 0;
+        const maxScore = criterion?.maxScore ?? 100;
+        if (maxScore < minScore) {
+          throw new Error(`Invalid score range for criterion ${score.criterionId}`);
+        }
+        const normalized = Math.min(100, Math.max(0, score.rawScore));
+        return {
+          ...score,
+          rawScore: Number((minScore + (normalized / 100) * (maxScore - minScore)).toFixed(2))
+        };
+      })
+    };
+  }
+
+  private static executionCoverage(evidence: IEvidence): number {
+    const executions = [
+      evidence.discovery.execution,
+      evidence.codeAnalysis.semgrep.execution,
+      evidence.codeAnalysis.gitleaks.execution,
+      evidence.codeAnalysis.trivy.execution,
+      evidence.buildTest?.execution,
+      evidence.buildTest?.build?.execution,
+      evidence.buildTest?.tests?.execution,
+      evidence.buildTest?.runtime?.execution,
+      evidence.frontendEval?.execution,
+      evidence.backendEval?.execution
+    ].filter(
+      (execution): execution is NonNullable<typeof execution> =>
+        Boolean(execution) && execution!.status !== 'NOT_APPLICABLE'
+    );
+    if (evidence.discovery.manifest.truncated || executions.length === 0) return 0;
+    const succeeded = executions.filter((execution) => execution.status === 'SUCCEEDED').length;
+    return succeeded / executions.length;
+  }
+
+  private static buildActionableReview(overview: string, scores: WeightedCriterionScore[]) {
+    const scored = scores.filter((score) => score.confidence > 0);
+    const unscored = scores.filter((score) => score.confidence === 0);
+    const strengths = scored
+      .filter((score) => score.rawScore >= 75)
+      .map((score) => `${score.name}: ${score.rawScore}/100. ${score.justification}`);
+    const weaknesses = [
+      ...scored
+        .filter((score) => score.rawScore < 60)
+        .map((score) => `${score.name}: ${score.rawScore}/100. ${score.justification}`),
+      ...unscored.map((score) => `${score.name}: evidence gap. ${score.justification}`)
+    ];
+    const suggestions = [
+      ...scored
+        .filter((score) => score.rawScore < 75)
+        .map(
+          (score) =>
+            `Improve ${score.name} against the configured rubric and rerun the cited evidence stage.`
+        ),
+      ...unscored.map(
+        (score) =>
+          `Provide or configure verifiable evidence for ${score.name}; do not infer a score from project claims.`
+      )
+    ];
+    return {
+      overview,
+      strengths,
+      weaknesses,
+      suggestions: Array.from(new Set(suggestions))
+    };
+  }
+
+  private static mergeGroundedQualitativeScores(
+    criteria: ICriterion[],
+    deterministic: EvaluationResult,
+    aiResult: EvaluationResult | null,
+    evidence: IEvidence
+  ): EvaluationResult {
+    if (!aiResult || evidence.discovery.execution.status !== 'SUCCEEDED') return deterministic;
+    const parsed = EvaluationResultSchema.safeParse(aiResult);
+    if (!parsed.success) return deterministic;
+
+    const expectedIds = new Set(criteria.map((criterion) => criterion.id));
+    const returnedIds = parsed.data.criterionScores.map((score) => score.criterionId);
+    if (
+      returnedIds.length !== expectedIds.size ||
+      new Set(returnedIds).size !== returnedIds.length ||
+      returnedIds.some((id) => !expectedIds.has(id))
+    ) {
+      logger.warn('Rejected qualitative scores because criterion IDs did not match the rubric');
+      return deterministic;
+    }
+
+    const aiById = new Map(parsed.data.criterionScores.map((score) => [score.criterionId, score]));
+    const repositoryPaths = evidence.discovery.fileList.map((file) => file.toLowerCase());
+    return {
+      criterionScores: deterministic.criterionScores.map((objectiveScore) => {
+        const criterion = criteria.find((item) => item.id === objectiveScore.criterionId);
+        const qualitative = aiById.get(objectiveScore.criterionId);
+        const categoryAllowsAi =
+          criterion?.category === 'CODE_QUALITY' || criterion?.category === 'INNOVATION';
+        const hasGrounding = Boolean(
+          qualitative &&
+          qualitative.confidence > 0 &&
+          qualitative.evidenceCitations.length > 0 &&
+          qualitative.justification.length >= 10 &&
+          qualitative.evidenceCitations.some((citation) => {
+            const normalized = citation.toLowerCase();
+            return repositoryPaths.some((file) => normalized.includes(file));
+          })
+        );
+        return categoryAllowsAi && hasGrounding ? qualitative! : objectiveScore;
+      }),
+      requirementCompliance: deterministic.requirementCompliance,
+      synthesisSummary: `${deterministic.synthesisSummary} Qualitative repository assessment was available for applicable rubric criteria.`
+    };
+  }
+
   private static computeEvidenceGroundedScores(
     criteria: ICriterion[],
     requirements: IRequirement[],
-    evidence: IEvidence,
-    claims: ExtractedNeutralClaims
+    evidence: IEvidence
   ): EvaluationResult {
-    const criterionScores = criteria.map((crit) => {
-      let rawScore = 80;
-      let confidence = 0.9;
-      const citations: string[] = [];
-      let justification = '';
-
-      switch (crit.category) {
-        case 'SECURITY': {
-          const semgrepIssues = evidence.codeAnalysis?.semgrep?.totalIssues || 0;
-          const secretsFound = evidence.codeAnalysis?.gitleaks?.secretsFoundCount || 0;
-          const vulnHigh = evidence.codeAnalysis?.trivy?.high || 0;
-          const vulnCrit = evidence.codeAnalysis?.trivy?.critical || 0;
-
-          let deductions = semgrepIssues * 5 + secretsFound * 30 + vulnCrit * 20 + vulnHigh * 10;
-          rawScore = Math.max(10, 100 - deductions);
-          citations.push(
-            `Semgrep: ${semgrepIssues} issues`,
-            `Gitleaks: ${secretsFound} secrets`,
-            `Trivy: ${vulnCrit} critical CVEs`
-          );
-          justification = `Evaluated using Semgrep SAST, Gitleaks secrets scanner, and Trivy dependency analyzer. Deductions applied for discovered vulnerabilities.`;
-          break;
-        }
-
-        case 'FRONTEND': {
-          const lh = evidence.frontendEval?.lighthouse;
-          const a11yViolations = evidence.frontendEval?.axeViolationsCount || 0;
-          if (lh && lh.performance > 0) {
-            rawScore = Math.round(
-              (lh.performance + lh.accessibility + lh.bestPractices + lh.seo) / 4
-            );
-            citations.push(
-              `Lighthouse Perf: ${lh.performance}`,
-              `Lighthouse A11y: ${lh.accessibility}`,
-              `Lighthouse BestPractices: ${lh.bestPractices}`,
-              `axe-core violations: ${a11yViolations}`
-            );
-            justification = `Frontend evaluated via calibrated Lighthouse 0-100 scores and axe-core accessibility scanner.`;
-          } else {
-            rawScore = 70;
-            confidence = 0.6;
-            justification = `No live frontend URL active or frontend metrics unavailable; assessed via default baseline.`;
-          }
-          break;
-        }
-
-        case 'BACKEND_API': {
-          const st = evidence.backendEval?.schemathesis;
-          if (st && st.totalTests > 0) {
-            const passRate = st.passed / st.totalTests;
-            rawScore = Math.round(passRate * 100);
-            citations.push(
-              `Schemathesis: ${st.passed}/${st.totalTests} tests passed (${st.endpointsTested} endpoints)`
-            );
-            justification = `Backend evaluated using Schemathesis automated property-based testing from discovered OpenAPI specification.`;
-          } else {
-            rawScore = 75;
-            confidence = 0.65;
-            justification = `Backend API evaluated based on discovery endpoints and basic health check responses.`;
-          }
-          break;
-        }
-
-        case 'CODE_QUALITY': {
-          const primaryLang = evidence.discovery?.primaryLanguage || 'Unknown';
-          const frameworks = evidence.discovery?.detectedFrameworks || [];
-          const files = evidence.discovery?.fileList || [];
-          const htmlFiles = files.filter((f) => f.endsWith('.html'));
-          const totalHtmlBytes = evidence.discovery?.languages?.['HTML'] || 0;
-          const nameLower = (crit.name + ' ' + (crit.description || '')).toLowerCase();
-
-          // Differentiate extensive multi-page project vs trivial 1-page starter
-          const isMinimalStarter = htmlFiles.length <= 1 && totalHtmlBytes < 5000;
-          const isComprehensive = htmlFiles.length >= 3 || totalHtmlBytes > 15000;
-
-          if (nameLower.includes('file naming') || nameLower.includes('naming')) {
-            const sampleFiles = files.slice(0, 6);
-            if (isComprehensive) {
-              rawScore = 90;
-              citations.push(
-                `Inspected ${files.length} repository files: ${sampleFiles.join(', ')}`
-              );
-              justification = `File naming evaluation: Excellent multi-file architecture with clear descriptive names (${sampleFiles.join(', ')}).`;
-            } else if (isMinimalStarter) {
-              rawScore = 45;
-              citations.push(`Minimal file structure (${files.length} files): ${files.join(', ')}`);
-              justification = `File naming evaluation: Minimal file structure sitting in subfolder (${files.join(', ')}). Demonstrates only basic starter naming without modular project organization.`;
-            } else {
-              rawScore = 65;
-              citations.push(`Discovered ${files.length} files: ${sampleFiles.join(', ')}`);
-              justification = `File naming evaluation: Standard file naming with moderate project scope.`;
-            }
-          } else if (
-            nameLower.includes('structure') ||
-            nameLower.includes('html') ||
-            nameLower.includes('look') ||
-            nameLower.includes('layout')
-          ) {
-            if (isComprehensive) {
-              rawScore = 92;
-              citations.push(
-                `Primary language: ${primaryLang}`,
-                `Multi-page structure across ${htmlFiles.length} HTML pages: ${htmlFiles.join(', ')}`
-              );
-              justification = `Structure evaluation: Exemplary multi-page website architecture with interconnected HTML files, modular layout, and rich content hierarchy.`;
-            } else if (isMinimalStarter) {
-              rawScore = 42;
-              citations.push(
-                `Single isolated page: ${htmlFiles[0] || 'index.html'}`,
-                `Total markup: ${totalHtmlBytes} bytes`
-              );
-              justification = `Structure evaluation: Minimal single-page starter layout with basic generic tags and no multi-page navigation or architectural depth.`;
-            } else {
-              rawScore = 68;
-              citations.push(`Document hierarchy across ${htmlFiles.length} HTML pages`);
-              justification = `Structure evaluation: Moderate structural complexity with basic layout sectioning.`;
-            }
-          } else {
-            if (isComprehensive) {
-              rawScore = 90;
-              citations.push(
-                `Primary language: ${primaryLang}`,
-                `Extensive implementation (${totalHtmlBytes} bytes, ${htmlFiles.length} pages)`
-              );
-              justification = `Code quality evaluated: Clean semantic markup, consistent indentation, and comprehensive content depth.`;
-            } else if (isMinimalStarter) {
-              rawScore = 46;
-              citations.push(
-                `Minimal implementation (${totalHtmlBytes} bytes, 1 file)`,
-                `Snippets: generic divs and elementary text`
-              );
-              justification = `Code quality evaluated: Elementary beginner code quality. Uses generic div elements, minimal markup volume, and basic starter structure without advanced semantics.`;
-            } else {
-              rawScore = 70;
-              citations.push(
-                `Primary language: ${primaryLang}`,
-                `Discovered ${files.length} source files`
-              );
-              justification = `Code quality evaluated: Standard implementation quality meeting baseline criteria.`;
-            }
-          }
-          break;
-        }
-
-        case 'REQUIREMENTS': {
-          const matchedEndpoints = (evidence.discovery?.openApiEndpoints || []).length;
-          const files = evidence.discovery?.fileList || [];
-          citations.push(
-            `Primary language: ${evidence.discovery?.primaryLanguage || 'Unknown'}`,
-            `Discovered ${files.length} repository files`
-          );
-          rawScore = files.length > 0 ? 90 : 60;
-          justification = `Verified implementation against configured requirements through repository file structure and content inspection.`;
-          break;
-        }
-
-        default: {
-          const files = evidence.discovery?.fileList || [];
-          citations.push(`Primary language: ${evidence.discovery?.primaryLanguage || 'Unknown'}`);
-          rawScore = files.length > 0 ? 85 : 70;
-          confidence = 0.85;
-          justification = `Evaluated against rubric guidelines using grounded repository evidence.`;
-        }
+    const requirementCompliance = requirements.map((requirement) => {
+      const target = requirement.targetEndpointOrFile?.trim().toLowerCase();
+      if (!target) {
+        return {
+          requirementId: requirement.id,
+          title: requirement.title,
+          status: 'UNKNOWN' as const,
+          evidenceSummary: 'No machine-verifiable endpoint or file target was configured.'
+        };
       }
-
-      return {
-        criterionId: crit.id,
-        name: crit.name,
-        rawScore,
-        confidence,
-        evidenceCitations: citations,
-        justification
-      };
-    });
-
-    const requirementCompliance = requirements.map((req) => {
-      let status: 'FULFILLED' | 'PARTIAL' | 'NOT_FULFILLED' = 'NOT_FULFILLED';
-      const endpoints = evidence.discovery?.openApiEndpoints || [];
-      const files = evidence.discovery?.fileList || [];
-      const target = (req.targetEndpointOrFile || req.title).toLowerCase();
-      const targetWords = (req.title + ' ' + req.description).toLowerCase();
-
-      const matchedInEndpoints = endpoints.some((ep) => ep.toLowerCase().includes(target));
-      const matchedInClaims = claims.claimedFeatures.some((f) => f.toLowerCase().includes(target));
-      const hasMatchingFiles = files.some(
-        (f) => f.endsWith('.html') || f.endsWith('.js') || f.endsWith('.ts')
+      const matchingFile = evidence.discovery.fileList.find(
+        (file) => file.toLowerCase() === target || file.toLowerCase().endsWith(`/${target}`)
       );
-
-      if (
-        matchedInEndpoints ||
-        matchedInClaims ||
-        (hasMatchingFiles &&
-          (targetWords.includes('html') ||
-            targetWords.includes('functionality') ||
-            targetWords.includes('theme') ||
-            targetWords.includes('core') ||
-            targetWords.includes('feature')))
-      ) {
-        status = 'FULFILLED';
-      } else if (claims.claimedFeatures.length > 0 || files.length > 0) {
-        status = 'PARTIAL';
-      }
-
+      const matchingEndpoint = evidence.discovery.openApiEndpoints.find(
+        (endpoint) => endpoint.toLowerCase() === target
+      );
+      const buildVerified =
+        evidence.buildTest?.execution.status === 'SUCCEEDED' &&
+        evidence.buildTest.build?.execution.status === 'SUCCEEDED' &&
+        evidence.buildTest.tests?.execution.status === 'SUCCEEDED' &&
+        (evidence.buildTest.tests.failed ?? 0) === 0;
+      const endpointVerified =
+        Boolean(matchingEndpoint) &&
+        evidence.backendEval?.execution.status === 'SUCCEEDED' &&
+        Boolean(evidence.backendEval.schemathesis) &&
+        evidence.backendEval!.schemathesis!.failed === 0;
+      const verified = matchingEndpoint ? endpointVerified : Boolean(matchingFile && buildVerified);
+      const declaredOnly = Boolean(matchingFile || matchingEndpoint);
       return {
-        requirementId: req.id,
-        title: req.title,
-        status,
-        evidenceSummary: `Verified through repository source files and extracted project structure.`
+        requirementId: requirement.id,
+        title: requirement.title,
+        status: verified
+          ? ('FULFILLED' as const)
+          : declaredOnly
+            ? ('PARTIAL' as const)
+            : ('NOT_FULFILLED' as const),
+        evidenceSummary: verified
+          ? `Configured target was observed and its build/test or endpoint checks passed: ${matchingFile || matchingEndpoint}`
+          : declaredOnly
+            ? `Configured target was declared but working behavior was not verified: ${matchingFile || matchingEndpoint}`
+            : `Configured target was not observed in the repository manifest or OpenAPI paths: ${requirement.targetEndpointOrFile}`
       };
     });
+
+    const criterionScores = criteria.map((criterion): CriterionScore => {
+      if (criterion.category === 'SECURITY') return this.scoreSecurity(criterion, evidence);
+      if (criterion.category === 'FRONTEND') return this.scoreFrontend(criterion, evidence);
+      if (criterion.category === 'BACKEND_API') return this.scoreBackend(criterion, evidence);
+      if (criterion.category === 'REQUIREMENTS') {
+        const verifiable = requirementCompliance.filter((item) => item.status !== 'UNKNOWN');
+        if (verifiable.length === 0) {
+          return this.unscored(
+            criterion,
+            'No machine-verifiable requirement targets were configured.'
+          );
+        }
+        const fulfilled = verifiable.filter((item) => item.status === 'FULFILLED').length;
+        return {
+          criterionId: criterion.id,
+          name: criterion.name,
+          rawScore: Math.round((fulfilled / verifiable.length) * 100),
+          confidence: 1,
+          evidenceCitations: verifiable.map((item) => item.evidenceSummary),
+          justification: `Scored ${fulfilled} of ${verifiable.length} exact configured targets as present.`
+        };
+      }
+      return this.unscored(
+        criterion,
+        'This qualitative criterion requires grounded model review; no deterministic proxy was substituted.'
+      );
+    });
+
+    const succeededTools = [
+      evidence.discovery.execution,
+      evidence.codeAnalysis.semgrep.execution,
+      evidence.codeAnalysis.gitleaks.execution,
+      evidence.codeAnalysis.trivy.execution,
+      evidence.buildTest?.execution,
+      evidence.frontendEval?.execution,
+      evidence.backendEval?.execution
+    ].filter((record) => record?.status === 'SUCCEEDED').length;
 
     return {
       criterionScores,
       requirementCompliance,
-      synthesisSummary: `Evaluation completed for ${evidence.discovery?.primaryLanguage || 'project'} repository (${(evidence.discovery?.fileList || []).length} files discovered) using grounded evidence analysis.`
+      synthesisSummary: `Pinned commit ${evidence.repository.commitSha} was evaluated from a manifest of ${evidence.discovery.manifest.totalFiles} files; ${succeededTools} configured evidence stages succeeded. Missing evidence remains explicitly unscored.`
+    };
+  }
+
+  private static scoreSecurity(criterion: ICriterion, evidence: IEvidence): CriterionScore {
+    const tools = [
+      evidence.codeAnalysis.semgrep.execution,
+      evidence.codeAnalysis.gitleaks.execution,
+      evidence.codeAnalysis.trivy.execution
+    ];
+    const succeeded = tools.filter((tool) => tool.status === 'SUCCEEDED').length;
+    if (succeeded === 0)
+      return this.unscored(criterion, 'No security analyzer completed successfully.');
+
+    const deductions =
+      evidence.codeAnalysis.semgrep.criticalCount * 25 +
+      evidence.codeAnalysis.semgrep.highCount * 12 +
+      evidence.codeAnalysis.semgrep.mediumCount * 4 +
+      evidence.codeAnalysis.gitleaks.secretsFoundCount * 30 +
+      evidence.codeAnalysis.trivy.critical * 20 +
+      evidence.codeAnalysis.trivy.high * 8 +
+      evidence.codeAnalysis.trivy.medium * 2;
+    return {
+      criterionId: criterion.id,
+      name: criterion.name,
+      rawScore: Math.max(0, 100 - deductions),
+      confidence: Number((succeeded / tools.length).toFixed(3)),
+      evidenceCitations: tools.map((tool) => `${tool.tool}: ${tool.status}`),
+      justification: `Score derives only from ${succeeded} successful security analyzer(s); failed or unavailable tools reduce confidence.`
+    };
+  }
+
+  private static scoreFrontend(criterion: ICriterion, evidence: IEvidence): CriterionScore {
+    const frontend = evidence.frontendEval;
+    if (frontend?.execution.status !== 'SUCCEEDED' || !frontend.lighthouse) {
+      return this.unscored(
+        criterion,
+        `Browser evidence status: ${frontend?.execution.status || 'UNAVAILABLE'}.`
+      );
+    }
+    const values = Object.values(frontend.lighthouse);
+    return {
+      criterionId: criterion.id,
+      name: criterion.name,
+      rawScore: Math.round(values.reduce((sum, value) => sum + value, 0) / values.length),
+      confidence: 0.95,
+      evidenceCitations: [
+        `Lighthouse performance=${frontend.lighthouse.performance}`,
+        `accessibility=${frontend.lighthouse.accessibility}`,
+        `best-practices=${frontend.lighthouse.bestPractices}`,
+        `seo=${frontend.lighthouse.seo}`
+      ],
+      justification: 'Score is the arithmetic mean of observed Lighthouse categories.'
+    };
+  }
+
+  private static scoreBackend(criterion: ICriterion, evidence: IEvidence): CriterionScore {
+    const backend = evidence.backendEval;
+    const tests = backend?.schemathesis;
+    if (backend?.execution.status !== 'SUCCEEDED' || !tests || tests.totalTests === 0) {
+      return this.unscored(
+        criterion,
+        `API evidence status: ${backend?.execution.status || 'UNAVAILABLE'}.`
+      );
+    }
+    return {
+      criterionId: criterion.id,
+      name: criterion.name,
+      rawScore: Math.round((tests.passed / tests.totalTests) * 100),
+      confidence: 0.95,
+      evidenceCitations: [
+        `Schemathesis passed=${tests.passed}/${tests.totalTests}`,
+        `endpoints tested=${tests.endpointsTested}`,
+        `flaky=${tests.flaky}`
+      ],
+      justification:
+        'Score is the observed Schemathesis pass rate; performance and security details remain separate evidence.'
+    };
+  }
+
+  private static unscored(criterion: ICriterion, reason: string): CriterionScore {
+    return {
+      criterionId: criterion.id,
+      name: criterion.name,
+      rawScore: 0,
+      confidence: 0,
+      evidenceCitations: [],
+      justification: `Not scored: ${reason}`
     };
   }
 }

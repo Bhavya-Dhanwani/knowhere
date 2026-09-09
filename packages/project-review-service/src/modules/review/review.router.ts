@@ -10,37 +10,55 @@ import {
   judgeOverrideValidators
 } from './review.validator.js';
 import validate from '../../shared/middlewares/validate.middleware.js';
+import authMiddleware from '../../shared/middlewares/auth.middleware.js';
+import requireRole from '../../shared/middlewares/role.middleware.js';
 
 const router = express.Router();
 const controller = new ReviewController();
 
-/*
-  ==================== EVENTS ====================
-*/
-
-// POST /api/review/events - Create new review event with fixed criteria & rubrics (open for testing)
-router.post('/events', createEventValidators, validate, controller.createEvent);
-
-// GET /api/review/events - List all review events
-router.get('/events', controller.listEvents);
-
-// GET /api/review/events/:id - Get event details
+// Public candidate flow: event instructions and submission intake only.
 router.get('/events/:id', eventIdValidators, validate, controller.getEvent);
-
-// PUT /api/review/events/:id - Update event details
-router.put('/events/:id', updateEventValidators, validate, controller.updateEvent);
-
-/*
-  ==================== SUBMISSIONS ====================
-*/
-
-// POST /api/review/events/:id/submissions - Submit a project repository for review (open for testing)
 router.post(
   '/events/:id/submissions',
   createSubmissionValidators,
   validate,
   controller.submitProject
 );
+
+router.use(authMiddleware);
+
+/*
+  ==================== EVENTS ====================
+*/
+
+// POST /api/review/events - Create new review event with fixed criteria & rubrics
+router.post(
+  '/events',
+  requireRole('instructor', 'judge'),
+  createEventValidators,
+  validate,
+  controller.createEvent
+);
+
+// GET /api/review/events - List all review events
+router.get('/events', controller.listEvents);
+
+// GET /api/review/events/:id - Get event details
+
+// PUT /api/review/events/:id - Update event details
+router.put(
+  '/events/:id',
+  requireRole('instructor', 'judge'),
+  updateEventValidators,
+  validate,
+  controller.updateEvent
+);
+
+/*
+  ==================== SUBMISSIONS ====================
+*/
+
+// POST /api/review/events/:id/submissions - Submit a project repository for review
 
 // GET /api/review/events/:id/submissions - List all submissions for an event
 router.get(
@@ -54,18 +72,31 @@ router.get(
 router.get('/submissions/:id', submissionIdValidators, validate, controller.getSubmission);
 
 // PUT /api/review/submissions/:id - Update submission details
-router.put('/submissions/:id', updateSubmissionValidators, validate, controller.updateSubmission);
+router.put(
+  '/submissions/:id',
+  requireRole('instructor', 'judge'),
+  updateSubmissionValidators,
+  validate,
+  controller.updateSubmission
+);
 
 // DELETE /api/review/submissions/:id - Delete a submission
-router.delete('/submissions/:id', submissionIdValidators, validate, controller.deleteSubmission);
+router.delete(
+  '/submissions/:id',
+  requireRole('instructor', 'judge'),
+  submissionIdValidators,
+  validate,
+  controller.deleteSubmission
+);
 
 /*
   ==================== EVALUATION & DURABLE WORKFLOWS ====================
 */
 
-// POST /api/review/submissions/:id/evaluate - Dispatch durable evaluation workflow (open for testing)
+// POST /api/review/submissions/:id/evaluate - Dispatch durable evaluation workflow
 router.post(
   '/submissions/:id/evaluate',
+  requireRole('instructor', 'judge'),
   submissionIdValidators,
   validate,
   controller.evaluateSubmission
@@ -127,8 +158,28 @@ router.get(
   ==================== RANKING & PAIRWISE ====================
 */
 
-// POST /api/review/events/:id/rank - Run Bradley-Terry relative pairwise ranking for an event (open for testing)
-router.post('/events/:id/rank', eventIdValidators, validate, controller.computeEventRanking);
+// POST /api/review/events/:id/rank - Run Bradley-Terry relative pairwise ranking for an event
+router.post(
+  '/events/:id/rank',
+  requireRole('instructor', 'judge'),
+  eventIdValidators,
+  validate,
+  controller.computeEventRanking
+);
+
+router.get(
+  '/submissions/:id/report.csv',
+  submissionIdValidators,
+  validate,
+  controller.exportReportCsv
+);
+
+router.get(
+  '/submissions/:id/report.md',
+  submissionIdValidators,
+  validate,
+  controller.exportReportMarkdown
+);
 
 // GET /api/review/events/:id/leaderboard - Relative ranking leaderboard
 router.get('/events/:id/leaderboard', eventIdValidators, validate, controller.getLeaderboard);
@@ -140,9 +191,10 @@ router.get('/events/:id/pairwise', eventIdValidators, validate, controller.getPa
   ==================== JUDGE OVERRIDE ====================
 */
 
-// POST /api/review/submissions/:id/override - Override score with mandatory audit reason (open for testing)
+// POST /api/review/submissions/:id/override - Override score with mandatory audit reason
 router.post(
   '/submissions/:id/override',
+  requireRole('judge'),
   judgeOverrideValidators,
   validate,
   controller.judgeOverrideScore

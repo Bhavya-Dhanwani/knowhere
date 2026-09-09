@@ -17,11 +17,26 @@ export interface IReviewSubmission extends Document {
   rawReadmeText?: string;
   status:
     | 'SUBMITTED'
+    | 'UPDATING'
+    | 'QUEUED'
+    | 'CLONING'
     | 'DISCOVERING'
     | 'SANITIZING'
-    | 'ANALYZING'
+    | 'STATIC_ANALYSIS'
+    | 'BUILDING'
+    | 'TESTING'
+    | 'RUNTIME_ANALYSIS'
+    | 'BROWSER_ANALYSIS'
+    | 'EVIDENCE_COLLECTION'
+    | 'AI_EVALUATION'
     | 'SCORING'
+    | 'PAIRWISE_COMPARISON'
+    | 'RANKING'
+    | 'REVIEW_GENERATION'
+    | 'VALIDATION'
+    | 'REPORT_GENERATION'
     | 'EVALUATED'
+    | 'PARTIAL'
     | 'FAILED'
     | 'FLAGGED_FOR_REVIEW';
   flaggedForHumanReview: boolean;
@@ -51,11 +66,26 @@ const ReviewSubmissionSchema = new Schema<IReviewSubmission>(
       type: String,
       enum: [
         'SUBMITTED',
+        'UPDATING',
+        'QUEUED',
+        'CLONING',
         'DISCOVERING',
         'SANITIZING',
-        'ANALYZING',
+        'STATIC_ANALYSIS',
+        'BUILDING',
+        'TESTING',
+        'RUNTIME_ANALYSIS',
+        'BROWSER_ANALYSIS',
+        'EVIDENCE_COLLECTION',
+        'AI_EVALUATION',
         'SCORING',
+        'PAIRWISE_COMPARISON',
+        'RANKING',
+        'REVIEW_GENERATION',
+        'VALIDATION',
+        'REPORT_GENERATION',
         'EVALUATED',
+        'PARTIAL',
         'FAILED',
         'FLAGGED_FOR_REVIEW'
       ],

@@ -21,57 +21,61 @@ class CourseProgressDao {
     maxScore: number;
   }): Promise<ICourseProgress> {
     const { courseId, userId, contentItemId, type, scoreEarned, maxScore } = data;
-
-    // Find existing or create
-    let progress = await this.CourseProgressModel.findOne({ courseId, userId });
-
-    if (!progress) {
-      progress = new this.CourseProgressModel({
-        courseId,
-        userId,
-        totalScoreEarned: scoreEarned,
-        completedItems: [
-          {
-            contentItemId,
-            type,
-            scoreEarned,
-            maxScore,
-            completedAt: new Date()
-          }
-        ]
-      });
-      return await progress.save();
-    }
-
-    // Check if item was already completed
-    const existingIndex = progress.completedItems.findIndex(
-      (item) => item.contentItemId.toString() === contentItemId
-    );
-
-    if (existingIndex >= 0) {
-      // If student scored higher (e.g. on coding retries or quiz retries), award difference
-      const previousScore = progress.completedItems[existingIndex].scoreEarned;
-      if (scoreEarned > previousScore) {
-        const scoreDiff = scoreEarned - previousScore;
-        progress.totalScoreEarned += scoreDiff;
-        progress.completedItems[existingIndex].scoreEarned = scoreEarned;
-        progress.completedItems[existingIndex].completedAt = new Date();
-        await progress.save();
+    for (let retry = 0; retry < 5; retry++) {
+      const progress = await this.CourseProgressModel.findOne({ courseId, userId });
+      if (!progress) {
+        try {
+          return await this.CourseProgressModel.create({
+            courseId,
+            userId,
+            totalScoreEarned: scoreEarned,
+            completedItems: [
+              { contentItemId, type, scoreEarned, maxScore, completedAt: new Date() }
+            ]
+          });
+        } catch (error: any) {
+          if (error?.code === 11000) continue;
+          throw error;
+        }
       }
-      return progress;
+
+      const existingIndex = progress.completedItems.findIndex(
+        (item) => item.contentItemId.toString() === contentItemId
+      );
+      const previousScore =
+        existingIndex >= 0 ? progress.completedItems[existingIndex].scoreEarned : 0;
+      if (existingIndex >= 0 && scoreEarned <= previousScore) return progress;
+
+      const update =
+        existingIndex >= 0
+          ? {
+              $inc: { totalScoreEarned: scoreEarned - previousScore, __v: 1 },
+              $set: {
+                [`completedItems.${existingIndex}.scoreEarned`]: scoreEarned,
+                [`completedItems.${existingIndex}.maxScore`]: maxScore,
+                [`completedItems.${existingIndex}.completedAt`]: new Date()
+              }
+            }
+          : {
+              $inc: { totalScoreEarned: scoreEarned, __v: 1 },
+              $push: {
+                completedItems: {
+                  contentItemId,
+                  type,
+                  scoreEarned,
+                  maxScore,
+                  completedAt: new Date()
+                }
+              }
+            };
+      const updated = await this.CourseProgressModel.findOneAndUpdate(
+        { _id: progress._id, __v: progress.__v },
+        update,
+        { new: true, runValidators: true }
+      );
+      if (updated) return updated;
     }
-
-    // Add new completion item and increment totalScoreEarned
-    progress.completedItems.push({
-      contentItemId: contentItemId as any,
-      type,
-      scoreEarned,
-      maxScore,
-      completedAt: new Date()
-    });
-    progress.totalScoreEarned += scoreEarned;
-
-    return await progress.save();
+    throw new Error('Progress update conflicted repeatedly; retry the request.');
   }
 
   async listGradesByCourse(courseId: string): Promise<ICourseProgress[]> {

@@ -11,6 +11,7 @@ export interface ContentItemSummary {
 }
 
 export interface ContentItemDetail extends ContentItemSummary {
+  referenceId?: string;
   description?: string;
   videoUrl?: string;
   codingPrompt?: string;

@@ -2,6 +2,7 @@
 import express from 'express';
 import RbacController from './rbac.controller.js';
 import { verifyRbacValidators, initialAdminValidators } from './rbac.validator.js';
+import requireInternalService from '../../shared/middlewares/internal.middleware.js';
 
 // making the router
 const router = express.Router();
@@ -14,13 +15,21 @@ const rbacController = new RbacController();
     @desc Verify if a user is authorized with specific roles in a course
     @access Service / Internal / Protected
 */
-router.post('/verify', verifyRbacValidators, rbacController.verify);
+router.post('/verify', requireInternalService, verifyRbacValidators, rbacController.verify);
+router.post('/verify-any', requireInternalService, rbacController.verifyAny);
 
 /*
     @route POST /api/users/rbac/initial-admin
     @desc Register initial admin for a newly created course
     @access Service / Internal / Protected
 */
-router.post('/initial-admin', initialAdminValidators, rbacController.registerInitialAdmin);
+router.post(
+  '/initial-admin',
+  requireInternalService,
+  initialAdminValidators,
+  rbacController.registerInitialAdmin
+);
+
+router.get('/users/:userId/courses', requireInternalService, rbacController.listUserCourses);
 
 export default router;

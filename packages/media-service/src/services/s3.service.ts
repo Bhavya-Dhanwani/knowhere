@@ -26,7 +26,7 @@ class S3Service {
       return await getSignedUrl(this.s3Client, command, { expiresIn });
     } catch (error) {
       logger.error({ err: error }, 'Error generating S3 presigned upload URL');
-      return `https://${env.S3_RAW_BUCKET}.s3.${env.AWS_REGION}.amazonaws.com/${key}?signed=true`;
+      throw error;
     }
   }
 
@@ -39,7 +39,7 @@ class S3Service {
       return await getSignedUrl(this.s3Client, command, { expiresIn });
     } catch (error) {
       logger.error({ err: error }, 'Error generating S3 presigned download URL');
-      return `https://${bucket}.s3.${env.AWS_REGION}.amazonaws.com/${key}?signed=true`;
+      throw error;
     }
   }
 }

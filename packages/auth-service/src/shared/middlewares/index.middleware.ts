@@ -13,7 +13,7 @@ function applyMiddlewares(app: Express) {
   // applying middlewares
   app.use(compression());
 
-  app.use(cors());
+  app.use(cors({ origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN, credentials: true }));
 
   app.use(helmet());
 

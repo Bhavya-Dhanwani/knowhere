@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface IActivityTrace {
+  activityId: string;
   activityName: string;
   status: 'COMPLETED' | 'FAILED' | 'SKIPPED';
   startedAt: Date;
@@ -17,7 +18,7 @@ export interface IReplayTrace extends Document {
   eventId: Types.ObjectId;
   activities: IActivityTrace[];
   executedBy: 'TEMPORAL' | 'EMBEDDED_DURABLE_RUNNER';
-  finalStatus: 'SUCCESS' | 'FAILED' | 'FLAGGED';
+  finalStatus: 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'FLAGGED';
   totalDurationMs: number;
   createdAt: Date;
   updatedAt: Date;
@@ -25,6 +26,7 @@ export interface IReplayTrace extends Document {
 
 const ActivityTraceSchema = new Schema<IActivityTrace>(
   {
+    activityId: { type: String, required: true },
     activityName: { type: String, required: true },
     status: {
       type: String,
@@ -43,7 +45,7 @@ const ActivityTraceSchema = new Schema<IActivityTrace>(
 
 const ReplayTraceSchema = new Schema<IReplayTrace>(
   {
-    workflowId: { type: String, required: true, index: true },
+    workflowId: { type: String, required: true, unique: true, index: true },
     submissionId: {
       type: Schema.Types.ObjectId,
       ref: 'ReviewSubmission',
@@ -59,8 +61,8 @@ const ReplayTraceSchema = new Schema<IReplayTrace>(
     },
     finalStatus: {
       type: String,
-      enum: ['SUCCESS', 'FAILED', 'FLAGGED'],
-      default: 'SUCCESS'
+      enum: ['RUNNING', 'SUCCESS', 'PARTIAL', 'FAILED', 'FLAGGED'],
+      default: 'RUNNING'
     },
     totalDurationMs: { type: Number, default: 0 }
   },

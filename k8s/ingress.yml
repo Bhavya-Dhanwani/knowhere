@@ -59,6 +59,20 @@ spec:
                 port:
                   number: 80
           - pathType: Prefix
+            path: '/api/memberships'
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/memberships'
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 80
+          - pathType: Prefix
             path: '/api/courses'
             backend:
               service:

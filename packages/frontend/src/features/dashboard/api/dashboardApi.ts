@@ -107,58 +107,50 @@ function generateMockHeatmap(): HeatmapData {
   };
 }
 
+// Retained as Storybook/demo fixtures; production requests never fall back to them.
+void MOCK_NOTIFICATIONS;
+void generateMockHeatmap;
+
 export const dashboardApi = {
   getEnrolledCourses: async (): Promise<EnrolledCourse[]> => {
-    try {
-      const response = await axiosClient.get('/courses');
-      const courses = response.data?.data || response.data;
-      if (Array.isArray(courses) && courses.length > 0) {
-        return courses.map((c: any, index: number) => ({
-          id: c._id || c.id || `course-${index}`,
-          title: c.title || 'Untitled Course',
-          thumbnail: c.thumbnail || MOCK_COURSES[index % MOCK_COURSES.length].thumbnail,
-          progress: c.progress ?? 45,
-          boughtOn: c.createdAt
-            ? new Date(c.createdAt).toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric'
-              })
-            : '10 Jan 2026',
-          discordUrl: 'https://discord.gg/example',
-          totalModules: c.modulesCount || 10,
-          completedModules: c.completedModulesCount || 4
-        }));
-      }
-      return MOCK_COURSES;
-    } catch {
-      return MOCK_COURSES;
+    const response = await axiosClient.get('/courses');
+    const courses = response.data?.data || response.data;
+    if (Array.isArray(courses) && courses.length > 0) {
+      return courses.map((c: any, index: number) => ({
+        id: c._id || c.id || `course-${index}`,
+        title: c.title || 'Untitled Course',
+        thumbnail: c.thumbnail || MOCK_COURSES[index % MOCK_COURSES.length].thumbnail,
+        progress: c.progress ?? 0,
+        boughtOn: c.createdAt
+          ? new Date(c.createdAt).toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric'
+            })
+          : '',
+        discordUrl: c.discordUrl,
+        totalModules: c.modulesCount || 0,
+        completedModules: c.completedModulesCount || 0
+      }));
     }
+    return [];
   },
 
   getNotifications: async (): Promise<NotificationItem[]> => {
-    try {
-      const response = await axiosClient.get('/notifications');
-      const data = response.data?.data || response.data;
-      if (Array.isArray(data) && data.length > 0) {
-        return data;
-      }
-      return MOCK_NOTIFICATIONS;
-    } catch {
-      return MOCK_NOTIFICATIONS;
+    const response = await axiosClient.get('/notifications');
+    const data = response.data?.data || response.data;
+    if (Array.isArray(data) && data.length > 0) {
+      return data;
     }
+    return [];
   },
 
   getHeatmapData: async (): Promise<HeatmapData> => {
-    try {
-      const response = await axiosClient.get('/analytics/heatmap');
-      const data = response.data?.data || response.data;
-      if (data?.days && Array.isArray(data.days)) {
-        return data;
-      }
-      return generateMockHeatmap();
-    } catch {
-      return generateMockHeatmap();
+    const response = await axiosClient.get('/analytics/heatmap');
+    const data = response.data?.data || response.data;
+    if (data?.days && Array.isArray(data.days)) {
+      return data;
     }
+    return { days: [], currentStreak: 0, longestStreak: 0, totalActivities: 0 };
   }
 };

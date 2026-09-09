@@ -3,6 +3,9 @@ import { ProjectDiscoveryRunner } from '../runners/discovery.runner.js';
 import { CodeAnalysisRunner } from '../runners/code-analysis.runner.js';
 import { FrontendEvalRunner } from '../runners/frontend.runner.js';
 import { BackendEvalRunner } from '../runners/backend.runner.js';
+import { RepositoryRunner } from '../runners/repository.runner.js';
+import { BuildTestRunner } from '../runners/build-test.runner.js';
+import { BuildTestEvalResult, RepositorySnapshot } from '../runners/types.js';
 import { SanitizationFacade } from '../sanitization/sanitization.facade.js';
 import { ScoringEngine } from '../scoring/scoring.engine.js';
 import { Evidence } from '../../models/Evidence.model.js';
@@ -13,12 +16,24 @@ import { UntrustedInputSource } from '../sanitization/types.js';
 import logger from '../../shared/config/logger.config.js';
 
 export class EvaluationActivities {
+  /** Activity 0: clone without hooks/submodules and resolve an immutable commit SHA. */
+  public static async runRepositoryAcquisitionActivity(
+    submissionId: string,
+    repoUrl: string,
+    branch = 'main',
+    requestedCommit?: string
+  ) {
+    const snapshot = await RepositoryRunner.acquire(submissionId, repoUrl, branch, requestedCommit);
+    await ReviewSubmission.findByIdAndUpdate(submissionId, { commitHash: snapshot.commitSha });
+    return snapshot;
+  }
+
   /**
    * Activity 1: Project Discovery
    */
-  public static async runDiscoveryActivity(submissionId: string, repoUrl: string, branch = 'main') {
-    logger.info({ submissionId, repoUrl, branch }, 'Activity: Discovery started');
-    const discoveryResult = await ProjectDiscoveryRunner.discover(repoUrl, branch);
+  public static async runDiscoveryActivity(submissionId: string, repositoryPath: string) {
+    logger.info({ submissionId }, 'Activity: Discovery started');
+    const discoveryResult = await ProjectDiscoveryRunner.discover(repositoryPath);
     return discoveryResult;
   }
 
@@ -62,14 +77,26 @@ export class EvaluationActivities {
   /**
    * Activity 3: Code & Security Analysis (Semgrep + Gitleaks + Trivy)
    */
-  public static async runCodeAnalysisActivity(submissionId: string, repoUrl: string) {
+  public static async runCodeAnalysisActivity(
+    submissionId: string,
+    repository: RepositorySnapshot
+  ) {
     logger.info({ submissionId }, 'Activity: Code & Security Analysis started');
-    const codeAnalysisResult = await CodeAnalysisRunner.analyze(repoUrl);
+    const codeAnalysisResult = await CodeAnalysisRunner.analyze(repository);
     return codeAnalysisResult;
   }
 
+  /** Activity 4: dependency install, build, tests and runtime checks in an isolated runner. */
+  public static async runBuildTestActivity(
+    submissionId: string,
+    repository: RepositorySnapshot
+  ): Promise<BuildTestEvalResult> {
+    logger.info({ submissionId }, 'Activity: Isolated Build, Test & Runtime started');
+    return BuildTestRunner.evaluate(repository);
+  }
+
   /**
-   * Activity 4: Frontend & Browser Evaluation (Playwright + Lighthouse + axe-core)
+   * Activity 5: Frontend & Browser Evaluation (Playwright + Lighthouse + axe-core)
    */
   public static async runFrontendEvalActivity(submissionId: string, liveSiteUrl?: string) {
     logger.info({ submissionId }, 'Activity: Frontend & Browser Evaluation started');
@@ -78,7 +105,7 @@ export class EvaluationActivities {
   }
 
   /**
-   * Activity 5: Backend & API Evaluation (Schemathesis + k6 + OWASP ZAP)
+   * Activity 6: Backend & API Evaluation (Schemathesis + k6 + OWASP ZAP)
    */
   public static async runBackendEvalActivity(
     submissionId: string,
@@ -91,13 +118,15 @@ export class EvaluationActivities {
   }
 
   /**
-   * Activity 6: Evidence Bundle Assembly & Persistence
+   * Activity 7: Evidence Bundle Assembly & Persistence
    */
   public static async assembleEvidenceActivity(
     submissionId: string,
     eventId: string,
+    repository: RepositorySnapshot,
     discovery: unknown,
     codeAnalysis: unknown,
+    buildTest: BuildTestEvalResult,
     frontendEval: unknown,
     backendEval: unknown
   ) {
@@ -108,8 +137,17 @@ export class EvaluationActivities {
       {
         submissionId: new Types.ObjectId(submissionId),
         eventId: new Types.ObjectId(eventId),
+        schemaVersion: 7,
+        repository: {
+          repositoryUrl: repository.repositoryUrl,
+          requestedBranch: repository.requestedBranch,
+          commitSha: repository.commitSha,
+          clonedAt: repository.clonedAt,
+          clone: repository.clone
+        },
         discovery,
         codeAnalysis,
+        buildTest,
         frontendEval,
         backendEval
       },
@@ -120,7 +158,7 @@ export class EvaluationActivities {
   }
 
   /**
-   * Activity 7: Evidence-Grounded Scoring (Instructor / Schema-enforced LLM evaluator)
+   * Activity 8: Evidence-Grounded Scoring (Instructor / Schema-enforced LLM evaluator)
    */
   public static async runScoringActivity(submissionId: string, eventId: string) {
     logger.info({ submissionId }, 'Activity: Evidence-Grounded Scoring started');
@@ -151,12 +189,10 @@ export class EvaluationActivities {
         name: event.name,
         description: event.description,
         problemStatement: event.problemStatement,
-        projectType: event.projectType
+        projectType: event.projectType,
+        strictScoring: event.strictScoring
       }
     );
-
-    // Update submission status to evaluated
-    await ReviewSubmission.findByIdAndUpdate(submissionId, { status: 'EVALUATED' });
 
     return scoreResult;
   }

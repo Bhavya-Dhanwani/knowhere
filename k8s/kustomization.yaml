@@ -16,8 +16,10 @@ resources:
   - mcq-service.yml
   - coding-deployment.yml
   - coding-service.yml
+  - code-runner.yml
   - project-review-deployment.yml
   - project-review-service.yml
+  - evaluation-runner.yml
   - frontend-deployment.yml
   - frontend-service.yml
   - redis-deployment.yml

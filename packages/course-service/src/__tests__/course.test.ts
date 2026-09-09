@@ -5,6 +5,7 @@ import createApp from '../app.js';
 import CourseDao from '../shared/dao/course.dao.js';
 import SubmoduleDao from '../shared/dao/submodule.dao.js';
 import ContentItemDao from '../shared/dao/contentItem.dao.js';
+import ModuleDao from '../shared/dao/module.dao.js';
 import externalContentService from '../services/externalContent.service.js';
 import env from '../shared/config/env.config.js';
 
@@ -23,6 +24,33 @@ describe('Course Service Integration & Content Attach Tests', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  beforeEach(() => {
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { authorized: true, role: 'trainer' } })
+    } as any);
+    jest.spyOn(ModuleDao.prototype, 'findModuleById').mockResolvedValue({
+      _id: '507f1f77bcf86cd799439033',
+      courseId: '507f1f77bcf86cd799439011'
+    } as any);
+    jest.spyOn(SubmoduleDao.prototype, 'findSubmoduleById').mockResolvedValue({
+      _id: '507f1f77bcf86cd799439022',
+      moduleId: '507f1f77bcf86cd799439033'
+    } as any);
+    jest.spyOn(ContentItemDao.prototype, 'findContentItemById').mockResolvedValue({
+      _id: '507f1f77bcf86cd799439044',
+      submoduleId: '507f1f77bcf86cd799439022',
+      type: 'video',
+      ref_id: '507f1f77bcf86cd799439055',
+      title: 'Intro Video',
+      max_score: 0,
+      order: 1,
+      toObject: function () {
+        return this;
+      }
+    } as any);
   });
 
   describe('Course Endpoints', () => {
@@ -249,8 +277,14 @@ describe('Course Service Integration & Content Attach Tests', () => {
 
       jest.spyOn(ContentItemDao.prototype, 'findContentItemById').mockResolvedValue({
         _id: '507f1f77bcf86cd799439044',
+        submoduleId: '507f1f77bcf86cd799439022',
         type: 'video',
         max_score: 10
+      } as any);
+
+      jest.spyOn(SubmoduleDao.prototype, 'findSubmoduleById').mockResolvedValue({
+        _id: '507f1f77bcf86cd799439022',
+        moduleId: '507f1f77bcf86cd799439033'
       } as any);
 
       const { default: CourseProgressDao } = await import('../shared/dao/courseProgress.dao.js');

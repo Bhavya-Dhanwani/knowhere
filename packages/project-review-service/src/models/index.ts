@@ -5,3 +5,4 @@ export * from './Evidence.model.js';
 export * from './Evaluation.model.js';
 export * from './Ranking.model.js';
 export * from './ReplayTrace.model.js';
+export * from './JudgeOverrideAudit.model.js';

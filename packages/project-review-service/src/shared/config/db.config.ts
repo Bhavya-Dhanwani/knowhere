@@ -9,6 +9,7 @@ async function connectDB(): Promise<void> {
     logger.info('Connected to MongoDB database (projectReviewService)');
   } catch (error) {
     logger.error({ err: error }, 'Failed to connect to MongoDB');
+    throw error;
   }
 }
 

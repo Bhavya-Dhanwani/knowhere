@@ -2,6 +2,7 @@
 import { ContentItemType } from '../shared/models/contentItem.model.js';
 import NotFound from '../shared/errors/NotFound.error.js';
 import BadRequest from '../shared/errors/BadRequest.error.js';
+import env from '../shared/config/env.config.js';
 
 export interface ExternalReferenceData {
   title: string;
@@ -32,19 +33,16 @@ class ExternalContentService {
   // validates ref_id and returns denormalized title and max_score
   async validateAndFetchReference(
     type: ContentItemType,
-    ref_id: string
+    ref_id: string,
+    authorization?: string
   ): Promise<ExternalReferenceData> {
     const handler = this.validateHandlers.get(type);
 
     if (!handler) {
-      // In production or phase 2, this makes HTTP call to target service
-      // If no handler is registered yet, ensure ref_id is valid string or throw
-      if (!ref_id) {
-        throw new BadRequest('Invalid reference ID');
-      }
+      const item = await this.fetchRemote(type, ref_id, authorization);
       return {
-        title: `Attached ${type} resource`,
-        max_score: type === 'mcq' || type === 'coding' ? 10 : 0
+        title: String(item.title || `${type} resource`),
+        max_score: Number(item.max_score ?? 0)
       };
     }
 
@@ -60,15 +58,15 @@ class ExternalContentService {
   }
 
   // fetches full display details for clicked item in detail call
-  async fetchItemDetail(type: ContentItemType, ref_id: string): Promise<Record<string, unknown>> {
+  async fetchItemDetail(
+    type: ContentItemType,
+    ref_id: string,
+    authorization?: string
+  ): Promise<Record<string, unknown>> {
     const handler = this.detailHandlers.get(type);
 
     if (!handler) {
-      return {
-        type,
-        ref_id,
-        status: 'ready'
-      };
+      return this.fetchRemote(type, ref_id, authorization);
     }
 
     const detail = await handler(ref_id);
@@ -77,6 +75,29 @@ class ExternalContentService {
     }
 
     return detail;
+  }
+
+  private async fetchRemote(
+    type: ContentItemType,
+    refId: string,
+    authorization?: string
+  ): Promise<Record<string, any>> {
+    if (!refId) throw new BadRequest('Invalid reference ID');
+    const target =
+      type === 'video' || type === 'notes'
+        ? `${env.MEDIA_SERVICE_URL}/api/resources/${encodeURIComponent(refId)}`
+        : type === 'mcq'
+          ? `${env.MCQ_SERVICE_URL}/api/questions/${encodeURIComponent(refId)}/display`
+          : `${env.CODING_SERVICE_URL}/api/questions/${encodeURIComponent(refId)}/display`;
+    const response = await fetch(target, {
+      headers: authorization ? { authorization } : {},
+      signal: AbortSignal.timeout(5_000)
+    });
+    if (response.status === 404) throw new NotFound(`Referenced ${type} '${refId}' was not found.`);
+    if (!response.ok)
+      throw new BadRequest(`Unable to validate referenced ${type} (HTTP ${response.status}).`);
+    const payload = await response.json();
+    return payload?.data || payload;
   }
 }
 

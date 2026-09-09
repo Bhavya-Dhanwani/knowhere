@@ -21,19 +21,12 @@ export function authMiddleware(req: AuthenticatedRequest, res: Response, next: N
   const accessToken = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : authHeader;
 
   if (!accessToken) {
-    // Permissive fallback for standalone testing: inject mock admin
-    req.user = {
-      userId: 'test-admin',
-      name: 'Test Administrator',
-      email: 'test-admin@lms.local',
-      role: 'admin',
-      isVerified: true
-    };
-    return next();
+    throw new Unauthorized('Authentication is required.');
   }
 
   try {
     const decoded = jwt.verify(accessToken, env.ACCESS_TOKEN_SECRET) as Record<string, unknown>;
+    if (decoded.isVerified === false) throw new Unauthorized('Email verification is required.');
     const userId = (decoded.userId || decoded._id || decoded.id) as string;
 
     if (!userId) {
@@ -45,7 +38,7 @@ export function authMiddleware(req: AuthenticatedRequest, res: Response, next: N
       userId: userId.toString(),
       name: decoded.name as string | undefined,
       email: decoded.email as string | undefined,
-      role: (decoded.role as string) || 'judge',
+      role: (decoded.role as string) || 'trainee',
       isVerified: decoded.isVerified as boolean | undefined
     };
 

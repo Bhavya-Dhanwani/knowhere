@@ -8,6 +8,8 @@ import { useNotifications } from '../hooks/useNotifications';
 import { useHeatmapData } from '../hooks/useHeatmapData';
 import { Header } from '../../../shared/ui/Header';
 import { Spinner } from '../../../shared/ui/Spinner';
+import { authApi } from '../../auth/api/authApi';
+import { useQueryClient } from '@tanstack/react-query';
 import { CourseList } from './CourseList';
 import { NotificationPanel } from './NotificationPanel';
 import { ProgressHeatmap } from './ProgressHeatmap';
@@ -16,14 +18,20 @@ export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const user = useSelector((state: RootState) => state.auth.user);
+  const queryClient = useQueryClient();
 
   const { data: courses, isLoading: coursesLoading } = useEnrolledCourses();
   const { data: notifications, isLoading: notifsLoading } = useNotifications();
   const { data: heatmapData, isLoading: heatmapLoading } = useHeatmapData();
 
-  const handleLogout = () => {
-    dispatch(logout());
-    navigate('/');
+  const handleLogout = async () => {
+    try {
+      await authApi.logout();
+    } finally {
+      queryClient.clear();
+      dispatch(logout());
+      navigate('/');
+    }
   };
 
   const handleResumeCourse = (courseId: string) => {

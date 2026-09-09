@@ -48,6 +48,13 @@ spec:
                 secretKeyRef:
                   name: database
                   key: MCQ_DB
+            - name: USER_SERVICE_URL
+              value: 'http://user-service:80'
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: internal-services
+                  key: token
             - name: PORT
               value: '5004'
             - name: NODE_ENV

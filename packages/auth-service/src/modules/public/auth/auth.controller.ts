@@ -9,16 +9,19 @@ import {
   ForgotPasswordRequest,
   ResetPasswordRequest
 } from './auth.types.js';
+import type { VerifyEmailRequest } from './auth.types.js';
 import env from '../../../shared/config/env.config.js';
 import {
   OTP_EXPIRY_TIME,
-  RESET_PASSWORD_TOKEN_EXPIRY_TIME
+  RESET_PASSWORD_TOKEN_EXPIRY_TIME,
+  REFRESH_TOKEN_COOKIE_OPTIONS
 } from '../../../shared/constants/tokens.constants.js';
 import UserDao from '../../../shared/dao/user.dao.js';
 import SessionDao from '../../../shared/dao/session.dao.js';
 import TokenDao from '../../../shared/dao/token.dao.js';
 import NotFound from '../../../shared/errors/NotFound.error.js';
 import Unauthorized from '../../../shared/errors/Unauthorized.error.js';
+import BadRequest from '../../../shared/errors/BadRequest.error.js';
 import Created from '../../../shared/responses/Created.response.js';
 import Ok from '../../../shared/responses/Ok.response.js';
 import createSession from '../../../shared/utils/createSession.util.js';
@@ -50,7 +53,7 @@ class AuthController {
   // signup a new user
   signup = async (req: SignupRequest, res: Response) => {
     // getting the user from the request body
-    const { name, email, password, token } = req.body;
+    const { name, email, password } = req.body;
 
     // creating a new user using the user dao
     const user = await this.userDao.createUser({
@@ -58,7 +61,7 @@ class AuthController {
       email,
       password,
       providers: ['local'],
-      isVerified: token ? true : false
+      isVerified: false
     });
 
     // creating session and tokens
@@ -75,7 +78,7 @@ class AuthController {
       expiresAt: new Date(Date.now() + OTP_EXPIRY_TIME)
     });
 
-    sendMail(
+    await sendMail(
       user.email,
       'Verify your email',
       `Your OTP is ${otp}. It will expire in ${OTP_EXPIRY_TIME / 60000} minutes.`
@@ -86,6 +89,17 @@ class AuthController {
       user: sanitizedUser,
       accessToken: accessToken
     });
+  };
+
+  verifyEmail = async (req: VerifyEmailRequest, res: Response) => {
+    const { email, token } = req.body;
+    const user = await this.userDao.findUserByEmail(email.toLowerCase());
+    if (!user) throw new NotFound('User not found.');
+    const verification = await this.tokenDao.consumeValidToken(token, 'otp', user.email);
+    if (!verification) throw new BadRequest('Verification token is invalid or expired.');
+    user.isVerified = true;
+    await user.save();
+    return Ok(res, 'Email verified successfully');
   };
 
   // login an existing user
@@ -109,6 +123,7 @@ class AuthController {
     if (!isPasswordValid) {
       throw new Unauthorized('Invalid email or password');
     }
+    if (!user.isVerified) throw new Unauthorized('Verify your email before signing in.');
 
     // creating session and tokens
     const { sanitizedUser, accessToken, refreshToken } = await createSession(user, res);
@@ -199,7 +214,7 @@ class AuthController {
     }
 
     // clearing the refresh token cookie
-    res.clearCookie('refreshToken');
+    res.clearCookie('refreshToken', REFRESH_TOKEN_COOKIE_OPTIONS);
 
     // returning success response
     return Ok(res, 'Logged out successfully');
@@ -214,7 +229,7 @@ class AuthController {
     await this.sessionDao.deleteSessionByUserId(userId);
 
     // clearing the refresh token cookie
-    res.clearCookie('refreshToken');
+    res.clearCookie('refreshToken', REFRESH_TOKEN_COOKIE_OPTIONS);
 
     // returning success response
     return Ok(res, 'Logged out from all sessions successfully');
@@ -273,18 +288,8 @@ class AuthController {
       maxAge: 10 * 60 * 1000
     });
 
-    // capturing client origin from referer or query
-    let clientOrigin = env.FRONTEND_URL;
-    if (req.headers.referer) {
-      try {
-        clientOrigin = new URL(req.headers.referer).origin;
-      } catch (err) {
-        // ignore invalid URL referers
-      }
-    }
-
     // setting the google oauth origin cookie
-    res.cookie('googleOAuthOrigin', clientOrigin, {
+    res.cookie('googleOAuthOrigin', env.FRONTEND_URL, {
       httpOnly: true,
       secure: env.NODE_ENV === 'production',
       sameSite: 'lax',
@@ -299,12 +304,15 @@ class AuthController {
   googleCallback = async (req: Request, res: Response) => {
     const { code, state, error } = req.query;
     const cookies = req.cookies as Record<string, string>;
-    const clientOrigin = cookies?.googleOAuthOrigin || env.FRONTEND_URL;
+    const clientOrigin =
+      cookies?.googleOAuthOrigin === env.FRONTEND_URL
+        ? cookies.googleOAuthOrigin
+        : env.FRONTEND_URL;
     const redirectToLogin = `${clientOrigin}/login?googleError=1`;
 
     // redirecting to login if state is invalid or error
     const isStateValid = state && state === cookies?.googleOAuthState;
-    if (error || !code || !state || (!isStateValid && env.NODE_ENV === 'production')) {
+    if (error || !code || !state || !isStateValid) {
       res.clearCookie('googleOAuthState');
       res.clearCookie('googleOAuthOrigin');
       return res.redirect(redirectToLogin);
@@ -362,7 +370,7 @@ class AuthController {
     });
 
     // sending the reset password token as a magic link to the email
-    sendMail(
+    await sendMail(
       email,
       'Your reset Password Link',
       `Click the link and reset your password <a href="${env.FRONTEND_URL}/reset-password/${resetToken}">Reset Your Password</a>`
@@ -378,7 +386,7 @@ class AuthController {
     const { token, password } = req.body;
 
     // finding the reset token in the database
-    const resetToken = await this.tokenDao.findTokenByValue(token);
+    const resetToken = await this.tokenDao.consumeValidToken(token, 'reset');
 
     if (!resetToken) {
       throw new NotFound('Reset token not found.');
@@ -387,6 +395,7 @@ class AuthController {
     // finding the user from the email
     const tokenEmail = (resetToken as unknown as { email: string }).email;
     const user = await this.userDao.findUserByEmail(tokenEmail);
+    if (!user) throw new NotFound('User not found.');
 
     // setting the new password
     const userDoc = user as unknown as { password?: string; save(): Promise<unknown> };
@@ -396,7 +405,7 @@ class AuthController {
     await userDoc.save();
 
     // deleting the token after successful reset
-    await this.tokenDao.deleteTokenByValue(token);
+    await this.sessionDao.deleteSessionByUserId((user as unknown as { _id: unknown })._id);
 
     // returning success response
     return Ok(res, 'Password reset Successfully');

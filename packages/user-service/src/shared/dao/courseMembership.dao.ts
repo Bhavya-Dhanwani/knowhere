@@ -62,6 +62,18 @@ class CourseMembershipDao {
     });
   }
 
+  async countMembershipsInCourse(courseId: string) {
+    return await this.CourseMembershipModel.countDocuments({ courseId });
+  }
+
+  async findAnyActiveMembership(userId: string, roles: string[]) {
+    return await this.CourseMembershipModel.findOne({
+      userId,
+      status: 'active',
+      role: { $in: roles }
+    });
+  }
+
   // function to update a member's role or status
   async updateMembership(
     courseId: string,

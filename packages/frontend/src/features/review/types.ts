@@ -57,16 +57,32 @@ export interface ReviewSubmission {
   };
   repositoryUrl: string;
   branch: string;
+  commitHash?: string;
   liveSiteUrl?: string;
   apiSpecUrl?: string;
   rawReadmeText?: string;
   status:
     | 'SUBMITTED'
+    | 'UPDATING'
+    | 'QUEUED'
+    | 'CLONING'
     | 'DISCOVERING'
     | 'SANITIZING'
-    | 'ANALYZING'
+    | 'STATIC_ANALYSIS'
+    | 'BUILDING'
+    | 'TESTING'
+    | 'RUNTIME_ANALYSIS'
+    | 'BROWSER_ANALYSIS'
+    | 'EVIDENCE_COLLECTION'
+    | 'AI_EVALUATION'
     | 'SCORING'
+    | 'PAIRWISE_COMPARISON'
+    | 'RANKING'
+    | 'REVIEW_GENERATION'
+    | 'VALIDATION'
+    | 'REPORT_GENERATION'
     | 'EVALUATED'
+    | 'PARTIAL'
     | 'FAILED'
     | 'FLAGGED_FOR_REVIEW';
   flaggedForHumanReview: boolean;
@@ -98,9 +114,26 @@ export interface ReviewEvaluation {
   submissionId: string;
   eventId: string;
   overallScore: number;
+  overallConfidence: number;
+  evidenceCoverage: number;
+  evaluationStatus: 'COMPLETE' | 'PARTIAL';
   criterionScores: CriterionScoreResult[];
   requirementCompliance: RequirementComplianceResult[];
   synthesisSummary: string;
+  review: {
+    overview: string;
+    strengths: string[];
+    weaknesses: string[];
+    suggestions: string[];
+  };
+  provenance: {
+    engineVersion: string;
+    evaluator: string;
+    modelName?: string;
+    promptVersion: string;
+    criteriaConfigSha256: string;
+    evidenceSha256: string;
+  };
   judgeOverride?: {
     overridden: boolean;
     judgeId?: string;
@@ -135,15 +168,33 @@ export interface SanitizationAudit {
 }
 
 export interface EvidenceBundle {
+  schemaVersion?: number;
+  repository?: {
+    repositoryUrl: string;
+    requestedBranch: string;
+    commitSha: string;
+    clonedAt: string;
+    clone: ToolExecutionRecord;
+  };
   discovery?: {
+    execution: ToolExecutionRecord;
     languages: Record<string, number>;
     primaryLanguage: string;
     sbomPackageCount: number;
     openApiEndpoints: string[];
     detectedFrameworks: string[];
+    manifest?: {
+      totalFiles: number;
+      relevantFiles: number;
+      analyzedFiles: number;
+      ignoredFiles: number;
+      failedFiles: number;
+      truncated: boolean;
+    };
   };
   codeAnalysis?: {
     semgrep?: {
+      execution: ToolExecutionRecord;
       totalIssues: number;
       criticalCount: number;
       highCount: number;
@@ -157,10 +208,12 @@ export interface EvidenceBundle {
       }>;
     };
     gitleaks?: {
+      execution: ToolExecutionRecord;
       secretsFoundCount: number;
       leaks: Array<{ rule: string; file: string; line: number }>;
     };
     trivy?: {
+      execution: ToolExecutionRecord;
       vulnerabilityCount: number;
       critical: number;
       high: number;
@@ -169,16 +222,18 @@ export interface EvidenceBundle {
   };
   frontendEval?: {
     tool: string;
-    lighthouse: {
+    execution: ToolExecutionRecord;
+    lighthouse?: {
       performance: number;
       accessibility: number;
       bestPractices: number;
       seo: number;
     };
-    axeViolationsCount: number;
+    axeViolationsCount?: number;
   };
   backendEval?: {
     tool: string;
+    execution: ToolExecutionRecord;
     schemathesis?: {
       totalTests: number;
       passed: number;
@@ -200,7 +255,19 @@ export interface EvidenceBundle {
   };
 }
 
+export interface ToolExecutionRecord {
+  status: 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT' | 'UNAVAILABLE' | 'NOT_APPLICABLE';
+  attempted: boolean;
+  tool: string;
+  durationMs: number;
+  observedAt: string;
+  error?: string;
+  stdoutSha256?: string;
+  stderrSha256?: string;
+}
+
 export interface ReplayActivityTrace {
+  activityId: string;
   activityName: string;
   status: 'COMPLETED' | 'FAILED' | 'SKIPPED';
   startedAt: string;

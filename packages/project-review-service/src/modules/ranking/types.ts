@@ -11,7 +11,12 @@ export interface SubmissionEvaluationPairInput {
   teamName: string;
   overallScore: number;
   criterionScores: Record<string, number>; // criterionId -> rawScore
-  criterionDetails?: Record<string, { name: string; weight: number; justification?: string }>;
+  criterionDetails?: Record<
+    string,
+    { name: string; weight: number; confidence?: number; justification?: string }
+  >;
+  overallConfidence?: number;
+  evidenceCoverage?: number;
   vulnerabilitiesCount?: number;
   submittedAt?: Date;
   fileCount?: number;

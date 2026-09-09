@@ -91,24 +91,21 @@ class QuestionController {
         throw new NotFound(`Question with ID '${questionId}' not found.`);
       }
 
-      // Check current attempt count
-      const attemptCount = await this.attemptDao.getAttemptCount(questionId, userId);
-      if (attemptCount >= 3) {
-        throw new Forbidden('Maximum attempt limit (3) reached for this question.');
+      if (!question.options.some((option) => option.id === selected_option_id)) {
+        throw new BadRequest('selected_option_id is not an option for this question.');
       }
-
-      const attemptNumber = attemptCount + 1;
       const isCorrect = selected_option_id === question.correct_option_id;
       const scoreAwarded = isCorrect ? question.max_score : 0;
 
-      const attempt = await this.attemptDao.createAttempt({
+      const attempt = await this.attemptDao.createNextAttempt({
         questionId,
         userId,
-        attemptNumber,
         selected_option_id,
         isCorrect,
         scoreAwarded
       });
+      if (!attempt) throw new Forbidden('Maximum attempt limit (3) reached for this question.');
+      const attemptNumber = attempt.attemptNumber;
 
       return Ok(res, 'Attempt submitted successfully', {
         attemptNumber,

@@ -33,6 +33,10 @@ class CourseDao {
   async listCourses(filter: Record<string, unknown> = {}) {
     return await this.CourseModel.find(filter).sort({ createdAt: -1 });
   }
+
+  async deleteCourseById(id: string) {
+    return await this.CourseModel.findByIdAndDelete(id);
+  }
 }
 
 export default CourseDao;

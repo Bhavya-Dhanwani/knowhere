@@ -16,19 +16,26 @@ axiosClient.interceptors.request.use((config) => {
 });
 
 let isRefreshing = false;
-let queue: Array<() => void> = [];
+let queue: Array<{ resolve: () => void; reject: (reason: unknown) => void }> = [];
 
 axiosClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    if (error.response?.status === 401 && !originalRequest?._retry) {
+    const requestUrl = String(originalRequest?.url || '');
+    const isAuthOperation = /\/auth\/(login|signup|refresh|reset-password|verify-email)$/.test(
+      requestUrl
+    );
+    if (error.response?.status === 401 && !originalRequest?._retry && !isAuthOperation) {
       originalRequest._retry = true;
 
       if (isRefreshing) {
-        return new Promise((resolve) => {
-          queue.push(() => resolve(axiosClient(originalRequest)));
+        return new Promise((resolve, reject) => {
+          queue.push({
+            resolve: () => resolve(axiosClient(originalRequest)),
+            reject
+          });
         });
       }
 
@@ -43,10 +50,13 @@ axiosClient.interceptors.response.use(
         if (newAccessToken) {
           store.dispatch(setAccessToken(newAccessToken));
         }
-        queue.forEach((cb) => cb());
+        if (!newAccessToken) throw new Error('Refresh response did not include an access token.');
+        queue.forEach((entry) => entry.resolve());
         queue = [];
         return axiosClient(originalRequest);
       } catch (refreshError) {
+        queue.forEach((entry) => entry.reject(refreshError));
+        queue = [];
         store.dispatch(logout());
         window.location.href = '/';
         return Promise.reject(refreshError);

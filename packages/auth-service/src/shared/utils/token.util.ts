@@ -1,5 +1,6 @@
 // Importing modules
 import jwt from 'jsonwebtoken';
+import { randomBytes, randomInt } from 'node:crypto';
 import env from '../config/env.config.js';
 import { EXPIRY } from '../constants/tokens.constants.js';
 
@@ -15,18 +16,14 @@ function generateRefreshToken(payload: Record<string, unknown> | object) {
 
 function generateOTPToken(length = 6) {
   const min = Math.pow(10, length - 1);
-  const max = Math.pow(10, length) - 1;
-  const otp = Math.floor(Math.random() * (max - min) + min);
-  return otp.toString();
+  const maxExclusive = Math.pow(10, length);
+  return randomInt(min, maxExclusive).toString();
 }
 
 function generateResetPasswordToken(length = 32) {
-  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz';
-  let token = '';
-  for (let i = 0; i < length; i++) {
-    token += characters.charAt(Math.floor(Math.random() * characters.length));
-  }
-  return token;
+  return randomBytes(Math.ceil((length * 3) / 4))
+    .toString('base64url')
+    .slice(0, length);
 }
 
 export { generateAccessToken, generateRefreshToken, generateOTPToken, generateResetPasswordToken };

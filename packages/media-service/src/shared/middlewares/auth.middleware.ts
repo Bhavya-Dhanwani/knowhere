@@ -31,6 +31,7 @@ function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunc
   try {
     // verifying the access token using shared secret
     const decoded = jwt.verify(accessToken, env.ACCESS_TOKEN_SECRET) as Record<string, unknown>;
+    if (decoded.isVerified === false) throw new Unauthorized('Email verification is required.');
 
     const userId = (decoded.userId || decoded._id || decoded.id) as string;
     if (!userId) {

@@ -39,6 +39,7 @@ router.get('/:id', authMiddleware, getResourceByIdValidators, resourceController
 router.put(
   '/:id/status',
   authMiddleware,
+  requireRole('admin'),
   updateResourceStatusValidators,
   resourceController.updateResourceStatus
 );
