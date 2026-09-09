@@ -1,74 +1,170 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
+import { Shield, BookOpen, Sparkles, LayoutDashboard } from 'lucide-react';
 import { Logo } from './Logo';
-import { Avatar } from './Avatar';
 import { User } from '../types';
 
 export interface HeaderProps {
   user: User | null;
   onLogout: () => void;
   onNavigateHome?: () => void;
+  theme?: 'light' | 'dark';
 }
 
-export const Header: React.FC<HeaderProps> = ({ user, onLogout, onNavigateHome }) => {
+export const Header: React.FC<HeaderProps> = ({
+  user,
+  onLogout,
+  onNavigateHome,
+  theme = 'light'
+}) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isDark = theme === 'dark';
+
+  const isAdminPath = location.pathname.startsWith('/admin');
+
+  const initial = user?.name ? user.name[0].toUpperCase() : 'B';
 
   return (
-    <header className="h-16 bg-surface/50 backdrop-blur-md border-b border-white/10 px-4 md:px-8 flex items-center justify-between sticky top-0 z-40">
+    <header
+      className={`h-16 px-6 lg:px-10 flex items-center justify-between sticky top-0 z-40 shrink-0 transition-colors ${
+        isDark
+          ? 'bg-[#0e1017] border-b border-[#232532] text-white'
+          : 'bg-white border-b border-zinc-200'
+      }`}
+    >
       <div className="flex items-center gap-6">
-        <div className="cursor-pointer" onClick={onNavigateHome}>
-          <Logo size="sm" />
+        <div
+          className="cursor-pointer"
+          onClick={
+            onNavigateHome || (() => navigate(isAdminPath ? '/admin/dashboard' : '/dashboard'))
+          }
+        >
+          <Logo size="md" theme={isDark ? 'dark' : 'light'} />
         </div>
-        <nav className="hidden md:flex items-center gap-4 text-xs font-medium">
-          <Link to="/dashboard" className="text-muted hover:text-white transition-colors">
-            Dashboard
-          </Link>
-          <Link to="/review" className="text-muted hover:text-white transition-colors">
-            Project Review
-          </Link>
-          <Link
-            to="/docs"
-            className="text-primary hover:text-primary-hover transition-colors flex items-center gap-1 font-semibold"
-          >
-            <span>API Docs</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 border border-primary/30">
-              Scalar
-            </span>
-          </Link>
-        </nav>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 sm:gap-4">
+        {/* Quick Mode Switcher */}
+        {isAdminPath ? (
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-semibold transition-colors cursor-pointer"
+            title="Switch to Student Classroom"
+          >
+            <BookOpen className="w-3.5 h-3.5 text-zinc-600" />
+            <span>Student View</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => navigate('/admin/dashboard')}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold transition-colors cursor-pointer"
+            title="Switch to Admin Console"
+          >
+            <Shield className="w-3.5 h-3.5 text-blue-600" />
+            <span>Admin Console</span>
+          </button>
+        )}
+
         {user ? (
           <div className="relative">
             <button
               onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="flex items-center gap-3 p-1.5 rounded-xl hover:bg-surface border border-transparent hover:border-white/10 transition-colors focus:outline-none"
+              className={`flex items-center gap-2.5 p-1 rounded-full transition-colors focus:outline-none cursor-pointer ${
+                isDark ? 'hover:bg-white/10' : 'hover:bg-zinc-100'
+              }`}
+              title="User Account"
             >
-              <Avatar name={user.name || user.email} src={user.avatar} size="md" />
-              <div className="hidden md:block text-left">
-                <p className="text-sm font-semibold text-white leading-none">
-                  {user.name || 'Student'}
-                </p>
-                <p className="text-xs text-muted mt-1 leading-none">{user.email}</p>
+              <div
+                className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ring-1 ${
+                  isDark
+                    ? 'bg-sky-600 text-white ring-sky-500/30'
+                    : 'bg-black text-white ring-zinc-300'
+                }`}
+              >
+                {initial}
               </div>
+              <svg
+                className={`w-4 h-4 transition-transform duration-200 ${
+                  dropdownOpen ? 'rotate-180' : ''
+                } ${isDark ? 'text-gray-300' : 'text-zinc-600'}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2.5"
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
             </button>
 
             {dropdownOpen ? (
-              <div className="absolute right-0 mt-2 w-56 bg-surface border border-white/10 rounded-xl shadow-xl py-1 z-50 animate-in fade-in slide-in-from-top-1">
-                <div className="px-4 py-3 border-b border-white/5">
-                  <p className="text-sm font-semibold text-white">{user.name}</p>
-                  <p className="text-xs text-muted truncate">{user.email}</p>
-                  <span className="inline-block mt-1.5 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">
-                    {user.roles?.[0] || 'student'}
-                  </span>
+              <div
+                className={`absolute right-0 mt-2 w-60 rounded-xl shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-top-1 ${
+                  isDark
+                    ? 'bg-[#181a24] border border-[#2e3142] text-white'
+                    : 'bg-white border border-zinc-200 text-zinc-900'
+                }`}
+              >
+                <div
+                  className={`px-4 py-3 border-b ${isDark ? 'border-[#2e3142]' : 'border-zinc-100'}`}
+                >
+                  <p className="text-sm font-semibold">{user.name || 'User'}</p>
+                  <p className={`text-xs truncate ${isDark ? 'text-gray-400' : 'text-zinc-500'}`}>
+                    {user.email}
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <span className="inline-block text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-blue-500/20 text-blue-600 border border-blue-500/30">
+                      {isAdminPath ? 'admin mode' : user.roles?.[0] || 'student'}
+                    </span>
+                  </div>
                 </div>
+
+                <div className="py-1 border-b border-zinc-100">
+                  <button
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      navigate('/dashboard');
+                    }}
+                    className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer"
+                  >
+                    <LayoutDashboard className="w-3.5 h-3.5 text-zinc-500" />
+                    Student Classroom
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      navigate('/admin/dashboard');
+                    }}
+                    className="w-full text-left px-4 py-2 text-xs font-semibold text-blue-600 hover:bg-blue-50 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-blue-600" />
+                    Admin Console
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setDropdownOpen(false);
+                      navigate('/review');
+                    }}
+                    className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                    Evaluation Pipeline
+                  </button>
+                </div>
+
                 <button
                   onClick={() => {
                     setDropdownOpen(false);
                     onLogout();
                   }}
-                  className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/5 transition-colors font-medium flex items-center gap-2"
+                  className="w-full text-left px-4 py-2.5 text-xs text-red-500 hover:bg-red-500/10 transition-colors font-semibold flex items-center gap-2 cursor-pointer"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path

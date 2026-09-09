@@ -5,14 +5,16 @@ import { ReviewSubmission } from '../../models/Submission.model.js';
 import { SanitizationAudit } from '../../models/SanitizationAudit.model.js';
 import { Evidence } from '../../models/Evidence.model.js';
 import { ReviewEvaluation } from '../../models/Evaluation.model.js';
-import { EventRanking } from '../../models/Ranking.model.js';
+import { EventRanking, IEventRanking } from '../../models/Ranking.model.js';
 import { ReplayTrace } from '../../models/ReplayTrace.model.js';
 import { WorkflowRunner } from '../workflows/workflow.runner.js';
 import { RankingService } from '../ranking/ranking.service.js';
+import { ENGINEERING_DIMENSIONS, DEFAULT_DIMENSION_WEIGHTS } from '../scoring/types.js';
 import { NotFound, BadRequest } from '../../shared/errors/index.js';
 import HTTP_STATUS from '../../shared/constants/StatusCodes.constants.js';
 import { AuthenticatedRequest } from '../../shared/middlewares/auth.middleware.js';
 import logger from '../../shared/config/logger.config.js';
+import { exportService } from '../export/export.service.js';
 
 const getId = (req: Request): string =>
   (Array.isArray(req.params.id) ? req.params.id[0] : req.params.id) as string;
@@ -417,12 +419,50 @@ export class ReviewController {
     }
   }
 
+  private static isRankingRecalibrationNeeded(ranking: IEventRanking): boolean {
+    if (!ranking.leaderboard || ranking.leaderboard.length === 0) return true;
+    for (const entry of ranking.leaderboard) {
+      const dims = entry.dimensionScores || {};
+      // If legacy document without dimensionScores on entry, must recalibrate
+      if (Object.keys(dims).length === 0) return true;
+      let sum = 0;
+      for (const dim of ENGINEERING_DIMENSIONS) {
+        const d = dims[dim];
+        const sc = (d as any)?.finalScore ?? (d as any)?.score;
+        const wt = (d as any)?.weight ?? DEFAULT_DIMENSION_WEIGHTS[dim] ?? 0.1;
+        if (typeof sc === 'number') sum += sc * wt;
+      }
+      if (Math.abs(sum - entry.absoluteScore) > 0.5) return true;
+    }
+
+    if (ranking.comparisonMatrix && ranking.comparisonMatrix.length > 0) {
+      for (const entry of ranking.leaderboard) {
+        let compSum = 0;
+        let count = 0;
+        for (const row of ranking.comparisonMatrix) {
+          const sc = row.scores?.[entry.teamName] ?? row.scores?.[entry.submissionId.toString()];
+          const wt = (DEFAULT_DIMENSION_WEIGHTS as Record<string, number>)[row.dimension] ?? 0.1;
+          if (typeof sc === 'number') {
+            compSum += sc * wt;
+            count++;
+          }
+        }
+        if (count >= 5 && Math.abs(compSum - entry.absoluteScore) > 1.0) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   public async getLeaderboard(req: Request, res: Response, next: NextFunction) {
     try {
       const id = getId(req);
-      const ranking = await EventRanking.findOne({ eventId: id });
-      if (!ranking)
-        throw new NotFound(`Leaderboard not found for event: ${id}. Run compute ranking first.`);
+      let ranking: IEventRanking | null = await EventRanking.findOne({ eventId: id });
+      if (!ranking || ReviewController.isRankingRecalibrationNeeded(ranking)) {
+        ranking = await RankingService.rankEvent(id);
+      }
+      if (!ranking) throw new NotFound(`Leaderboard not found for event: ${id}`);
 
       return res.status(HTTP_STATUS.OK).json({
         success: true,
@@ -431,6 +471,8 @@ export class ReviewController {
           algorithm: ranking.algorithm,
           totalSubmissionsRanked: ranking.totalSubmissionsRanked,
           leaderboard: ranking.leaderboard,
+          closeRankingBoundaries: ranking.closeRankingBoundaries,
+          comparisonMatrix: ranking.comparisonMatrix,
           generatedAt: ranking.generatedAt
         }
       });
@@ -450,7 +492,61 @@ export class ReviewController {
         data: {
           eventId: ranking.eventId,
           totalPairwiseMatches: ranking.totalPairwiseMatches,
-          pairwiseMatrix: ranking.pairwiseMatrix
+          pairwiseMatrix: ranking.pairwiseMatrix,
+          closeRankingBoundaries: ranking.closeRankingBoundaries
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async getComparisonMatrix(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = getId(req);
+      let ranking: IEventRanking | null = await EventRanking.findOne({ eventId: id });
+      if (!ranking || ReviewController.isRankingRecalibrationNeeded(ranking)) {
+        ranking = await RankingService.rankEvent(id);
+      }
+      if (!ranking) throw new NotFound(`Comparison matrix not found for event: ${id}`);
+
+      return res.status(HTTP_STATUS.OK).json({
+        success: true,
+        data: {
+          eventId: ranking.eventId,
+          totalSubmissionsRanked: ranking.totalSubmissionsRanked,
+          comparisonMatrix: ranking.comparisonMatrix,
+          closeRankingBoundaries: ranking.closeRankingBoundaries
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async getEvidenceExplorer(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = getId(req);
+      const evaluation = await ReviewEvaluation.findOne({ submissionId: id }).lean();
+      if (!evaluation) throw new NotFound(`Evaluation not found for submission: ${id}`);
+
+      const { Evidence } = await import('../../models/Evidence.model.js');
+      const evidence = await Evidence.findOne({ submissionId: id }).lean();
+
+      return res.status(HTTP_STATUS.OK).json({
+        success: true,
+        data: {
+          submissionId: id,
+          overallScore: evaluation.overallScore,
+          objectiveScore: evaluation.objectiveScore,
+          qualitativeScore: evaluation.qualitativeScore,
+          confidenceScore: evaluation.confidenceScore,
+          dimensionScores: evaluation.dimensionScores,
+          engineeringEvidence: evaluation.engineeringEvidence,
+          highestImpactImprovements: evaluation.highestImpactImprovements,
+          reproducibility: evaluation.reproducibility,
+          discoverySummary: evidence?.discovery,
+          deterministicMetrics: evidence?.codeAnalysis?.deterministicMetrics
         }
       });
     } catch (error) {
@@ -463,34 +559,150 @@ export class ReviewController {
   public async judgeOverrideScore(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const id = getId(req);
-      const { newScore, reason } = req.body;
+      const { newScore, reason, action = 'MODIFY' } = req.body;
 
       const evaluation = await ReviewEvaluation.findOne({ submissionId: id });
       if (!evaluation) throw new NotFound(`Evaluation not found for submission: ${id}`);
 
       const originalScore = evaluation.overallScore;
 
-      evaluation.judgeOverride = {
-        overridden: true,
-        judgeId: req.user?.userId || 'manual-judge',
-        originalScore,
-        newScore,
-        reason,
-        overriddenAt: new Date()
-      };
-      evaluation.overallScore = newScore;
-      await evaluation.save();
+      if (action === 'FLAG_FOR_REVIEW') {
+        await ReviewSubmission.findByIdAndUpdate(id, {
+          flaggedForHumanReview: true,
+          flagReason: reason || 'Flagged by judge for deeper review'
+        });
+      } else if (action === 'ACCEPT') {
+        evaluation.judgeOverride = {
+          overridden: false,
+          judgeId: req.user?.userId || 'manual-judge',
+          reason: reason || 'Score accepted by judge',
+          overriddenAt: new Date()
+        };
+        await evaluation.save();
+      } else {
+        // MODIFY score
+        evaluation.judgeOverride = {
+          overridden: true,
+          judgeId: req.user?.userId || 'manual-judge',
+          originalScore,
+          newScore: typeof newScore === 'number' ? newScore : originalScore,
+          reason,
+          overriddenAt: new Date()
+        };
+        if (typeof newScore === 'number') {
+          evaluation.overallScore = newScore;
+        }
+        await evaluation.save();
+      }
 
       logger.info(
-        { submissionId: id, originalScore, newScore, judgeId: req.user?.userId },
-        'Judge override applied to evaluation score'
+        { submissionId: id, originalScore, newScore, action, judgeId: req.user?.userId },
+        'Judge action processed on evaluation'
       );
 
       return res.status(HTTP_STATUS.OK).json({
         success: true,
-        message: 'Judge score override applied successfully',
+        message: `Judge action ${action} processed successfully`,
         data: evaluation
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==================== CSV & NOTION EXPORT ====================
+
+  public async exportEventCsv(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = getId(req);
+      const csv = await exportService.generateEventCsv(id);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="event-${id}-report.csv"`);
+      return res.status(HTTP_STATUS.OK).send(csv);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async exportSubmissionCsv(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = getId(req);
+      const csv = await exportService.generateSubmissionCsv(id);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="submission-${id}-report.csv"`);
+      return res.status(HTTP_STATUS.OK).send(csv);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async exportEventNotion(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = getId(req);
+      const format = req.query.format;
+      const result = await exportService.generateEventNotionMarkdown(id);
+      if (format === 'download' || format === 'file') {
+        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="event-${id}-notion.md"`);
+        return res.status(HTTP_STATUS.OK).send(result.markdown);
+      }
+      return res.status(HTTP_STATUS.OK).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async exportSubmissionNotion(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = getId(req);
+      const format = req.query.format;
+      const result = await exportService.generateSubmissionNotionMarkdown(id);
+      if (format === 'download' || format === 'file') {
+        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="submission-${id}-notion.md"`);
+        return res.status(HTTP_STATUS.OK).send(result.markdown);
+      }
+      return res.status(HTTP_STATUS.OK).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async pushEventToNotion(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = getId(req);
+      const { apiKey, parentPageId } = req.body || {};
+      const report = await exportService.generateEventNotionMarkdown(id);
+      const result = await exportService.pushToNotion({
+        apiKey,
+        parentPageId,
+        title: report.title,
+        markdownContent: report.markdown
+      });
+      if (!result.success) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json(result);
+      }
+      return res.status(HTTP_STATUS.OK).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  public async pushSubmissionToNotion(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = getId(req);
+      const { apiKey, parentPageId } = req.body || {};
+      const report = await exportService.generateSubmissionNotionMarkdown(id);
+      const result = await exportService.pushToNotion({
+        apiKey,
+        parentPageId,
+        title: report.title,
+        markdownContent: report.markdown
+      });
+      if (!result.success) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json(result);
+      }
+      return res.status(HTTP_STATUS.OK).json(result);
     } catch (error) {
       next(error);
     }

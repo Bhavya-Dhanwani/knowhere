@@ -3,22 +3,42 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    min-height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+  }
   body {
     @apply bg-background text-white min-h-screen;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 }
 
-/* Custom subtle scrollbar */
+/* Global Hidden Scrollbar - full scrolling functionality everywhere, scrollbars visually hidden */
+html,
+body,
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+*::-webkit-scrollbar,
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  display: none !important;
+  width: 0px !important;
+  height: 0px !important;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  @apply bg-surface rounded-full;
-}
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-muted/40;
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none !important;
+    width: 0px !important;
+    height: 0px !important;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
 }

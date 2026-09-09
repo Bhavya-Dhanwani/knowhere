@@ -8,6 +8,7 @@ import EvaluationActivities from './evaluation.activities.js';
 import { ReplayTrace } from '../../models/ReplayTrace.model.js';
 import { ReviewSubmission } from '../../models/Submission.model.js';
 import { ReviewEvent } from '../../models/Event.model.js';
+import { EvaluationLogger } from '../logging/evaluation-logger.service.js';
 import env from '../../shared/config/env.config.js';
 import logger from '../../shared/config/logger.config.js';
 
@@ -15,7 +16,7 @@ export class WorkflowRunner {
   /**
    * Dispatches and executes the project evaluation workflow.
    * Tracks activity execution duration, snapshots inputs/outputs,
-   * and persists complete replay history (§20 Evaluation Replay).
+   * and persists complete replay history (Â§20 Evaluation Replay).
    */
   public static async executeEvaluation(
     input: EvaluationWorkflowInput
@@ -28,6 +29,14 @@ export class WorkflowRunner {
       { workflowId, submissionId: input.submissionId },
       'Starting durable evaluation workflow execution'
     );
+
+    // Initialize granular execution logging to disk
+    EvaluationLogger.initRun(input.submissionId, workflowId, {
+      repoUrl: input.repoUrl,
+      branch: input.branch,
+      eventId: input.eventId,
+      liveSiteUrl: input.liveSiteUrl
+    });
 
     // Update submission status to DISCOVERING
     await ReviewSubmission.findByIdAndUpdate(input.submissionId, {
@@ -86,6 +95,14 @@ export class WorkflowRunner {
           ),
         { repoUrl: input.repoUrl, branch: input.branch }
       );
+      EvaluationLogger.logStep(
+        input.submissionId,
+        workflowId,
+        1,
+        'ProjectDiscoveryActivity',
+        { repoUrl: input.repoUrl, branch: input.branch },
+        discovery
+      );
 
       // Step 2: Content Sanitization & Injection Defense Activity
       await ReviewSubmission.findByIdAndUpdate(input.submissionId, { status: 'SANITIZING' });
@@ -101,10 +118,22 @@ export class WorkflowRunner {
           ),
         { rawReadmeLength: rawReadme.length, liveUrl: input.liveSiteUrl }
       );
+      EvaluationLogger.logStep(
+        input.submissionId,
+        workflowId,
+        2,
+        'SanitizationDefenseActivity',
+        { rawReadmeLength: rawReadme.length, liveUrl: input.liveSiteUrl },
+        sanitization
+      );
 
       if (sanitization.humanReviewRequired) {
         flaggedForHumanReview = true;
         overallFinalStatus = 'FLAGGED';
+        await ReviewSubmission.findByIdAndUpdate(input.submissionId, {
+          flaggedForHumanReview: true,
+          flagReason: 'Submission content was flagged by prompt-injection defense.'
+        });
       }
 
       // Step 3: Analysis DAG (Selective based on Event Project Scope)
@@ -114,8 +143,14 @@ export class WorkflowRunner {
 
       const codeAnalysisPromise = runTrackedActivity(
         'CodeAnalysisActivity',
-        () => EvaluationActivities.runCodeAnalysisActivity(input.submissionId, input.repoUrl),
-        { repoUrl: input.repoUrl }
+        () =>
+          EvaluationActivities.runCodeAnalysisActivity(
+            input.submissionId,
+            input.repoUrl,
+            discovery.keyFileSnippets || {},
+            discovery.fileList || []
+          ),
+        { repoUrl: input.repoUrl, filesInspected: discovery.fileList?.length || 0 }
       );
 
       const frontendEvalPromise =
@@ -130,8 +165,13 @@ export class WorkflowRunner {
           : runTrackedActivity(
               'FrontendEvalActivity',
               () =>
-                EvaluationActivities.runFrontendEvalActivity(input.submissionId, input.liveSiteUrl),
-              { liveSiteUrl: input.liveSiteUrl }
+                EvaluationActivities.runFrontendEvalActivity(
+                  input.submissionId,
+                  input.liveSiteUrl,
+                  discovery.keyFileSnippets || {},
+                  discovery.fileList || []
+                ),
+              { liveSiteUrl: input.liveSiteUrl, filesInspected: discovery.fileList?.length || 0 }
             );
 
       const backendEvalPromise =
@@ -164,8 +204,21 @@ export class WorkflowRunner {
         backendEvalPromise
       ]);
 
+      EvaluationLogger.logStep(
+        input.submissionId,
+        workflowId,
+        3,
+        'CodeAndFrontendAnalysisActivity',
+        {
+          repoUrl: input.repoUrl,
+          liveSiteUrl: input.liveSiteUrl,
+          projectType
+        },
+        { codeAnalysis, frontendEval, backendEval }
+      );
+
       // Step 4: Assemble & Persist Evidence
-      await runTrackedActivity('AssembleEvidenceActivity', () =>
+      const assembledEvidence = await runTrackedActivity('AssembleEvidenceActivity', () =>
         EvaluationActivities.assembleEvidenceActivity(
           input.submissionId,
           input.eventId,
@@ -175,6 +228,14 @@ export class WorkflowRunner {
           backendEval
         )
       );
+      EvaluationLogger.logStep(
+        input.submissionId,
+        workflowId,
+        4,
+        'AssembleEvidenceActivity',
+        { submissionId: input.submissionId, eventId: input.eventId },
+        assembledEvidence
+      );
 
       // Step 5: Scoring Engine (Evidence-Grounded)
       await ReviewSubmission.findByIdAndUpdate(input.submissionId, { status: 'SCORING' });
@@ -182,6 +243,14 @@ export class WorkflowRunner {
         'EvidenceGroundedScoringActivity',
         () => EvaluationActivities.runScoringActivity(input.submissionId, input.eventId),
         { submissionId: input.submissionId, eventId: input.eventId }
+      );
+      EvaluationLogger.logStep(
+        input.submissionId,
+        workflowId,
+        5,
+        'EvidenceGroundedScoringActivity',
+        { submissionId: input.submissionId, eventId: input.eventId },
+        scoreResult
       );
 
       overallScore = scoreResult.overallScore;
@@ -194,11 +263,28 @@ export class WorkflowRunner {
       // Auto-recalibrate relative rankings and comparative insights for the event
       try {
         const { RankingService } = await import('../ranking/ranking.service.js');
-        await RankingService.rankEvent(input.eventId);
+        const rankingResult = await RankingService.rankEvent(input.eventId);
+        EvaluationLogger.logStep(
+          input.submissionId,
+          workflowId,
+          6,
+          'RelativeRankingActivity',
+          { eventId: input.eventId },
+          rankingResult
+        );
       } catch (rankErr) {
         logger.warn(
           { rankErr, eventId: input.eventId },
           'Automatic post-evaluation relative ranking generation failed'
+        );
+        EvaluationLogger.logStep(
+          input.submissionId,
+          workflowId,
+          6,
+          'RelativeRankingActivity',
+          { eventId: input.eventId },
+          null,
+          { status: 'FAILED', error: rankErr instanceof Error ? rankErr.message : String(rankErr) }
         );
       }
     } catch (err: unknown) {
@@ -209,7 +295,20 @@ export class WorkflowRunner {
 
     const totalDurationMs = Date.now() - workflowStart;
 
-    // Step 6: Persist Replay Trace (§20 Evaluation Replay)
+    // Finalize human-readable execution summary Markdown
+    EvaluationLogger.finalizeRunSummary(input.submissionId, workflowId, {
+      finalStatus: overallFinalStatus,
+      totalDurationMs,
+      overallScore,
+      steps: activitiesTrace.map((act) => ({
+        name: act.activityName,
+        durationMs: act.durationMs,
+        status: act.status,
+        keyTakeaway: act.error ? `Error: ${act.error}` : undefined
+      }))
+    });
+
+    // Step 6: Persist Replay Trace (Â§20 Evaluation Replay)
     await ReplayTrace.create({
       workflowId,
       submissionId: new Types.ObjectId(input.submissionId),

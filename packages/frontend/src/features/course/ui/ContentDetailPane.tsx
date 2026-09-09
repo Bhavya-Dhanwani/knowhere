@@ -59,9 +59,9 @@ export const ContentDetailPane: React.FC<ContentDetailPaneProps> = ({
   const isCompleted = item.status === 'completed';
 
   return (
-    <div className="bg-surface border border-white/10 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xl flex flex-col font-sans">
       {/* Media / Code / Quiz Area */}
-      <div className="relative bg-black aspect-video w-full flex items-center justify-center overflow-hidden">
+      <div className="relative bg-slate-950 aspect-video w-full flex items-center justify-center overflow-hidden">
         {item.type === 'video' && item.videoUrl ? (
           <video
             controls
@@ -127,23 +127,23 @@ export const ContentDetailPane: React.FC<ContentDetailPaneProps> = ({
       </div>
 
       {/* Lesson Meta and Action Bar */}
-      <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-white/10">
+      <div className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-slate-100 bg-white">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">
+            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
               {item.type}
             </span>
             {item.durationMinutes ? (
-              <span className="text-xs text-muted">&#8226; {item.durationMinutes} mins</span>
+              <span className="text-xs text-slate-500">&#8226; {item.durationMinutes} mins</span>
             ) : null}
-            <span className="text-xs text-warning font-semibold">
+            <span className="text-xs text-amber-600 font-semibold">
               &#8226; {item.marks} Total Marks
             </span>
           </div>
 
-          <h2 className="text-lg font-bold text-white tracking-tight truncate">{item.title}</h2>
+          <h2 className="text-lg font-bold text-slate-900 tracking-tight truncate">{item.title}</h2>
           {item.description ? (
-            <p className="text-xs text-muted mt-1 leading-relaxed line-clamp-2">
+            <p className="text-xs text-slate-500 mt-1 leading-relaxed line-clamp-2">
               {item.description}
             </p>
           ) : null}
@@ -151,7 +151,7 @@ export const ContentDetailPane: React.FC<ContentDetailPaneProps> = ({
 
         <div className="shrink-0 flex items-center gap-3">
           {isCompleted ? (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/10 border border-success/30 text-success text-xs font-semibold">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"

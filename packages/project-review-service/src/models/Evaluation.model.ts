@@ -30,6 +30,28 @@ export interface IReviewEvaluation extends Document {
   submissionId: Types.ObjectId;
   eventId: Types.ObjectId;
   overallScore: number; // 0 - 100
+  objectiveScore?: number;
+  qualitativeScore?: number;
+  confidenceScore?: number;
+  dimensionScores?: Record<string, any>;
+  engineeringEvidence?: Array<{
+    dimension: string;
+    observedFact: string;
+    interpretation: string;
+    aiJudgment: string;
+    scoreImpact: number;
+    sourceFiles: string[];
+  }>;
+  highestImpactImprovements?: string[];
+  reproducibility?: {
+    evaluationId: string;
+    repoUrl: string;
+    commitHash?: string;
+    timestamp: string;
+    frameworkVersion: string;
+    modelVersion: string;
+    promptsVersion: string;
+  };
   criterionScores: ICriterionScoreResult[];
   requirementCompliance: IRequirementComplianceResult[];
   synthesisSummary: string;
@@ -87,6 +109,13 @@ const ReviewEvaluationSchema = new Schema<IReviewEvaluation>(
     },
     eventId: { type: Schema.Types.ObjectId, ref: 'ReviewEvent', required: true, index: true },
     overallScore: { type: Number, required: true, min: 0, max: 100 },
+    objectiveScore: { type: Number, min: 0, max: 100 },
+    qualitativeScore: { type: Number, min: 0, max: 100 },
+    confidenceScore: { type: Number, min: 0, max: 100 },
+    dimensionScores: { type: Schema.Types.Mixed, default: {} },
+    engineeringEvidence: { type: [Schema.Types.Mixed], default: [] },
+    highestImpactImprovements: { type: [String], default: [] },
+    reproducibility: { type: Schema.Types.Mixed, default: null },
     criterionScores: { type: [CriterionScoreResultSchema], default: [] },
     requirementCompliance: { type: [RequirementComplianceResultSchema], default: [] },
     synthesisSummary: { type: String, default: '' },

@@ -7,9 +7,13 @@ import { LoginPage } from '../features/auth/ui/LoginPage';
 import { SignupPage } from '../features/auth/ui/SignupPage';
 import { DashboardPage } from '../features/dashboard/ui/DashboardPage';
 import { CoursePage } from '../features/course/ui/CoursePage';
+import { SubmodulePage } from '../features/course/ui/SubmodulePage';
 
 import { ReviewDashboard } from '../features/review/ui/ReviewDashboard';
 import { PublicSubmissionPage } from '../features/review/ui/PublicSubmissionPage';
+
+import { AdminDashboardPage } from '../features/admin/ui/AdminDashboardPage';
+import { AdminCoursePage } from '../features/admin/ui/AdminCoursePage';
 
 import { ApiDocsPage } from '../features/docs/ui/ApiDocsPage';
 
@@ -70,6 +74,30 @@ export const router = createBrowserRouter([
     path: '/course/:courseId',
     loader: requireAuth,
     element: <CoursePage />
+  },
+  {
+    path: '/course/:courseId/submodule/:submoduleId',
+    loader: requireAuth,
+    element: <SubmodulePage />
+  },
+  {
+    path: '/course/:courseId/submodule/:submoduleId/lesson/:lessonId',
+    loader: requireAuth,
+    element: <SubmodulePage />
+  },
+  {
+    path: '/admin',
+    loader: () => redirect('/admin/dashboard')
+  },
+  {
+    path: '/admin/dashboard',
+    loader: requireAuth,
+    element: <AdminDashboardPage />
+  },
+  {
+    path: '/admin/course/:courseId',
+    loader: requireAuth,
+    element: <AdminCoursePage />
   },
   {
     path: '/review',

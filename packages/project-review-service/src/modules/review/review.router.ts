@@ -136,6 +136,22 @@ router.get('/events/:id/leaderboard', eventIdValidators, validate, controller.ge
 // GET /api/review/events/:id/pairwise - Pairwise comparison matrix & rationales
 router.get('/events/:id/pairwise', eventIdValidators, validate, controller.getPairwiseMatrix);
 
+// GET /api/review/events/:id/comparison-matrix - RE:DESIGN 9-Dimension Comparison Matrix
+router.get(
+  '/events/:id/comparison-matrix',
+  eventIdValidators,
+  validate,
+  controller.getComparisonMatrix
+);
+
+// GET /api/review/submissions/:id/evidence-explorer - RE:DESIGN Evidence Explorer
+router.get(
+  '/submissions/:id/evidence-explorer',
+  submissionIdValidators,
+  validate,
+  controller.getEvidenceExplorer
+);
+
 /*
   ==================== JUDGE OVERRIDE ====================
 */
@@ -146,6 +162,48 @@ router.post(
   judgeOverrideValidators,
   validate,
   controller.judgeOverrideScore
+);
+
+/*
+  ==================== CSV & NOTION EXPORT ====================
+*/
+
+// GET /api/review/events/:id/export/csv - Download comprehensive event CSV
+router.get('/events/:id/export/csv', eventIdValidators, validate, controller.exportEventCsv);
+
+// GET /api/review/events/:id/export/notion - Export Notion markdown for event
+router.get('/events/:id/export/notion', eventIdValidators, validate, controller.exportEventNotion);
+
+// POST /api/review/events/:id/export/notion/push - Push event report directly to Notion workspace
+router.post(
+  '/events/:id/export/notion/push',
+  eventIdValidators,
+  validate,
+  controller.pushEventToNotion
+);
+
+// GET /api/review/submissions/:id/export/csv - Download detailed single-submission CSV
+router.get(
+  '/submissions/:id/export/csv',
+  submissionIdValidators,
+  validate,
+  controller.exportSubmissionCsv
+);
+
+// GET /api/review/submissions/:id/export/notion - Export Notion markdown for submission
+router.get(
+  '/submissions/:id/export/notion',
+  submissionIdValidators,
+  validate,
+  controller.exportSubmissionNotion
+);
+
+// POST /api/review/submissions/:id/export/notion/push - Push submission report directly to Notion workspace
+router.post(
+  '/submissions/:id/export/notion/push',
+  submissionIdValidators,
+  validate,
+  controller.pushSubmissionToNotion
 );
 
 export default router;

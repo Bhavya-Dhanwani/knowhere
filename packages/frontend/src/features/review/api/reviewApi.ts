@@ -168,16 +168,137 @@ export const reviewApi = {
     return data.data;
   },
 
+  async getComparisonMatrix(eventId: string): Promise<{
+    eventId: string;
+    totalSubmissionsRanked: number;
+    comparisonMatrix: Array<{
+      dimension: string;
+      dimensionName: string;
+      scores: Record<string, number>;
+    }>;
+    closeRankingBoundaries?: Array<{
+      subAId: string;
+      subBId: string;
+      subAName: string;
+      subBName: string;
+      scoreDelta: number;
+      boundaryReason: string;
+    }>;
+  }> {
+    const { data } = await reviewClient.get(`/review/events/${eventId}/comparison-matrix`);
+    return data.data;
+  },
+
+  async getEvidenceExplorer(submissionId: string): Promise<{
+    submissionId: string;
+    overallScore: number;
+    objectiveScore?: number;
+    qualitativeScore?: number;
+    confidenceScore?: number;
+    dimensionScores?: Record<string, any>;
+    engineeringEvidence?: Array<{
+      dimension: string;
+      observedFact: string;
+      interpretation: string;
+      aiJudgment: string;
+      scoreImpact: number;
+      sourceFiles: string[];
+    }>;
+    highestImpactImprovements?: string[];
+    reproducibility?: any;
+    discoverySummary?: any;
+    deterministicMetrics?: any;
+  }> {
+    const { data } = await reviewClient.get(
+      `/review/submissions/${submissionId}/evidence-explorer`
+    );
+    return data.data;
+  },
+
   // Judge Override
   async overrideScore(
     submissionId: string,
-    newScore: number,
-    reason: string
+    payload: {
+      action?: 'ACCEPT' | 'MODIFY' | 'FLAG_FOR_REVIEW';
+      newScore?: number;
+      reason: string;
+    }
   ): Promise<ReviewEvaluation> {
-    const { data } = await reviewClient.post(`/review/submissions/${submissionId}/override`, {
-      newScore,
-      reason
-    });
+    const { data } = await reviewClient.post(
+      `/review/submissions/${submissionId}/override`,
+      payload
+    );
     return data.data;
+  },
+
+  // ==================== CSV & NOTION EXPORT ====================
+
+  async downloadEventCsv(eventId: string, eventName: string = 'event'): Promise<void> {
+    const response = await reviewClient.get(`/review/events/${eventId}/export/csv`, {
+      responseType: 'blob'
+    });
+    const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const sanitizedName = eventName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    link.setAttribute('download', `${sanitizedName}-ranking-report.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  async downloadSubmissionCsv(
+    submissionId: string,
+    teamName: string = 'submission'
+  ): Promise<void> {
+    const response = await reviewClient.get(`/review/submissions/${submissionId}/export/csv`, {
+      responseType: 'blob'
+    });
+    const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const sanitizedName = teamName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    link.setAttribute('download', `${sanitizedName}-review-report.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  async getEventNotionExport(eventId: string): Promise<{ title: string; markdown: string }> {
+    const { data } = await reviewClient.get(`/review/events/${eventId}/export/notion`);
+    return data.data;
+  },
+
+  async getSubmissionNotionExport(
+    submissionId: string
+  ): Promise<{ title: string; markdown: string }> {
+    const { data } = await reviewClient.get(`/review/submissions/${submissionId}/export/notion`);
+    return data.data;
+  },
+
+  async pushEventToNotion(
+    eventId: string,
+    payload: { apiKey?: string; parentPageId?: string }
+  ): Promise<{ success: boolean; pageId?: string; url?: string; error?: string }> {
+    const { data } = await reviewClient.post(
+      `/review/events/${eventId}/export/notion/push`,
+      payload
+    );
+    return data;
+  },
+
+  async pushSubmissionToNotion(
+    submissionId: string,
+    payload: { apiKey?: string; parentPageId?: string }
+  ): Promise<{ success: boolean; pageId?: string; url?: string; error?: string }> {
+    const { data } = await reviewClient.post(
+      `/review/submissions/${submissionId}/export/notion/push`,
+      payload
+    );
+    return data;
   }
 };

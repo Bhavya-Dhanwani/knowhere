@@ -18,7 +18,7 @@ export class EvaluationActivities {
    */
   public static async runDiscoveryActivity(submissionId: string, repoUrl: string, branch = 'main') {
     logger.info({ submissionId, repoUrl, branch }, 'Activity: Discovery started');
-    const discoveryResult = await ProjectDiscoveryRunner.discover(repoUrl, branch);
+    const discoveryResult = await ProjectDiscoveryRunner.discover(repoUrl, branch, submissionId);
     return discoveryResult;
   }
 
@@ -60,20 +60,30 @@ export class EvaluationActivities {
   }
 
   /**
-   * Activity 3: Code & Security Analysis (Semgrep + Gitleaks + Trivy)
+   * Activity 3: Code & Security Analysis (Native SAST + Secrets + Syntax Audit)
    */
-  public static async runCodeAnalysisActivity(submissionId: string, repoUrl: string) {
-    logger.info({ submissionId }, 'Activity: Code & Security Analysis started');
-    const codeAnalysisResult = await CodeAnalysisRunner.analyze(repoUrl);
+  public static async runCodeAnalysisActivity(
+    submissionId: string,
+    repoUrl: string,
+    fileSnippets: Record<string, string> = {},
+    fileList: string[] = []
+  ) {
+    logger.info({ submissionId, repoUrl }, 'Activity: Code & Security Analysis started');
+    const codeAnalysisResult = await CodeAnalysisRunner.analyze(repoUrl, fileSnippets, fileList);
     return codeAnalysisResult;
   }
 
   /**
-   * Activity 4: Frontend & Browser Evaluation (Playwright + Lighthouse + axe-core)
+   * Activity 4: Frontend & Browser Evaluation (Playwright + Lighthouse + axe-core / Offline static audit)
    */
-  public static async runFrontendEvalActivity(submissionId: string, liveSiteUrl?: string) {
-    logger.info({ submissionId }, 'Activity: Frontend & Browser Evaluation started');
-    const frontendResult = await FrontendEvalRunner.evaluate(liveSiteUrl);
+  public static async runFrontendEvalActivity(
+    submissionId: string,
+    liveSiteUrl?: string,
+    fileSnippets: Record<string, string> = {},
+    fileList: string[] = []
+  ) {
+    logger.info({ submissionId, liveSiteUrl }, 'Activity: Frontend & Browser Evaluation started');
+    const frontendResult = await FrontendEvalRunner.evaluate(liveSiteUrl, fileSnippets, fileList);
     return frontendResult;
   }
 
@@ -151,7 +161,8 @@ export class EvaluationActivities {
         name: event.name,
         description: event.description,
         problemStatement: event.problemStatement,
-        projectType: event.projectType
+        projectType: event.projectType,
+        requiresLiveUrl: event.requiresLiveUrl
       }
     );
 

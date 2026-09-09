@@ -9,31 +9,32 @@ export interface CourseListProps {
 
 export const CourseList: React.FC<CourseListProps> = ({ courses, onResume }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<'progress' | 'recent'>('recent');
+  const [sortBy, setSortBy] = useState<'oldest' | 'newest' | 'progress'>('oldest');
 
   const filteredCourses = useMemo(() => {
     return courses
       .filter((c) => c.title.toLowerCase().includes(searchTerm.toLowerCase()))
       .sort((a, b) => {
         if (sortBy === 'progress') return b.progress - a.progress;
-        return 0;
+        if (sortBy === 'newest') return b.id.localeCompare(a.id);
+        // default: oldest
+        return a.id.localeCompare(b.id);
       });
   }, [courses, searchTerm, sortBy]);
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-4">
       {/* Header and Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Your Enrolled Courses</h2>
-          <p className="text-xs text-muted mt-1">Pick up right where you left off</p>
-        </div>
+      <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
+        <h2 className="text-lg sm:text-xl font-bold text-zinc-900 tracking-tight">
+          Your Enrolled Courses
+        </h2>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {/* Search bar */}
           <div className="relative">
             <svg
-              className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -47,35 +48,48 @@ export const CourseList: React.FC<CourseListProps> = ({ courses, onResume }) => 
             </svg>
             <input
               type="text"
-              placeholder="Search courses..."
+              placeholder="Search"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 pr-3 py-1.5 bg-surface border border-white/10 rounded-lg text-sm text-white placeholder:text-muted/50 focus:outline-none focus:border-primary w-48 sm:w-60 transition-all"
+              className="pl-8 pr-3 py-1.5 bg-white border border-zinc-200 rounded-lg text-xs text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-blue-500 w-44 sm:w-60 transition-all shadow-xs"
             />
           </div>
 
           {/* Sort dropdown */}
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'progress' | 'recent')}
-            className="px-3 py-1.5 bg-surface border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-primary transition-all cursor-pointer"
-          >
-            <option value="recent">Recently Bought</option>
-            <option value="progress">Highest Progress</option>
-          </select>
+          <div className="relative">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'oldest' | 'newest' | 'progress')}
+              className="appearance-none pl-3 pr-7 py-1.5 bg-white border border-zinc-200 rounded-lg text-xs font-semibold text-zinc-700 focus:outline-none focus:border-blue-500 transition-all cursor-pointer shadow-xs"
+            >
+              <option value="oldest">Sort By Oldest ⇅</option>
+              <option value="newest">Sort By Newest ⇅</option>
+              <option value="progress">Highest Progress ⇅</option>
+            </select>
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-400">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
+                />
+              </svg>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Course Grid */}
+      {/* Course List Stack */}
       {filteredCourses.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="flex flex-col gap-3.5">
           {filteredCourses.map((course) => (
             <CourseCard key={course.id} {...course} onResume={onResume} />
           ))}
         </div>
       ) : (
-        <div className="bg-surface/50 border border-white/10 rounded-2xl p-12 text-center">
-          <p className="text-sm text-muted">No matching enrolled courses found.</p>
+        <div className="bg-white border border-zinc-200 rounded-2xl p-12 text-center shadow-xs">
+          <p className="text-sm text-zinc-500">No matching enrolled courses found.</p>
         </div>
       )}
     </div>

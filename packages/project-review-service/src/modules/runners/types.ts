@@ -1,3 +1,5 @@
+import { ProjectDeepDiscovery } from '../ai/discovery.agent.js';
+
 export interface DiscoveryResult {
   languages: Record<string, number>;
   primaryLanguage: string;
@@ -10,6 +12,9 @@ export interface DiscoveryResult {
   rawReadme?: string;
   fileList?: string[];
   keyFileSnippets?: Record<string, string>;
+  deepAnalysis?: ProjectDeepDiscovery;
+  repoValid?: boolean;
+  repoErrorMessage?: string;
 }
 
 export interface SemgrepFinding {
@@ -32,6 +37,91 @@ export interface TrivyVulnerability {
   package: string;
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
   fixedIn?: string;
+}
+
+export interface DeterministicStaticMetrics {
+  linesOfCode: {
+    totalLines: number;
+    codeLines: number;
+    commentLines: number;
+    blankLines: number;
+  };
+  fileCount: number;
+  moduleCount: number;
+  cyclomaticComplexity: {
+    averagePerFunction: number;
+    maxComplexity: number;
+    complexFunctionsCount: number;
+    highComplexityFunctions: Array<{
+      file: string;
+      line: number;
+      name: string;
+      complexity: number;
+    }>;
+  };
+  codeDuplication: {
+    duplicatedBlockCount: number;
+    estimatedDuplicationPercentage: number;
+    duplicateInstances: Array<{
+      fileA: string;
+      lineA: number;
+      fileB: string;
+      lineB: number;
+      lineCount: number;
+    }>;
+  };
+  testMetrics: {
+    hasTests: boolean;
+    testFileCount: number;
+    testCaseCount: number;
+    testFrameworks: string[];
+    assertionCount: number;
+    testTypes: ('unit' | 'integration' | 'e2e')[];
+  };
+  typeSafety: {
+    usesTypeScript: boolean;
+    typeCoveragePercent: number;
+    anyTypeCount: number;
+    strictModeEnabled: boolean;
+  };
+  codeSmellsAndTechDebt: {
+    todoCount: number;
+    fixmeCount: number;
+    hackCount: number;
+    workaroundCount: number;
+    largeFilesCount: number;
+    largeFunctionsCount: number;
+    deepNestingCount: number;
+    markers: Array<{
+      type: 'TODO' | 'FIXME' | 'HACK' | 'WORKAROUND';
+      file: string;
+      line: number;
+      text: string;
+    }>;
+    largeEntities: Array<{
+      type: 'FILE' | 'FUNCTION';
+      name: string;
+      file: string;
+      line: number;
+      lineCount: number;
+    }>;
+  };
+  securityAndLint: {
+    secretLeaksCount: number;
+    criticalVulnsCount: number;
+    highVulnsCount: number;
+    mediumVulnsCount: number;
+    syntaxIssuesCount: number;
+    dangerousSinksCount: number;
+  };
+  observedFacts: Array<{
+    dimension: string;
+    fact: string;
+    interpretation: string;
+    severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+    sourceFile: string;
+    line?: number;
+  }>;
 }
 
 export interface CodeAnalysisResult {
@@ -58,10 +148,17 @@ export interface CodeAnalysisResult {
     low: number;
     cves: TrivyVulnerability[];
   };
+  deterministicMetrics?: DeterministicStaticMetrics;
 }
 
 export interface FrontendEvalResult {
-  tool: 'Playwright + Lighthouse + axe-core';
+  /** The tools actually used. Never imply a browser audit when one was not run. */
+  tool: string;
+  assessmentMode?: 'BROWSER' | 'HTTP_PROBE' | 'STATIC' | 'NOT_RUN';
+  staticAuditScore?: number;
+  isReachable?: boolean;
+  httpStatus?: number;
+  liveError?: string;
   lighthouse: {
     performance: number; // 0 - 100
     accessibility: number; // 0 - 100
@@ -74,7 +171,10 @@ export interface FrontendEvalResult {
 }
 
 export interface BackendEvalResult {
-  tool: 'Schemathesis + OWASP ZAP + k6';
+  /** The tools actually used. Never report fabricated Schemathesis/k6/ZAP output. */
+  tool: string;
+  assessmentMode?: 'OPENAPI_STATIC' | 'HTTP_PROBE' | 'NOT_RUN';
+  assessmentNote?: string;
   schemathesis: {
     totalTests: number;
     passed: number;

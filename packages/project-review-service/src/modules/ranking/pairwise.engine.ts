@@ -1,8 +1,15 @@
 import {
   SubmissionEvaluationPairInput,
   PairwiseComparisonResult,
-  BradleyTerryRating
+  BradleyTerryRating,
+  DimensionPairwiseComparison,
+  RedesignWhyThisRankExplanation
 } from './types.js';
+import {
+  ENGINEERING_DIMENSIONS,
+  DIMENSION_DISPLAY_NAMES,
+  EngineeringDimension
+} from '../scoring/types.js';
 import {
   IRelativeComparison,
   ISelfImprovement,
@@ -12,14 +19,15 @@ import {
 
 export class PairwiseEngine {
   /**
-   * Compares two submissions across all criteria, determining head-to-head winner and margin.
+   * Compares two submissions across all criteria and all 9 RE:DESIGN engineering dimensions,
+   * determining head-to-head winner, margin, and dimension-level rationales.
    */
   public static compare(
     a: SubmissionEvaluationPairInput,
     b: SubmissionEvaluationPairInput
   ): PairwiseComparisonResult {
     const criterionIds = Array.from(
-      new Set([...Object.keys(a.criterionScores), ...Object.keys(b.criterionScores)])
+      new Set([...Object.keys(a.criterionScores || {}), ...Object.keys(b.criterionScores || {})])
     );
 
     let aWins = 0;
@@ -41,97 +49,191 @@ export class PairwiseEngine {
       }
     }
 
+    // Compare across the 9 RE:DESIGN Internal Engineering Dimensions
+    const dimensionComparisons: Record<string, DimensionPairwiseComparison> = {};
+    let dimAWins = 0;
+    let dimBWins = 0;
+
+    for (const dim of ENGINEERING_DIMENSIONS) {
+      const scoreA = a.dimensionScores?.[dim]?.finalScore ?? a.criterionScores[dim] ?? 0;
+      const scoreB = b.dimensionScores?.[dim]?.finalScore ?? b.criterionScores[dim] ?? 0;
+      const diff = scoreA - scoreB;
+      const dName = DIMENSION_DISPLAY_NAMES[dim] || dim;
+
+      let winnerKey: 'A' | 'B' | 'TIE' | 'INSUFFICIENT_EVIDENCE' = 'TIE';
+      let reason = '';
+
+      if (scoreA === 0 && scoreB === 0) {
+        winnerKey = 'INSUFFICIENT_EVIDENCE';
+        reason = `Both submissions lacked analyzable evidence for ${dName}.`;
+      } else if (Math.abs(diff) < 0.5) {
+        winnerKey = 'TIE';
+        reason = `Parity in ${dName}: both achieved matching score (~${scoreA.toFixed(1)}).`;
+      } else if (diff > 0) {
+        winnerKey = 'A';
+        dimAWins++;
+        const strengthA =
+          a.dimensionScores?.[dim]?.strengths?.[0] ||
+          `Higher evaluated ${dName} score (${scoreA.toFixed(1)} vs ${scoreB.toFixed(1)})`;
+        reason = `${a.teamName} wins on ${dName}: ${strengthA}.`;
+      } else {
+        winnerKey = 'B';
+        dimBWins++;
+        const strengthB =
+          b.dimensionScores?.[dim]?.strengths?.[0] ||
+          `Higher evaluated ${dName} score (${scoreB.toFixed(1)} vs ${scoreA.toFixed(1)})`;
+        reason = `${b.teamName} wins on ${dName}: ${strengthB}.`;
+      }
+
+      const sources = [
+        ...(a.dimensionScores?.[dim]?.findings?.flatMap((f) => f.sourceFiles) || []),
+        ...(b.dimensionScores?.[dim]?.findings?.flatMap((f) => f.sourceFiles) || [])
+      ];
+
+      dimensionComparisons[dim] = {
+        dimension: dim,
+        dimensionName: dName,
+        winner: winnerKey,
+        winnerTeamName: winnerKey === 'A' ? a.teamName : winnerKey === 'B' ? b.teamName : 'TIE',
+        scoreA,
+        scoreB,
+        reason,
+        sourceEvidence: Array.from(new Set(sources)).slice(0, 5)
+      };
+    }
+
     let winner: PairwiseComparisonResult['winner'] = 'TIE';
     let margin = 0;
     let rationale = '';
     let tieBreakApplied = false;
+    const scoreDiff = a.overallScore - b.overallScore;
 
-    if (aWins > bWins) {
-      winner = a.submissionId;
-      margin = aWins - bWins;
-      rationale = `${a.teamName} outperformed ${b.teamName} on ${aWins}/${criterionIds.length} criteria.`;
-    } else if (bWins > aWins) {
-      winner = b.submissionId;
-      margin = bWins - aWins;
-      rationale = `${b.teamName} outperformed ${a.teamName} on ${bWins}/${criterionIds.length} criteria.`;
-    } else {
-      // Tie on criteria wins - inspect overall score
-      const scoreDiff = Math.abs(a.overallScore - b.overallScore);
-      if (scoreDiff > 0.01) {
-        if (a.overallScore > b.overallScore) {
+    const hasDimensions =
+      (a.dimensionScores && Object.keys(a.dimensionScores).length > 0) ||
+      (b.dimensionScores && Object.keys(b.dimensionScores).length > 0);
+
+    // 1. If 9-dimension evaluations exist, head-to-head winner is governed by engineering dimension wins
+    if (hasDimensions && (dimAWins > 0 || dimBWins > 0)) {
+      if (dimAWins > dimBWins) {
+        winner = a.submissionId;
+        margin = dimAWins - dimBWins;
+        rationale = `${a.teamName} outperformed ${b.teamName} across ${dimAWins}/9 engineering dimensions (composite score ${a.overallScore.toFixed(1)} vs ${b.overallScore.toFixed(1)}).`;
+      } else if (dimBWins > dimAWins) {
+        winner = b.submissionId;
+        margin = dimBWins - dimAWins;
+        rationale = `${b.teamName} outperformed ${a.teamName} across ${dimBWins}/9 engineering dimensions (composite score ${b.overallScore.toFixed(1)} vs ${a.overallScore.toFixed(1)}).`;
+      } else if (Math.abs(scoreDiff) > 0.01) {
+        // Dimension wins tied, break tie by overall composite score
+        if (scoreDiff > 0) {
           winner = a.submissionId;
-          margin = 0.5;
-          rationale = `Equal criteria wins (${aWins}-${bWins}); ${a.teamName} wins tie-breaker by overall weighted score (${a.overallScore} vs ${b.overallScore}).`;
+          margin = 1;
+          rationale = `Tied on dimension wins (${dimAWins}/9); ${a.teamName} wins on composite score (${a.overallScore.toFixed(1)} vs ${b.overallScore.toFixed(1)}).`;
         } else {
           winner = b.submissionId;
-          margin = 0.5;
-          rationale = `Equal criteria wins (${aWins}-${bWins}); ${b.teamName} wins tie-breaker by overall weighted score (${b.overallScore} vs ${a.overallScore}).`;
-        }
-      } else {
-        // EXACT TIE on criteria wins AND overall score (e.g. both scored 90, 95, 90)
-        tieBreakApplied = true;
-        const vulnA = a.vulnerabilitiesCount || 0;
-        const vulnB = b.vulnerabilitiesCount || 0;
-        const reqA = a.requirementCountFulfilled || 0;
-        const reqB = b.requirementCountFulfilled || 0;
-        const timeA = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
-        const timeB = b.submittedAt ? new Date(b.submittedAt).getTime() : 0;
-
-        if (vulnA !== vulnB) {
-          if (vulnA < vulnB) {
-            winner = a.submissionId;
-            margin = 0.25;
-            rationale = `Identical test marks (${a.overallScore}/100); ${a.teamName} wins technical tie-breaker on code cleanliness (${vulnA} security findings vs ${vulnB}).`;
-          } else {
-            winner = b.submissionId;
-            margin = 0.25;
-            rationale = `Identical test marks (${b.overallScore}/100); ${b.teamName} wins technical tie-breaker on code cleanliness (${vulnB} security findings vs ${vulnA}).`;
-          }
-        } else if (reqA !== reqB) {
-          if (reqA > reqB) {
-            winner = a.submissionId;
-            margin = 0.25;
-            rationale = `Identical test marks (${a.overallScore}/100); ${a.teamName} wins tie-breaker with more verified problem statement requirements fulfilled (${reqA} vs ${reqB}).`;
-          } else {
-            winner = b.submissionId;
-            margin = 0.25;
-            rationale = `Identical test marks (${b.overallScore}/100); ${b.teamName} wins tie-breaker with more verified problem statement requirements fulfilled (${reqB} vs ${reqA}).`;
-          }
-        } else if (timeA !== timeB && timeA > 0 && timeB > 0) {
-          const diffMinutes = Math.abs(Math.round((timeA - timeB) / 60000));
-          if (timeA < timeB) {
-            winner = a.submissionId;
-            margin = 0.25;
-            rationale = `Identical test marks (${a.overallScore}/100) and clean metrics; ${a.teamName} wins first-to-achieve tie-breaker (submitted ${diffMinutes > 0 ? `${diffMinutes}m ` : ''}earlier).`;
-          } else {
-            winner = b.submissionId;
-            margin = 0.25;
-            rationale = `Identical test marks (${b.overallScore}/100) and clean metrics; ${b.teamName} wins first-to-achieve tie-breaker (submitted ${diffMinutes > 0 ? `${diffMinutes}m ` : ''}earlier).`;
-          }
-        } else {
-          // Deterministic hash tie-break as ultimate fallback
-          const cmp = a.submissionId.toString().localeCompare(b.submissionId.toString());
-          if (cmp <= 0) {
-            winner = a.submissionId;
-            margin = 0.1;
-            rationale = `Identical test marks (${a.overallScore}/100); rank position finalized via deterministic hash comparison.`;
-          } else {
-            winner = b.submissionId;
-            margin = 0.1;
-            rationale = `Identical test marks (${b.overallScore}/100); rank position finalized via deterministic hash comparison.`;
-          }
+          margin = 1;
+          rationale = `Tied on dimension wins (${dimBWins}/9); ${b.teamName} wins on composite score (${b.overallScore.toFixed(1)} vs ${a.overallScore.toFixed(1)}).`;
         }
       }
     }
+
+    // 2. If winner not determined by dimensions, evaluate overall score & criteria
+    if (winner === 'TIE') {
+      if (Math.abs(scoreDiff) > 0.01) {
+        if (scoreDiff > 0) {
+          winner = a.submissionId;
+          margin =
+            aWins !== bWins
+              ? Math.abs(aWins - bWins)
+              : Math.max(1, Math.min(5, Math.round(scoreDiff / 10)));
+          rationale = `${a.teamName} outperformed ${b.teamName} on ${aWins}/${criterionIds.length} criteria (weighted score ${a.overallScore.toFixed(1)} vs ${b.overallScore.toFixed(1)}).`;
+        } else {
+          winner = b.submissionId;
+          margin =
+            aWins !== bWins
+              ? Math.abs(aWins - bWins)
+              : Math.max(1, Math.min(5, Math.round(Math.abs(scoreDiff) / 10)));
+          rationale = `${b.teamName} outperformed ${a.teamName} on ${bWins}/${criterionIds.length} criteria (weighted score ${b.overallScore.toFixed(1)} vs ${a.overallScore.toFixed(1)}).`;
+        }
+      } else if (aWins > bWins) {
+        winner = a.submissionId;
+        margin = aWins - bWins;
+        rationale = `Equal overall score (${a.overallScore.toFixed(1)}); ${a.teamName} wins tie-breaker on individual criteria wins (${aWins} vs ${bWins}).`;
+      } else if (bWins > aWins) {
+        winner = b.submissionId;
+        margin = bWins - aWins;
+        rationale = `Equal overall score (${b.overallScore.toFixed(1)}); ${b.teamName} wins tie-breaker on individual criteria wins (${bWins} vs ${aWins}).`;
+      }
+    }
+
+    if (winner === 'TIE') {
+      // EXACT TIE on criteria wins AND overall score
+      tieBreakApplied = true;
+      const vulnA = a.vulnerabilitiesCount || 0;
+      const vulnB = b.vulnerabilitiesCount || 0;
+      const reqA = a.requirementCountFulfilled || 0;
+      const reqB = b.requirementCountFulfilled || 0;
+      const timeA = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
+      const timeB = b.submittedAt ? new Date(b.submittedAt).getTime() : 0;
+
+      if (vulnA !== vulnB) {
+        if (vulnA < vulnB) {
+          winner = a.submissionId;
+          margin = 0.25;
+          rationale = `Identical test marks (${a.overallScore}/100); ${a.teamName} wins technical tie-breaker on code cleanliness (${vulnA} security findings vs ${vulnB}).`;
+        } else {
+          winner = b.submissionId;
+          margin = 0.25;
+          rationale = `Identical test marks (${b.overallScore}/100); ${b.teamName} wins technical tie-breaker on code cleanliness (${vulnB} security findings vs ${vulnA}).`;
+        }
+      } else if (reqA !== reqB) {
+        if (reqA > reqB) {
+          winner = a.submissionId;
+          margin = 0.25;
+          rationale = `Identical test marks (${a.overallScore}/100); ${a.teamName} wins tie-breaker with more verified problem statement requirements fulfilled (${reqA} vs ${reqB}).`;
+        } else {
+          winner = b.submissionId;
+          margin = 0.25;
+          rationale = `Identical test marks (${b.overallScore}/100); ${b.teamName} wins tie-breaker with more verified problem statement requirements fulfilled (${reqB} vs ${reqA}).`;
+        }
+      } else if (timeA !== timeB && timeA > 0 && timeB > 0) {
+        const diffMinutes = Math.abs(Math.round((timeA - timeB) / 60000));
+        if (timeA < timeB) {
+          winner = a.submissionId;
+          margin = 0.25;
+          rationale = `Identical test marks (${a.overallScore}/100) and clean metrics; ${a.teamName} wins first-to-achieve tie-breaker (submitted ${diffMinutes > 0 ? `${diffMinutes}m ` : ''}earlier).`;
+        } else {
+          winner = b.submissionId;
+          margin = 0.25;
+          rationale = `Identical test marks (${b.overallScore}/100) and clean metrics; ${b.teamName} wins first-to-achieve tie-breaker (submitted ${diffMinutes > 0 ? `${diffMinutes}m ` : ''}earlier).`;
+        }
+      } else {
+        const cmp = a.submissionId.toString().localeCompare(b.submissionId.toString());
+        if (cmp <= 0) {
+          winner = a.submissionId;
+          margin = 0.1;
+          rationale = `Identical test marks (${a.overallScore}/100); rank position finalized via deterministic hash comparison.`;
+        } else {
+          winner = b.submissionId;
+          margin = 0.1;
+          rationale = `Identical test marks (${b.overallScore}/100); rank position finalized via deterministic hash comparison.`;
+        }
+      }
+    }
+
+    // Flag contradiction when pairwise dimension wins contradict initial overall score rank
+    const contradictsInitialOrder =
+      (scoreDiff > 0 && dimBWins > dimAWins + 1) || (scoreDiff < 0 && dimAWins > dimBWins + 1);
 
     return {
       subA: a.submissionId,
       subB: b.submissionId,
       winner,
       criterionWins,
+      dimensionComparisons,
       margin,
       rationale,
-      tieBreakApplied
+      tieBreakApplied,
+      contradictsInitialOrder
     };
   }
 
@@ -274,25 +376,25 @@ export class PairwiseEngine {
 
     // Strict multi-tier deterministic sorting to PREVENT RANK COLLISIONS
     candidates.sort((a, b) => {
-      // Tier 1: Latent Bradley-Terry rating (full precision)
+      // Tier 1: Absolute overall score (primary ground truth of evaluation rubric)
+      const absDiff = b.sub.overallScore - a.sub.overallScore;
+      if (Math.abs(absDiff) > 0.01) {
+        return absDiff;
+      }
+
+      // Tier 2: Latent Bradley-Terry rating (full precision)
       const latentDiff = b.rawLatent - a.rawLatent;
       if (Math.abs(latentDiff) > 1e-6) {
         return latentDiff;
       }
 
-      // Tier 2: Head-to-head match result between a and b
+      // Tier 3: Head-to-head match result between a and b
       const directMatch = matchLookup.get(
         `${a.sub.submissionId.toString()}_${b.sub.submissionId.toString()}`
       );
       if (directMatch && directMatch.winner !== 'TIE') {
         if (directMatch.winner.toString() === a.sub.submissionId.toString()) return -1;
         if (directMatch.winner.toString() === b.sub.submissionId.toString()) return 1;
-      }
-
-      // Tier 3: Absolute overall score
-      const absDiff = b.sub.overallScore - a.sub.overallScore;
-      if (Math.abs(absDiff) > 1e-4) {
-        return absDiff;
       }
 
       // Tier 4: Security & Cleanliness (fewer vulnerabilities/issues)
@@ -682,6 +784,130 @@ export class PairwiseEngine {
       }
     };
 
+    // Helper: Build RE:DESIGN "Why Am I #2?" and Relative Comparison Explanation
+    const buildWhyAmIExplanation = (
+      c: InternalCandidate,
+      currentRank: number,
+      allCandidates: InternalCandidate[]
+    ): RedesignWhyThisRankExplanation => {
+      const champ = allCandidates[0];
+      const isChamp = currentRank === 1;
+      const prevCandidate = currentRank > 1 ? allCandidates[currentRank - 2] : null;
+      const nextCandidate = currentRank < allCandidates.length ? allCandidates[currentRank] : null;
+
+      // Ranked above next project
+      let rankedAboveNext = null;
+      if (nextCandidate) {
+        const keyAdvantages: string[] = [];
+        for (const dim of ENGINEERING_DIMENSIONS) {
+          const myScore =
+            c.sub.dimensionScores?.[dim]?.finalScore ?? c.sub.criterionScores[dim] ?? 0;
+          const theirScore =
+            nextCandidate.sub.dimensionScores?.[dim]?.finalScore ??
+            nextCandidate.sub.criterionScores[dim] ??
+            0;
+          if (myScore > theirScore + 1.0) {
+            keyAdvantages.push(
+              `Better ${DIMENSION_DISPLAY_NAMES[dim]} (+${(myScore - theirScore).toFixed(1)} pts)`
+            );
+          }
+        }
+        if (keyAdvantages.length === 0 && c.sub.overallScore >= nextCandidate.sub.overallScore) {
+          keyAdvantages.push('Consistent execution across engineering rubrics');
+        }
+        rankedAboveNext = {
+          targetTeamName: nextCandidate.sub.teamName,
+          targetScore: nextCandidate.sub.overallScore,
+          keyAdvantages: keyAdvantages.slice(0, 4),
+          reason: `Ranked above ${nextCandidate.sub.teamName} (#${currentRank + 1}) due to stronger technical quality and lower technical debt.`
+        };
+      }
+
+      // Ranked below previous project
+      let rankedBelowPrevious = null;
+      if (prevCandidate) {
+        const keyDeficits: string[] = [];
+        const higherRankedAdvantages: string[] = [];
+        const yourAdvantagesOverThem: string[] = [];
+
+        for (const dim of ENGINEERING_DIMENSIONS) {
+          const myScore =
+            c.sub.dimensionScores?.[dim]?.finalScore ?? c.sub.criterionScores[dim] ?? 0;
+          const theirScore =
+            prevCandidate.sub.dimensionScores?.[dim]?.finalScore ??
+            prevCandidate.sub.criterionScores[dim] ??
+            0;
+          const dName = DIMENSION_DISPLAY_NAMES[dim];
+          if (theirScore > myScore + 1.0) {
+            keyDeficits.push(`Lower ${dName} (-${(theirScore - myScore).toFixed(1)} pts)`);
+            higherRankedAdvantages.push(dName);
+          } else if (myScore > theirScore + 1.0) {
+            yourAdvantagesOverThem.push(dName);
+          }
+        }
+
+        rankedBelowPrevious = {
+          targetTeamName: prevCandidate.sub.teamName,
+          targetScore: prevCandidate.sub.overallScore,
+          keyDeficits: keyDeficits.slice(0, 4),
+          higherRankedAdvantages: higherRankedAdvantages.slice(0, 3),
+          yourAdvantagesOverThem: yourAdvantagesOverThem.slice(0, 3),
+          reason: `Ranked below ${prevCandidate.sub.teamName} (#${currentRank - 1}) primarily due to deficits in ${
+            higherRankedAdvantages.join(', ') || 'overall evaluation criteria'
+          }.`
+        };
+      }
+
+      // Comparison with champion (#1)
+      let comparisonWithChampion = null;
+      if (!isChamp && champ) {
+        const champAdvantages: string[] = [];
+        const yourAdvOverChamp: string[] = [];
+        for (const dim of ENGINEERING_DIMENSIONS) {
+          const myScore =
+            c.sub.dimensionScores?.[dim]?.finalScore ?? c.sub.criterionScores[dim] ?? 0;
+          const champScore =
+            champ.sub.dimensionScores?.[dim]?.finalScore ?? champ.sub.criterionScores[dim] ?? 0;
+          const dName = DIMENSION_DISPLAY_NAMES[dim];
+          if (champScore > myScore + 1.0) {
+            champAdvantages.push(dName);
+          } else if (myScore > champScore + 1.0) {
+            yourAdvOverChamp.push(dName);
+          }
+        }
+        comparisonWithChampion = {
+          championTeamName: champ.sub.teamName,
+          championScore: champ.sub.overallScore,
+          championKeyStrengths: champAdvantages.slice(0, 3),
+          yourAdvantagesOverChampion: yourAdvOverChamp.slice(0, 3)
+        };
+      }
+
+      const improvements = c.sub.highestImpactImprovements || [
+        'Reduce architectural coupling between data models and transport handlers.',
+        'Extract repeated validation logic into shared utility modules.',
+        'Increase meaningful automated integration test coverage.'
+      ];
+
+      return {
+        submissionId: c.sub.submissionId,
+        rank: currentRank,
+        score: c.sub.overallScore,
+        confidenceScore: c.sub.confidenceScore || 90,
+        whyThisRankHeadline: isChamp
+          ? `Champion (#1): Top overall engineering quality across ${ENGINEERING_DIMENSIONS.length} evaluation dimensions.`
+          : `Rank #${currentRank}: Outperformed #${currentRank + 1} on core engineering, trailed #${
+              currentRank - 1
+            } on architectural boundaries.`,
+        whyRankedAboveBelow: {
+          rankedAboveNext,
+          rankedBelowPrevious
+        },
+        comparisonWithChampion,
+        highestImpactImprovements: improvements
+      };
+    };
+
     // Build finalized collision-free results with relative analysis & self suggestions
     const results: BradleyTerryRating[] = candidates.map((c, idx) => {
       const currentRank = idx + 1;
@@ -702,6 +928,7 @@ export class PairwiseEngine {
 
       const relativeGrading = buildRelativeGrading(c, currentRank);
       const rankReason = computeRankReason(c, currentRank, candidates);
+      const whyAmIExplanation = buildWhyAmIExplanation(c, currentRank, candidates);
 
       return {
         submissionId: c.sub.submissionId,
@@ -713,6 +940,7 @@ export class PairwiseEngine {
         rankReason,
         relativeGrading,
         discrepancyAnomaly: false,
+        whyAmIExplanation,
         relativeAnalysis: {
           comparedToAbove,
           comparedToBelow,

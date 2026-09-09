@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { HeatmapCell } from './HeatmapCell';
 import { HeatmapData, HeatmapDay } from '../../../shared/types';
 
@@ -7,8 +7,6 @@ export interface ProgressHeatmapProps {
 }
 
 export const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({ data }) => {
-  const [page, setPage] = useState(0);
-  const WEEKS_PER_PAGE = 10;
   const DAYS_PER_WEEK = 7;
 
   // Group all days into 7-day columns
@@ -21,68 +19,24 @@ export const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({ data }) => {
     return result;
   }, [data.days]);
 
-  const maxPages = Math.max(Math.ceil(weeks.length / WEEKS_PER_PAGE) - 1, 0);
-
+  // Display 16 weeks so it fills the container edge-to-edge
   const displayedWeeks = useMemo(() => {
-    const start = page * WEEKS_PER_PAGE;
-    return weeks.slice(start, start + WEEKS_PER_PAGE);
-  }, [weeks, page]);
+    return weeks.slice(-16);
+  }, [weeks]);
 
   return (
-    <div className="bg-surface border border-white/10 rounded-2xl p-5 shadow-lg flex flex-col">
-      {/* Header with Activity Count & Pagination */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-sm font-bold text-white tracking-tight">Activity Heatmap</h3>
-          <p className="text-xs text-primary font-medium mt-0.5">
-            Crushed {data.totalActivities} activities this quarter
-          </p>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => setPage((p) => Math.max(p - 1, 0))}
-            disabled={page === 0}
-            className="p-1.5 rounded-lg bg-background border border-white/10 text-muted hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="Previous weeks"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-          </button>
-          <button
-            onClick={() => setPage((p) => Math.min(p + 1, maxPages))}
-            disabled={page >= maxPages}
-            className="p-1.5 rounded-lg bg-background border border-white/10 text-muted hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            title="Next weeks"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        </div>
+    <div className="bg-white border border-zinc-200/90 rounded-2xl p-5 shadow-xs flex flex-col">
+      {/* Title & Subtitle */}
+      <div>
+        <h3 className="text-base font-bold text-zinc-900 tracking-tight">Progress Heatmap</h3>
+        <p className="text-xs text-blue-600 font-semibold mt-0.5">
+          Crushed {data.totalActivities} activities so far!
+        </p>
       </div>
 
-      {/* Grid Container */}
-      <div className="overflow-x-auto pb-2">
-        <div className="flex gap-1.5 min-w-max items-center">
-          {/* Day of week labels */}
-          <div className="flex flex-col gap-1.5 text-[9px] text-muted font-medium pr-1 select-none">
-            <span className="h-3 flex items-center">Mon</span>
-            <span className="h-3 flex items-center opacity-0">Tue</span>
-            <span className="h-3 flex items-center">Wed</span>
-            <span className="h-3 flex items-center opacity-0">Thu</span>
-            <span className="h-3 flex items-center">Fri</span>
-            <span className="h-3 flex items-center opacity-0">Sat</span>
-            <span className="h-3 flex items-center opacity-0">Sun</span>
-          </div>
-
-          {/* Weeks Columns */}
+      {/* Grid Container Box */}
+      <div className="border border-zinc-200/80 bg-zinc-50/70 rounded-xl p-3.5 my-3">
+        <div className="flex w-full justify-between items-center">
           {displayedWeeks.map((week, wIndex) => (
             <div key={wIndex} className="flex flex-col gap-1.5">
               {week.map((day, dIndex) => (
@@ -94,17 +48,21 @@ export const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({ data }) => {
       </div>
 
       {/* Footer Legend */}
-      <div className="flex items-center justify-between text-[11px] text-muted mt-3 pt-3 border-t border-white/5">
-        <span>
-          Streak: <strong className="text-white font-semibold">{data.currentStreak} days</strong>
-        </span>
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between text-[11px] pt-0.5">
+        <button
+          type="button"
+          className="text-zinc-500 hover:text-zinc-800 transition-colors text-left font-normal cursor-pointer"
+        >
+          Learn how we count activities
+        </button>
+
+        <div className="flex items-center gap-1.5 select-none text-zinc-400">
           <span>Less</span>
-          <div className="w-2.5 h-2.5 rounded-[2px] bg-white/5 border border-white/5" />
-          <div className="w-2.5 h-2.5 rounded-[2px] bg-primary/30 border border-primary/20" />
-          <div className="w-2.5 h-2.5 rounded-[2px] bg-primary/50 border border-primary/40" />
-          <div className="w-2.5 h-2.5 rounded-[2px] bg-primary/80 border border-primary/60" />
-          <div className="w-2.5 h-2.5 rounded-[2px] bg-primary border border-primary" />
+          <div className="w-2.5 h-2.5 rounded-[2px] bg-slate-200" />
+          <div className="w-2.5 h-2.5 rounded-[2px] bg-blue-200" />
+          <div className="w-2.5 h-2.5 rounded-[2px] bg-blue-400" />
+          <div className="w-2.5 h-2.5 rounded-[2px] bg-blue-500" />
+          <div className="w-2.5 h-2.5 rounded-[2px] bg-blue-600" />
           <span>More</span>
         </div>
       </div>

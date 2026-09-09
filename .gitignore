@@ -8,3 +8,6 @@ DS_Store
 .npm_cache
 secrets.yml
 .pnpm-store/
+.eval_logs/
+eval_logs/
+*.eval.log

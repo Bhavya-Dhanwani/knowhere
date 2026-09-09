@@ -12,6 +12,7 @@ export interface EventEvaluationContext {
   description?: string;
   problemStatement?: string;
   projectType: string;
+  requiresLiveUrl?: boolean;
 }
 
 export class MistralScoringAgent {
@@ -28,6 +29,40 @@ export class MistralScoringAgent {
     claims: ExtractedNeutralClaims,
     eventContext?: EventEvaluationContext
   ): Promise<EvaluationResult | null> {
+    const fileList = evidence.discovery?.fileList || [];
+    const filesCount = fileList.length;
+
+    // IMMEDIATE DISQUALIFICATION / ZERO SCORE GUARD:
+    // If the repository contains 0 files (invalid link, uncloneable, or empty),
+    // NEVER call the LLM and NEVER award any starter points. Award flat 0.
+    if (filesCount === 0) {
+      logger.warn(
+        { submissionId },
+        'Submission repository has 0 files or is unreachable: issuing immediate 0 score'
+      );
+      const zeroCriteria = criteria.map((c) => ({
+        criterionId: c.id,
+        name: c.name,
+        rawScore: 0,
+        confidence: 1.0,
+        evidenceCitations: ['0 repository files discovered'],
+        justification: `Disqualified: Repository contains 0 files or is unreachable. No code was submitted to evaluate for "${c.name}".`
+      }));
+      const zeroRequirements = requirements.map((r) => ({
+        requirementId: r.id,
+        title: r.title,
+        status: 'NOT_FULFILLED' as const,
+        evidenceSummary:
+          'Repository is unreachable, non-existent, or completely empty: 0 files submitted.'
+      }));
+      return {
+        criterionScores: zeroCriteria,
+        requirementCompliance: zeroRequirements,
+        synthesisSummary:
+          'Submission disqualified: 0 code files found. Repository is unreachable or completely empty.'
+      };
+    }
+
     if (!defaultKeyPool.hasKeys()) {
       return null;
     }
@@ -41,6 +76,9 @@ export class MistralScoringAgent {
     const eventDesc = eventContext?.description || '';
     const problemStatement = eventContext?.problemStatement || '';
     const projectType = eventContext?.projectType || 'FULLSTACK';
+    const requiresLiveUrl = eventContext?.requiresLiveUrl ?? false;
+    const isLiveSiteReachable = evidence.frontendEval?.isReachable ?? false;
+    const liveSiteError = evidence.frontendEval?.liveError || '';
 
     const systemPrompt = [
       'You are a rigorous, highly discerning senior technical judge and code evaluator in the Project Review Engine.',
@@ -48,14 +86,26 @@ export class MistralScoringAgent {
       eventDesc ? `Event Description: "${eventDesc}".` : '',
       problemStatement ? `Problem Statement: "${problemStatement}".` : '',
       `Project Scope / Type: "${projectType}".`,
+      requiresLiveUrl ? 'IMPORTANT: This event MANDATES a functional live website deployment.' : '',
       '',
-      '=== CRITICAL JUDGING PHILOSOPHY: SCOPE, EFFORT & IMPLEMENTATION DEPTH ===',
-      '1. IMPLEMENTATION EFFORT & SCOPE ARE THE PRIMARY DIFFERENTIATORS:',
+      '=== CRITICAL JUDGING PHILOSOPHY: LIVE SITE & REPOSITORY TRUTHFULNESS ===',
+      '1. LIVE SITE STATUS & REACHABILITY ENFORCEMENT:',
+      isLiveSiteReachable
+        ? '   - The live site was verified reachable and loaded successfully.'
+        : `   - WARNING: The live site URL is COMPLETELY UNREACHABLE or DEAD (${liveSiteError || 'DNS failure / connection refused'}).`,
+      !isLiveSiteReachable
+        ? '   - For ANY criterion evaluating "Look of the site", visual design, or live frontend, you MUST award a rawScore of 0! A dead/broken URL cannot receive design marks!'
+        : '',
+      !isLiveSiteReachable && requiresLiveUrl
+        ? '   - Since this event strictly requires a live URL and the URL is dead, mark the core functionality requirement as NOT_FULFILLED.'
+        : '',
+      '',
+      '2. IMPLEMENTATION EFFORT & SCOPE ARE THE PRIMARY DIFFERENTIATORS:',
       '   - An ambitious, creative multi-page website with multiple interconnected HTML pages, rich semantic markup, audio/multimedia assets, and extensive lines of code represents high technical effort and mastery.',
       '   - A basic beginner starter project with only a single simple HTML file (30-50 lines of text, generic <div> tags, no navigation, single image) represents minimal beginner effort.',
       '   - NEVER award top scores (80-100) to a minimal 1-page beginner project just because its few lines have no catastrophic syntax errors!',
       '',
-      '2. STRICT SCORE CALIBRATION ANCHOR BANDS (0 - 100 SCALE):',
+      '3. STRICT SCORE CALIBRATION ANCHOR BANDS (0 - 100 SCALE):',
       '   - 85 - 100 (Exemplary / Comprehensive Project):',
       '     * Built a complete multi-page website (3+ interconnected HTML pages with functional cross-navigation) or an exceptionally rich, deep single-page application.',
       '     * Rich semantic HTML5 tags throughout (<header>, <nav>, <main>, <article>, <section>, <footer>, <table>, <figure>).',
@@ -68,33 +118,13 @@ export class MistralScoringAgent {
       '     * Moderate single-page effort. Basic layout, limited content depth, mix of semantic tags and generic <div> elements.',
       '   - 35 - 49 (Beginner Starter / Minimal Scope - CRITICAL ANCHOR):',
       '     * A project that contains ONLY 1 basic HTML file with minimal text, generic <div> soup, simple headings/lists, and no multi-page navigation or rich features MUST be scored between 35 and 49!',
-      '     * Even if clean, elementary beginner scope CANNOT receive proficient or exemplary marks.',
-      '   - 0 - 34 (Incomplete / Broken / Stub):',
-      '     * Broken markup, empty repository, or unrendered files.',
+      '   - 0 - 34 (Incomplete / Broken / Dead Site / Stub):',
+      '     * Broken markup, dead live URL for visual criteria, or unrendered files.',
       '',
-      '3. CRITERION-SPECIFIC RIGOROUS GUIDELINES:',
-      '   - "The structure of the page" (Layout & Architecture):',
-      '     * Multi-page website with navigation menu, header, footer, tables, and inter-page links scores 85 - 95.',
-      '     * A single basic HTML file using generic <div> tags with no navigation or header/footer sections scores 35 - 45.',
-      '   - "Code quality":',
-      '     * Inspect semantic richness: HTML5 tags (<header>, <main>, <section>, <table>, <article>) vs generic <div> tags.',
-      '     * Inspect syntax defects: Check for unclosed tags (e.g. <p> not closed before <h2>), malformed nesting, or typos.',
-      '     * Significant content volume and clean markup formatting score 85 - 95.',
-      '     * Trivial 30-50 lines with generic divs or unclosed tags score 40 - 50.',
-      '   - "File naming" & Repository Organization:',
-      '     * Multiple descriptive, modular files (e.g. index.html, battle.html, quiz.html, descriptive asset names) score 85 - 95.',
-      '     * A solitary file in an unnecessary subfolder (e.g. HTML/index.html) with a single generic image.png scores 40 - 50.',
-      '',
-      '4. ZERO-TOLERANCE CODE GROUNDING & HALLUCINATION PREVENTION (CRITICAL):',
-      '   - DO NOT hallucinate tags! Only cite HTML tags that literally exist in the provided `keyFileSnippets`.',
-      '   - If a submission does NOT have `<header>`, `<nav>`, `<main>`, `<section>`, or `<footer>`, explicitly state: "The code lacks semantic HTML5 elements like <header>, <nav>, <main>, <section>, and <footer>, relying instead on generic <div> tags." NEVER say it has them if they do not exist in the code snippet!',
-      '   - If a submission has an unclosed tag (e.g. `<p>` left open before `<h2>`), explicitly cite and penalize this syntax error.',
-      '   - If a submission is only a single 30-50 line HTML file, explicitly call it out as a beginner starter with minimal scope and score it strictly within the 35-49 anchor band.',
-      '   - If a submission has 5 interconnected HTML pages with 4 audio files and cross-page navigation tables, explicitly praise this ambitious scope, rich multimedia, and interconnected structure with scores in the 85-95 band.',
-      '',
-      '5. CITATIONS & GROUNDING:',
+      '4. ZERO-TOLERANCE CODE GROUNDING & REAL FACTS:',
       '   - Ground all justifications in concrete facts from `fileList` and `keyFileSnippets`. Quote specific tags and filenames.',
-      '   - Explicitly note the project scope (file count, page count, media assets, line count) in the synthesis summary.'
+      '   - DO NOT hallucinate tags! Only cite HTML tags that literally exist in the provided `keyFileSnippets`.',
+      '   - If a submission does NOT have `<header>`, `<nav>`, `<main>`, `<section>`, or `<footer>`, state that it lacks semantic HTML5 tags and uses generic <div> tags.'
     ]
       .filter(Boolean)
       .join('\n');
@@ -106,7 +136,8 @@ export class MistralScoringAgent {
         name: eventName,
         description: eventDesc,
         problemStatement,
-        projectType
+        projectType,
+        requiresLiveUrl
       },
       fixedCriteria: criteria.map((c) => ({
         id: c.id,
@@ -138,7 +169,13 @@ export class MistralScoringAgent {
           trivyCritical: evidence.codeAnalysis?.trivy?.critical,
           trivyHigh: evidence.codeAnalysis?.trivy?.high
         },
-        frontendLighthouse: evidence.frontendEval?.lighthouse,
+        frontendEvaluation: {
+          isReachable: evidence.frontendEval?.isReachable,
+          liveError: evidence.frontendEval?.liveError,
+          lighthouse: evidence.frontendEval?.lighthouse,
+          failedRequestsCount: evidence.frontendEval?.failedRequestsCount,
+          consoleErrorsCount: evidence.frontendEval?.consoleErrorsCount
+        },
         backendSchemathesis: evidence.backendEval?.schemathesis,
         backendK6: evidence.backendEval?.k6
       },
@@ -168,40 +205,43 @@ export class MistralScoringAgent {
 
         defaultKeyPool.reportSuccess(selectedKey);
 
-        // Grounding Truthfulness Verification: prevent model hallucinating semantic tags when absent
+        // Strict Post-Evaluation Integrity Guards:
         if (result && result.criterionScores) {
-          const allSnippets = Object.values(evidence.discovery?.keyFileSnippets || {})
-            .join('\n')
-            .toLowerCase();
-          const hasSemanticTags = [
-            '<header',
-            '<nav',
-            '<main',
-            '<section',
-            '<footer',
-            '<article'
-          ].some((tag) => allSnippets.includes(tag));
-
-          if (!hasSemanticTags) {
+          // Guard 1: If live site is unreachable, strictly enforce 0 score on "Look of the site" / frontend visual criteria
+          if (!isLiveSiteReachable) {
             for (const c of result.criterionScores) {
-              const lowerName = c.name.toLowerCase();
-              if (lowerName.includes('quality')) {
-                c.justification =
-                  'Basic beginner code quality with proper indentation and readability. However, it relies entirely on generic <div> elements without semantic HTML5 tags (<header>, <nav>, <main>, <section>, <footer>). Contains an unclosed <p> tag before <h2>. Content is limited to a single ~30-line file.';
-              } else if (lowerName.includes('structure')) {
-                c.justification =
-                  'The page structure is elementary, consisting of a single HTML file using generic <div> tags with no navigation menu, header, or footer. Lacks multi-page architecture or semantic hierarchy.';
-              } else if (lowerName.includes('naming') || lowerName.includes('file')) {
-                c.justification =
-                  'The project contains a solitary HTML file placed inside an unnecessary subfolder (HTML/index.html) alongside a single generic image.png. Lacks modular multi-page file organization.';
-              } else {
-                c.justification =
-                  'Basic beginner implementation relying on generic <div> tags without semantic HTML5 elements or multi-page navigation.';
+              const lowerName = (c.name || '').toLowerCase();
+              const isVisualCriterion =
+                lowerName.includes('look') ||
+                lowerName.includes('site') ||
+                lowerName.includes('ui') ||
+                lowerName.includes('visual') ||
+                lowerName.includes('frontend') ||
+                lowerName.includes('design');
+
+              if (isVisualCriterion) {
+                c.rawScore = 0;
+                c.confidence = 1.0;
+                c.evidenceCitations = [
+                  `Live site probe failed: ${liveSiteError || 'Connection refused or DNS error'}`
+                ];
+                c.justification = `The live site URL is completely unreachable or dead (${liveSiteError || 'DNS lookup failed / connection refused'}). 0 marks awarded for site appearance.`;
               }
             }
-            if (result.synthesisSummary) {
-              result.synthesisSummary =
-                'Basic beginner project comprising a solitary HTML file (1.6 KB) in an HTML/ subfolder with 1 image. Uses generic <div> elements without semantic HTML5 architecture, cross-page navigation, or multimedia assets.';
+
+            if (requiresLiveUrl) {
+              for (const req of result.requirementCompliance || []) {
+                const reqLower = (req.title || '').toLowerCase();
+                if (
+                  reqLower.includes('live') ||
+                  reqLower.includes('core') ||
+                  reqLower.includes('functionality') ||
+                  reqLower.includes('deploy')
+                ) {
+                  req.status = 'NOT_FULFILLED';
+                  req.evidenceSummary = `Mandatory live URL requirement failed: live site is unreachable or dead (${liveSiteError || 'Connection failure'}).`;
+                }
+              }
             }
           }
         }

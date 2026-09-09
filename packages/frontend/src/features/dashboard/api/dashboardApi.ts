@@ -3,107 +3,74 @@ import { EnrolledCourse, HeatmapData, NotificationItem } from '../../../shared/t
 
 const MOCK_COURSES: EnrolledCourse[] = [
   {
-    id: 'course-web-dev',
-    title: 'Full Stack Web Development & System Design Mastery',
+    id: 'course-dsa-bootcamp',
+    title: 'DSA for Bootcamp',
     thumbnail:
-      'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=600&auto=format&fit=crop&q=80',
-    progress: 68,
-    boughtOn: '14 Jan 2026',
-    discordUrl: 'https://discord.gg/example',
-    totalModules: 12,
-    completedModules: 8
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80',
+    progress: 86.89,
+    boughtOn: 'February 20, 2026',
+    totalModules: 24,
+    completedModules: 21
   },
   {
-    id: 'course-dsa',
-    title: 'Data Structures, Algorithms & Competitive Programming',
+    id: 'course-kodex-bootcamp',
+    title: 'Kodex Bootcamp',
     thumbnail:
-      'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&auto=format&fit=crop&q=80',
-    progress: 34,
-    boughtOn: '02 Feb 2026',
-    discordUrl: 'https://discord.gg/example',
-    totalModules: 16,
-    completedModules: 5
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&auto=format&fit=crop&q=80',
+    progress: 40.46,
+    boughtOn: 'December 22, 2025',
+    discordUrl: 'https://discord.gg/knowhere',
+    totalModules: 30,
+    completedModules: 12
   },
   {
-    id: 'course-backend-microservices',
-    title: 'Production Microservices with Node.js, Docker & Kubernetes',
+    id: 'course-c-programming',
+    title: 'C Programming For Beginners',
     thumbnail:
-      'https://images.unsplash.com/photo-1607799279861-4dd421887fb3?w=600&auto=format&fit=crop&q=80',
-    progress: 89,
-    boughtOn: '20 Feb 2026',
-    discordUrl: 'https://discord.gg/example',
-    totalModules: 8,
-    completedModules: 7
+      'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=600&auto=format&fit=crop&q=80',
+    progress: 54.83,
+    boughtOn: 'November 16, 2025',
+    discordUrl: 'https://discord.gg/knowhere',
+    totalModules: 18,
+    completedModules: 10
+  },
+  {
+    id: 'course-ai-cohort',
+    title: '2.0 Job Ready AI Powered Cohort',
+    thumbnail:
+      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=600&auto=format&fit=crop&q=80',
+    progress: 92.71,
+    boughtOn: 'November 9, 2025',
+    discordUrl: 'https://discord.gg/knowhere',
+    totalModules: 28,
+    completedModules: 26
   }
 ];
 
-const MOCK_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'notif-1',
-    title: 'New Coding Challenge Available',
-    message: 'Dynamic Programming Module 4 problem set is now unlocked for submissions.',
-    createdAt: '2 hours ago',
-    isRead: false,
-    type: 'assignment'
-  },
-  {
-    id: 'notif-2',
-    title: 'Weekly Live Doubt Session',
-    message: 'Live architecture review with senior mentors starts tomorrow at 6:00 PM IST.',
-    createdAt: '1 day ago',
-    isRead: true,
-    type: 'announcement'
-  },
-  {
-    id: 'notif-3',
-    title: 'Quiz Grade Recorded',
-    message: 'You scored 20/20 in Express Middleware & Authentication MCQ!',
-    createdAt: '3 days ago',
-    isRead: true,
-    type: 'grade'
-  }
-];
+const MOCK_NOTIFICATIONS: NotificationItem[] = [];
 
-// Generate 12 weeks of realistic GitHub-style heatmap data
+// Generate 16 weeks of heatmap data matching fresh student dashboard
 function generateMockHeatmap(): HeatmapData {
   const days: HeatmapData['days'] = [];
   const today = new Date();
-  let total = 0;
 
-  for (let i = 83; i >= 0; i--) {
+  for (let i = 111; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split('T')[0];
 
-    // pseudo-random with higher probability on weekdays
-    const dayOfWeek = d.getDay();
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    const seed = (d.getDate() * 17 + d.getMonth() * 31) % 10;
-
-    let count = 0;
-    if (seed > (isWeekend ? 5 : 2)) {
-      count = (seed % 5) + 1;
-    }
-    total += count;
-
-    let level: 0 | 1 | 2 | 3 | 4 = 0;
-    if (count > 0 && count <= 2) level = 1;
-    else if (count > 2 && count <= 4) level = 2;
-    else if (count > 4 && count <= 6) level = 3;
-    else if (count > 6) level = 4;
-
     days.push({
       date: dateStr,
-      count,
-      level
+      count: 0,
+      level: 0
     });
   }
 
   return {
-    totalActivities: total,
+    totalActivities: 0,
     days,
-    currentStreak: 6,
-    longestStreak: 19
+    currentStreak: 0,
+    longestStreak: 0
   };
 }
 

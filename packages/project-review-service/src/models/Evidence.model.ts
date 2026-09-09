@@ -14,6 +14,7 @@ export interface IEvidence extends Document {
     detectedFrameworks: string[];
     fileList?: string[];
     keyFileSnippets?: Record<string, string>;
+    deepAnalysis?: Record<string, any>;
   };
   codeAnalysis: {
     semgrep: {
@@ -55,9 +56,15 @@ export interface IEvidence extends Document {
         fixedIn?: string;
       }>;
     };
+    deterministicMetrics?: Record<string, any>;
   };
   frontendEval?: {
     tool: string;
+    assessmentMode?: 'BROWSER' | 'HTTP_PROBE' | 'STATIC' | 'NOT_RUN';
+    staticAuditScore?: number;
+    isReachable?: boolean;
+    httpStatus?: number;
+    liveError?: string;
     lighthouse: {
       performance: number; // 0-100
       accessibility: number; // 0-100
@@ -70,6 +77,8 @@ export interface IEvidence extends Document {
   };
   backendEval?: {
     tool: string;
+    assessmentMode?: 'OPENAPI_STATIC' | 'HTTP_PROBE' | 'NOT_RUN';
+    assessmentNote?: string;
     schemathesis: {
       totalTests: number;
       passed: number;
@@ -120,7 +129,8 @@ const EvidenceSchema = new Schema<IEvidence>(
       openApiEndpoints: { type: [String], default: [] },
       detectedFrameworks: { type: [String], default: [] },
       fileList: { type: [String], default: [] },
-      keyFileSnippets: { type: Schema.Types.Mixed, default: {} }
+      keyFileSnippets: { type: Schema.Types.Mixed, default: {} },
+      deepAnalysis: { type: Schema.Types.Mixed, default: null }
     },
     codeAnalysis: {
       semgrep: {
@@ -145,10 +155,16 @@ const EvidenceSchema = new Schema<IEvidence>(
         medium: { type: Number, default: 0 },
         low: { type: Number, default: 0 },
         cves: { type: [Schema.Types.Mixed], default: [] }
-      }
+      },
+      deterministicMetrics: { type: Schema.Types.Mixed, default: null }
     },
     frontendEval: {
       tool: { type: String, default: 'Playwright + Lighthouse + axe-core' },
+      assessmentMode: { type: String },
+      staticAuditScore: { type: Number },
+      isReachable: { type: Boolean },
+      httpStatus: { type: Number },
+      liveError: { type: String },
       lighthouse: {
         performance: { type: Number, default: 0 },
         accessibility: { type: Number, default: 0 },
@@ -161,6 +177,8 @@ const EvidenceSchema = new Schema<IEvidence>(
     },
     backendEval: {
       tool: { type: String, default: 'Schemathesis + OWASP ZAP + k6' },
+      assessmentMode: { type: String },
+      assessmentNote: { type: String },
       schemathesis: {
         totalTests: { type: Number, default: 0 },
         passed: { type: Number, default: 0 },

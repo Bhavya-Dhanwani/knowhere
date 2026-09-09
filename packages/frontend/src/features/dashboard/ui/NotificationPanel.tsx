@@ -1,4 +1,5 @@
 import React from 'react';
+import { Bell } from 'lucide-react';
 import { NotificationItem } from '../../../shared/types';
 
 export interface NotificationPanelProps {
@@ -7,56 +8,49 @@ export interface NotificationPanelProps {
 
 export const NotificationPanel: React.FC<NotificationPanelProps> = ({ notifications }) => {
   return (
-    <div className="bg-surface border border-white/10 rounded-2xl p-5 shadow-lg flex flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-          <svg
-            className="w-4 h-4 text-primary"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-            />
-          </svg>
-          Notifications
+    <div className="bg-white border border-zinc-200/90 rounded-2xl p-5 shadow-xs flex flex-col h-full min-h-0">
+      <div className="shrink-0 flex items-center justify-between mb-3">
+        <h3 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight">
+          All Notifications
         </h3>
         {notifications.length > 0 ? (
-          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
             {notifications.length}
           </span>
         ) : null}
       </div>
 
       {notifications.length > 0 ? (
-        <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-2.5">
           {notifications.map((notif) => (
             <div
               key={notif.id}
               className={`p-3 rounded-xl border transition-all text-left ${
                 notif.isRead
-                  ? 'bg-background/40 border-white/5 opacity-80'
-                  : 'bg-background/80 border-primary/20 shadow-sm shadow-primary/5'
+                  ? 'bg-zinc-50 border-zinc-200/60 opacity-80'
+                  : 'bg-blue-50/50 border-blue-200/70 shadow-xs'
               }`}
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-xs font-semibold text-white leading-snug">{notif.title}</p>
-                <span className="text-[10px] text-muted shrink-0 whitespace-nowrap">
+                <p className="text-xs font-semibold text-zinc-900 leading-snug">{notif.title}</p>
+                <span className="text-[10px] text-zinc-400 shrink-0 whitespace-nowrap">
                   {notif.createdAt}
                 </span>
               </div>
-              <p className="text-xs text-muted mt-1 leading-relaxed line-clamp-2">
+              <p className="text-xs text-zinc-500 mt-1 leading-relaxed line-clamp-2">
                 {notif.message}
               </p>
             </div>
           ))}
         </div>
       ) : (
-        <div className="py-8 text-center text-xs text-muted">No notifications available</div>
+        <div className="py-6 flex flex-col items-center justify-center text-center flex-1">
+          <Bell className="w-10 h-10 text-zinc-300 stroke-[1.5]" />
+          <p className="text-sm font-semibold text-zinc-700 mt-2.5">No notifications available</p>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            You&apos;re all caught up! Check back later for updates.
+          </p>
+        </div>
       )}
     </div>
   );

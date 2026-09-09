@@ -75,6 +75,8 @@ export interface ILeaderboardEntry {
   discrepancyAnomalyFlag: boolean; // Flags high divergence between absolute and relative rankings
   rankReason: string; // Detailed, transparent explanation of why this rank was awarded (including tie-breaker)
   relativeGrading?: IRelativeGrading;
+  whyAmIExplanation?: any;
+  dimensionScores?: Record<string, any>;
   relativeAnalysis?: {
     comparedToAbove?: IRelativeComparison | null;
     comparedToBelow?: IRelativeComparison | null;
@@ -88,8 +90,10 @@ export interface IPairwiseMatch {
   subB: Types.ObjectId;
   winner: Types.ObjectId | 'TIE';
   criterionWins: Record<string, string>; // criterionId -> winning subId or 'TIE'
+  dimensionComparisons?: Record<string, any>;
   margin: number;
   rationale: string;
+  contradictsInitialOrder?: boolean;
 }
 
 export interface IEventRanking extends Document {
@@ -99,6 +103,19 @@ export interface IEventRanking extends Document {
   totalPairwiseMatches: number;
   leaderboard: ILeaderboardEntry[];
   pairwiseMatrix: IPairwiseMatch[];
+  closeRankingBoundaries?: Array<{
+    subAId: string;
+    subBId: string;
+    subAName: string;
+    subBName: string;
+    scoreDelta: number;
+    boundaryReason: string;
+  }>;
+  comparisonMatrix?: Array<{
+    dimension: string;
+    dimensionName: string;
+    scores: Record<string, number>;
+  }>;
   generatedAt: Date;
 }
 
@@ -118,6 +135,8 @@ const LeaderboardEntrySchema = new Schema<ILeaderboardEntry>(
     discrepancyAnomalyFlag: { type: Boolean, default: false },
     rankReason: { type: String, default: '' },
     relativeGrading: { type: Schema.Types.Mixed, default: null },
+    whyAmIExplanation: { type: Schema.Types.Mixed, default: null },
+    dimensionScores: { type: Schema.Types.Mixed, default: null },
     relativeAnalysis: { type: Schema.Types.Mixed, default: null }
   },
   { _id: false }
@@ -129,8 +148,10 @@ const PairwiseMatchSchema = new Schema<IPairwiseMatch>(
     subB: { type: Schema.Types.ObjectId, ref: 'ReviewSubmission', required: true },
     winner: { type: Schema.Types.Mixed, required: true },
     criterionWins: { type: Schema.Types.Mixed, default: {} },
+    dimensionComparisons: { type: Schema.Types.Mixed, default: {} },
     margin: { type: Number, required: true },
-    rationale: { type: String, required: true }
+    rationale: { type: String, required: true },
+    contradictsInitialOrder: { type: Boolean, default: false }
   },
   { _id: false }
 );
@@ -147,6 +168,8 @@ const EventRankingSchema = new Schema<IEventRanking>(
     totalPairwiseMatches: { type: Number, default: 0 },
     leaderboard: { type: [LeaderboardEntrySchema], default: [] },
     pairwiseMatrix: { type: [PairwiseMatchSchema], default: [] },
+    closeRankingBoundaries: { type: [Schema.Types.Mixed], default: [] },
+    comparisonMatrix: { type: [Schema.Types.Mixed], default: [] },
     generatedAt: { type: Date, default: Date.now }
   },
   { timestamps: true }

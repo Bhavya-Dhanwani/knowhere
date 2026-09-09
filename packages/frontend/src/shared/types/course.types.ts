@@ -26,6 +26,8 @@ export interface Submodule {
   title: string;
   order: number;
   status: CompletionStatus;
+  isNew?: boolean;
+  deadline?: string;
   contentItems: ContentItemSummary[];
 }
 
@@ -33,6 +35,8 @@ export interface Module {
   id: string;
   title: string;
   order: number;
+  status?: CompletionStatus;
+  isNew?: boolean;
   submodules: Submodule[];
 }
 

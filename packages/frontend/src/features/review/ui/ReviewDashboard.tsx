@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router';
+import { useSelector, useDispatch } from 'react-redux';
 import {
   Shield,
   Plus,
@@ -18,10 +20,25 @@ import {
   ArrowRight,
   FileText,
   History,
+  LayoutDashboard,
   Trash2,
   Clock,
-  Edit3
+  Edit3,
+  ChevronDown,
+  ChevronUp,
+  Award,
+  ArrowUpRight,
+  ArrowDownRight,
+  Target,
+  Grid,
+  Scale,
+  TrendingUp,
+  HelpCircle,
+  Download
 } from 'lucide-react';
+import { RootState } from '../../../app/store';
+import { logout } from '../../auth/state/authSlice';
+import { Header } from '../../../shared/ui/Header';
 import { ReviewEvent, ReviewSubmission, EventRanking } from '../types';
 import { reviewApi } from '../api/reviewApi';
 import { CreateEventModal } from './CreateEventModal';
@@ -29,8 +46,13 @@ import { EditEventModal } from './EditEventModal';
 import { AdaptiveSubmissionModal } from './AdaptiveSubmissionModal';
 import { EditSubmissionModal } from './EditSubmissionModal';
 import { SubmissionDetailModal } from './SubmissionDetailModal';
+import { NotionExportModal } from './NotionExportModal';
 
 export const ReviewDashboard: React.FC = () => {
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const user = useSelector((state: RootState) => state.auth.user);
+
   const [events, setEvents] = useState<ReviewEvent[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [submissions, setSubmissions] = useState<ReviewSubmission[]>([]);
@@ -44,6 +66,9 @@ export const ReviewDashboard: React.FC = () => {
     teamName: string;
   } | null>(null);
 
+  // Expanded comparative details per submission in the leaderboard
+  const [expandedSubmissions, setExpandedSubmissions] = useState<Record<string, boolean>>({});
+
   // Modals & Navigation state
   const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [isEditEventOpen, setIsEditEventOpen] = useState(false);
@@ -54,9 +79,38 @@ export const ReviewDashboard: React.FC = () => {
     'SCORECARD' | 'SANITIZATION' | 'EVIDENCE' | 'REPLAY' | 'OVERRIDE'
   >('SCORECARD');
   const [copiedLink, setCopiedLink] = useState(false);
-  const [activeReportTab, setActiveReportTab] = useState<'RANKING' | 'SCORECARDS' | 'REPLAY'>(
-    'RANKING'
-  );
+  const [activeReportTab, setActiveReportTab] = useState<
+    'RANKING' | 'MATRIX' | 'SCORECARDS' | 'REPLAY'
+  >('RANKING');
+  const [comparisonMatrixData, setComparisonMatrixData] = useState<{
+    comparisonMatrix: Array<{
+      dimension: string;
+      dimensionName: string;
+      scores: Record<string, number>;
+    }>;
+    closeRankingBoundaries?: Array<{
+      subAId: string;
+      subBId: string;
+      subAName: string;
+      subBName: string;
+      scoreDelta: number;
+      boundaryReason: string;
+    }>;
+  } | null>(null);
+  const [isNotionModalOpen, setIsNotionModalOpen] = useState(false);
+  const [csvExporting, setCsvExporting] = useState(false);
+
+  const handleLogout = () => {
+    dispatch(logout());
+    navigate('/');
+  };
+
+  const toggleExpanded = (submissionId: string) => {
+    setExpandedSubmissions((prev) => ({
+      ...prev,
+      [submissionId]: !prev[submissionId]
+    }));
+  };
 
   // 1. Fetch Events
   const loadEvents = useCallback(async () => {
@@ -91,6 +145,14 @@ export const ReviewDashboard: React.FC = () => {
       } catch {
         setRanking(null);
       }
+
+      // Attempt to fetch comparison matrix
+      try {
+        const matrixData = await reviewApi.getComparisonMatrix(eventId);
+        setComparisonMatrixData(matrixData);
+      } catch {
+        setComparisonMatrixData(null);
+      }
     } catch (err) {
       console.error('Failed to load submissions', err);
     }
@@ -104,14 +166,13 @@ export const ReviewDashboard: React.FC = () => {
 
   const selectedEvent = events.find((e) => e._id === selectedEventId) || null;
 
-  // 3. One-Click: Run Full Evaluation Pipeline on All Submissions + Compute Relative Rankings
+  // 3. Run Full Evaluation Pipeline on All Submissions
   const handleRunPipeline = async () => {
     if (!selectedEventId || submissions.length === 0) return;
     try {
       setPipelineRunning(true);
       const total = submissions.length;
 
-      // Evaluate each submission sequentially
       for (let i = 0; i < total; i++) {
         const sub = submissions[i];
         setPipelineProgress({ current: i + 1, total, teamName: sub.teamName });
@@ -122,12 +183,10 @@ export const ReviewDashboard: React.FC = () => {
         }
       }
 
-      // After evaluating all, compute Bradley-Terry Relative Ranking
       setRankingLoading(true);
       const rankingRes = await reviewApi.computeRanking(selectedEventId);
       setRanking(rankingRes);
 
-      // Reload fresh submissions list
       await loadSubmissions(selectedEventId);
       setActiveReportTab('RANKING');
     } catch (err) {
@@ -139,14 +198,20 @@ export const ReviewDashboard: React.FC = () => {
     }
   };
 
-  // Re-compute Bradley-Terry ranking only
+  // Re-compute Bradley-Terry ranking & refresh comparison matrix
   const handleComputeRankingOnly = async () => {
     if (!selectedEventId) return;
     try {
       setRankingLoading(true);
       const res = await reviewApi.computeRanking(selectedEventId);
       setRanking(res);
-      setActiveReportTab('RANKING');
+      try {
+        const matrixData = await reviewApi.getComparisonMatrix(selectedEventId);
+        setComparisonMatrixData(matrixData);
+      } catch (e) {
+        console.error('Failed to reload comparison matrix', e);
+      }
+      await loadSubmissions(selectedEventId);
     } catch (err) {
       console.error('Failed to compute ranking', err);
     } finally {
@@ -181,27 +246,39 @@ export const ReviewDashboard: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to delete submission', err);
-      alert('Failed to delete submission');
     }
   };
 
-  const getScopeBadge = (scope: string) => {
+  const handleExportEventCsv = async () => {
+    if (!selectedEventId) return;
+    try {
+      setCsvExporting(true);
+      await reviewApi.downloadEventCsv(selectedEventId, selectedEvent?.name || 'event');
+    } catch (err) {
+      console.error('Failed to export event CSV', err);
+      alert('Failed to export CSV report. Please try again.');
+    } finally {
+      setCsvExporting(false);
+    }
+  };
+
+  const getScopeBadge = (scope: ReviewEvent['projectType']) => {
     switch (scope) {
       case 'FRONTEND':
         return (
-          <span className="flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full font-mono bg-indigo-950 text-indigo-300 border border-indigo-800">
+          <span className="flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-blue-50 text-blue-700 border border-blue-200">
             <Layout className="w-3 h-3" /> Frontend
           </span>
         );
       case 'BACKEND':
         return (
-          <span className="flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">
+          <span className="flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
             <Server className="w-3 h-3" /> Backend
           </span>
         );
       default:
         return (
-          <span className="flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full font-mono bg-purple-950 text-purple-300 border border-purple-800">
+          <span className="flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-purple-50 text-purple-700 border border-purple-200">
             <Layers className="w-3 h-3" /> Fullstack
           </span>
         );
@@ -224,59 +301,69 @@ export const ReviewDashboard: React.FC = () => {
   ).length;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
-      {/* Top Navbar */}
-      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur-md sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div className="min-h-screen bg-[#F8F9FA] text-zinc-900 font-sans flex flex-col selection:bg-blue-100 selection:text-blue-900">
+      {/* Top Navbar Matching DashboardPage */}
+      <Header user={user} onLogout={handleLogout} onNavigateHome={() => navigate('/dashboard')} />
+
+      {/* Main Container */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-6 lg:px-10 py-6 space-y-6">
+        {/* Top Header: Title & Action Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-600/30">
-              <Shield className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm text-white shrink-0">
+              <Shield className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-white leading-none">
-                Project Review & Ranking Engine
+              <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+                Evaluation Pipeline
               </h1>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Prompt-Injection Defense • Concrete Tool Audits • Bradley-Terry Ranking
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Automated Multi-Stage Code Review • Concrete Tool Audits • Bradley-Terry Relative
+                Ranking
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => navigate('/admin/dashboard')}
+              className="px-3.5 py-2 rounded-lg bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+            >
+              <LayoutDashboard className="w-3.5 h-3.5 text-zinc-500" />
+              <span>Admin Console</span>
+            </button>
+
             <button
               onClick={() => setIsCreateEventOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/20 transition"
+              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors cursor-pointer active:scale-[0.98]"
             >
-              <Plus className="w-4 h-4" /> Create Event
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create Event</span>
             </button>
           </div>
         </div>
-      </header>
 
-      {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
-        {/* Step 1: Active Event Selector & Overview */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Step 1: Active Event Selector & Overview Card */}
+        <div className="bg-white border border-zinc-200 rounded-xl p-6 shadow-sm space-y-5">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div>
-              <span className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold block mb-2">
-                1. Select or Create Event
+              <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold block mb-2">
+                1. Select or Switch Event
               </span>
               <div className="flex items-center gap-2.5 flex-wrap">
                 {events.length === 0 && !loading && (
-                  <p className="text-sm text-slate-400">
-                    No events found. Click &quot;Create Event&quot; above to set up dynamic
-                    criteria.
+                  <p className="text-sm text-zinc-500">
+                    No evaluation events found. Click &quot;Create Event&quot; above to get started.
                   </p>
                 )}
                 {events.map((evt) => (
                   <button
                     key={evt._id}
                     onClick={() => setSelectedEventId(evt._id)}
-                    className={`px-4 py-2 rounded-xl text-xs font-medium border transition flex items-center gap-2 ${
+                    className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 cursor-pointer ${
                       evt._id === selectedEventId
-                        ? 'bg-indigo-600/20 border-indigo-500 text-white shadow-md shadow-indigo-600/10'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                        ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-sm'
+                        : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
                     }`}
                   >
                     <span>{evt.name}</span>
@@ -286,29 +373,49 @@ export const ReviewDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Quick Actions */}
+            {/* Quick Actions for Selected Event */}
             {selectedEvent && (
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2.5 flex-wrap">
                 <button
                   onClick={() => setIsEditEventOpen(true)}
-                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-medium border border-slate-700 transition flex items-center gap-1.5"
+                  className="px-3.5 py-2 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Edit3 className="w-3.5 h-3.5 text-indigo-400" /> Edit Event
+                  <Edit3 className="w-3.5 h-3.5 text-blue-600" /> Edit Event
                 </button>
                 <button
                   onClick={() => setIsSubmitModalOpen(true)}
-                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-medium border border-slate-700 transition flex items-center gap-1.5"
+                  className="px-3.5 py-2 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Plus className="w-4 h-4 text-emerald-400" /> Fast Submit
+                  <Plus className="w-3.5 h-3.5 text-emerald-600" /> Fast Submit
+                </button>
+                <button
+                  onClick={handleExportEventCsv}
+                  disabled={csvExporting || submissions.length === 0}
+                  className="px-3.5 py-2 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Export full rankings, issues, improvements, and 9-dimension scores to CSV"
+                >
+                  <Download
+                    className={`w-3.5 h-3.5 text-blue-600 ${csvExporting ? 'animate-bounce' : ''}`}
+                  />
+                  <span>{csvExporting ? 'Exporting...' : 'Export CSV'}</span>
+                </button>
+                <button
+                  onClick={() => setIsNotionModalOpen(true)}
+                  disabled={submissions.length === 0}
+                  className="px-3.5 py-2 bg-zinc-900 hover:bg-black text-white rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Export complete executive report to Notion (Markdown / Direct Sync)"
+                >
+                  <span className="font-serif font-black text-xs">N</span>
+                  <span>Notion Final</span>
                 </button>
                 <button
                   onClick={handleRunPipeline}
                   disabled={pipelineRunning || submissions.length === 0}
-                  className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/25 transition flex items-center gap-2"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-2 cursor-pointer active:scale-[0.98]"
                 >
                   {pipelineRunning ? (
                     <>
-                      <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
                       <span>
                         Running Pipeline ({pipelineProgress?.current || 0}/
                         {pipelineProgress?.total || submissions.length})...
@@ -316,7 +423,7 @@ export const ReviewDashboard: React.FC = () => {
                     </>
                   ) : (
                     <>
-                      <Play className="w-4 h-4 fill-current text-white" />
+                      <Play className="w-3.5 h-3.5 fill-current text-white" />
                       <span>Run Pipeline on All Submissions</span>
                     </>
                   )}
@@ -327,33 +434,33 @@ export const ReviewDashboard: React.FC = () => {
 
           {/* Submission Form URL Banner (Step 2) */}
           {selectedEvent && (
-            <div className="p-4 bg-gradient-to-r from-indigo-950/40 via-slate-900 to-purple-950/30 border border-indigo-800/40 rounded-xl space-y-2">
+            <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider">
-                      2. Public Candidate Submission Form
+                    <span className="text-xs font-bold text-zinc-800 uppercase tracking-wider">
+                      2. Candidate Submission Portal
                     </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/60 text-indigo-200 border border-indigo-700/50">
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-medium">
                       Adaptive ({selectedEvent.projectType})
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Share this direct link with candidate teams. Inputs automatically adapt to{' '}
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Direct submission link for participants. Automatically adapts to{' '}
                     {selectedEvent.projectType.toLowerCase()} criteria.
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <div className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-300 max-w-sm truncate select-all">
+                  <div className="px-3 py-1.5 bg-white border border-zinc-200 rounded-lg text-xs font-mono text-zinc-700 max-w-sm truncate select-all shadow-sm">
                     {submissionUrl}
                   </div>
                   <button
                     onClick={handleCopyLink}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm ${
                       copiedLink
                         ? 'bg-emerald-600 text-white'
-                        : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
                     }`}
                   >
                     {copiedLink ? (
@@ -367,7 +474,7 @@ export const ReviewDashboard: React.FC = () => {
                     href={submissionUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition"
+                    className="p-1.5 bg-white hover:bg-zinc-100 text-zinc-600 rounded-lg border border-zinc-200 transition-colors shadow-sm"
                     title="Open submission form in new tab"
                   >
                     <ExternalLink className="w-4 h-4" />
@@ -379,20 +486,20 @@ export const ReviewDashboard: React.FC = () => {
 
           {/* Event Details Grid */}
           {selectedEvent && (
-            <div className="pt-2 border-t border-slate-800/60 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+            <div className="pt-2 border-t border-zinc-100 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
               <div>
-                <span className="text-slate-400 block mb-0.5">Problem Statement:</span>
-                <p className="text-slate-200 line-clamp-2">{selectedEvent.problemStatement}</p>
+                <span className="text-zinc-500 font-medium block mb-0.5">Problem Statement:</span>
+                <p className="text-zinc-800 line-clamp-2">{selectedEvent.problemStatement}</p>
               </div>
               <div>
-                <span className="text-slate-400 block mb-0.5">
-                  Dynamic Rubric ({selectedEvent.criteria.length} Criteria):
+                <span className="text-zinc-500 font-medium block mb-0.5">
+                  Rubric Criteria ({selectedEvent.criteria.length} Criteria):
                 </span>
                 <div className="flex flex-wrap gap-1">
                   {selectedEvent.criteria.map((c) => (
                     <span
                       key={c.id}
-                      className="px-2 py-0.5 bg-slate-950 rounded border border-slate-800 text-slate-300 font-mono text-[10px]"
+                      className="px-2 py-0.5 bg-zinc-100 rounded border border-zinc-200 text-zinc-700 font-mono text-[10px]"
                     >
                       {c.name} ({Math.round(c.weight * 100)}%)
                     </span>
@@ -400,14 +507,14 @@ export const ReviewDashboard: React.FC = () => {
                 </div>
               </div>
               <div>
-                <span className="text-slate-400 block mb-0.5">Pipeline Status:</span>
+                <span className="text-zinc-500 font-medium block mb-0.5">Pipeline Status:</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-slate-300 font-medium">
+                  <span className="text-zinc-800 font-semibold">
                     {evaluatedCount} of {submissions.length} Evaluated
                   </span>
                   {ranking && (
-                    <span className="text-[10px] px-2 py-0.5 bg-purple-950 text-purple-300 border border-purple-800 rounded font-semibold">
-                      Ranking Computed
+                    <span className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full font-semibold">
+                      Rankings Computed
                     </span>
                   )}
                 </div>
@@ -418,52 +525,101 @@ export const ReviewDashboard: React.FC = () => {
 
         {/* Step 3: Final Reports & Relative Ranking */}
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 pb-3">
             <div className="flex items-center gap-3">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-indigo-400" />
-                3. Final Reports & Results
+              <h2 className="text-lg font-bold text-zinc-900 flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-blue-600" />
+                3. Evaluation Results & Reports
               </h2>
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">
-                {submissions.length} Projects
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-zinc-100 text-zinc-600 font-semibold border border-zinc-200">
+                {submissions.length} Submissions
               </span>
             </div>
 
-            {/* Sub-tab Switcher */}
-            <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
-              <button
-                onClick={() => setActiveReportTab('RANKING')}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold transition ${
-                  activeReportTab === 'RANKING'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <Trophy className="w-3.5 h-3.5 text-amber-400" />
-                Relative Rankings
-              </button>
-              <button
-                onClick={() => setActiveReportTab('SCORECARDS')}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold transition ${
-                  activeReportTab === 'SCORECARDS'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <FileText className="w-3.5 h-3.5 text-indigo-300" />
-                Project Scorecards
-              </button>
-              <button
-                onClick={() => setActiveReportTab('REPLAY')}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold transition ${
-                  activeReportTab === 'REPLAY'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <History className="w-3.5 h-3.5 text-emerald-400" />
-                Replayable Links
-              </button>
+            {/* Right: Sub-tab Switcher + Universal Action Bar */}
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+              {/* Sub-tab Switcher */}
+              <div className="flex items-center bg-zinc-100 p-1 rounded-xl border border-zinc-200 text-xs">
+                <button
+                  onClick={() => setActiveReportTab('RANKING')}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                    activeReportTab === 'RANKING'
+                      ? 'bg-white text-zinc-900 shadow-sm'
+                      : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
+                >
+                  <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                  Relative Rankings
+                </button>
+                <button
+                  onClick={() => setActiveReportTab('MATRIX')}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                    activeReportTab === 'MATRIX'
+                      ? 'bg-white text-zinc-900 shadow-sm'
+                      : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
+                >
+                  <Grid className="w-3.5 h-3.5 text-indigo-600" />
+                  Comparison Matrix (§22)
+                </button>
+                <button
+                  onClick={() => setActiveReportTab('SCORECARDS')}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                    activeReportTab === 'SCORECARDS'
+                      ? 'bg-white text-zinc-900 shadow-sm'
+                      : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5 text-blue-600" />
+                  Project Scorecards
+                </button>
+                <button
+                  onClick={() => setActiveReportTab('REPLAY')}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                    activeReportTab === 'REPLAY'
+                      ? 'bg-white text-zinc-900 shadow-sm'
+                      : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
+                >
+                  <History className="w-3.5 h-3.5 text-emerald-600" />
+                  Execution Traces
+                </button>
+              </div>
+
+              {/* Universal Action Toolbar: Download CSV, Notion Final, Recalibrate */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportEventCsv}
+                  disabled={csvExporting || submissions.length === 0}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.98]"
+                  title="Export full leaderboard, positive points, issues, improvements & 9-dimension scores to CSV"
+                >
+                  <Download
+                    className={`w-3.5 h-3.5 text-white ${csvExporting ? 'animate-bounce' : ''}`}
+                  />
+                  <span>{csvExporting ? 'Exporting...' : 'Download CSV'}</span>
+                </button>
+                <button
+                  onClick={() => setIsNotionModalOpen(true)}
+                  disabled={submissions.length === 0}
+                  className="px-3.5 py-1.5 bg-zinc-900 hover:bg-black text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.98]"
+                  title="Export complete executive report to Notion"
+                >
+                  <span className="font-serif font-black text-xs">N</span>
+                  <span>Notion Final</span>
+                </button>
+                <button
+                  onClick={handleComputeRankingOnly}
+                  disabled={rankingLoading || submissions.length === 0}
+                  className="px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  title="Recalibrate relative rankings and 9-dimension composites"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${rankingLoading ? 'animate-spin text-blue-600' : ''}`}
+                  />
+                  <span>{rankingLoading ? 'Recalibrating...' : 'Recalibrate'}</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -471,19 +627,18 @@ export const ReviewDashboard: React.FC = () => {
           {activeReportTab === 'RANKING' && (
             <div className="space-y-4">
               {!ranking ? (
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
-                  <Trophy className="w-12 h-12 text-slate-700 mx-auto" />
-                  <h3 className="text-base font-bold text-white">No Ranking Computed Yet</h3>
-                  <p className="text-xs text-slate-400 max-w-md mx-auto">
-                    Click &quot;Run Pipeline on All Submissions&quot; above to run the
-                    prompt-injection defense, tool analyzers, AI rubric scoring, and Bradley-Terry
-                    MLE solver.
+                <div className="bg-white border border-zinc-200 rounded-xl p-12 text-center space-y-3 shadow-sm">
+                  <Trophy className="w-12 h-12 text-zinc-300 mx-auto" />
+                  <h3 className="text-base font-bold text-zinc-900">No Ranking Computed Yet</h3>
+                  <p className="text-xs text-zinc-500 max-w-md mx-auto">
+                    Click &quot;Run Pipeline on All Submissions&quot; above to run the automated
+                    discovery, tool analyzers, AI rubric scoring, and Bradley-Terry ranking solver.
                   </p>
                   {submissions.length >= 2 && (
                     <button
                       onClick={handleComputeRankingOnly}
                       disabled={rankingLoading}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow transition"
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
                     >
                       {rankingLoading
                         ? 'Computing Ratings...'
@@ -492,106 +647,765 @@ export const ReviewDashboard: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl space-y-4 p-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Trophy className="w-5 h-5 text-amber-400" />
-                        <h3 className="text-base font-bold text-white">
-                          Bradley-Terry Maximum Likelihood Leaderboard
-                        </h3>
-                        <span className="text-[10px] px-2.5 py-0.5 bg-amber-950 text-amber-300 border border-amber-800 rounded-full font-mono">
-                          {ranking.totalPairwiseMatches} Pairwise Matches Solved
-                        </span>
+                <div className="space-y-4">
+                  {/* Leaderboard Card Container */}
+                  <div className="bg-white border border-zinc-200 rounded-xl shadow-sm overflow-hidden p-6 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 pb-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Trophy className="w-5 h-5 text-amber-500" />
+                          <h3 className="text-base font-bold text-zinc-900">
+                            Bradley-Terry Calibrated Leaderboard
+                          </h3>
+                          <span className="text-[10px] px-2.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-full font-semibold">
+                            {ranking.totalPairwiseMatches} Pairwise Matches Solved
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-500 mt-1">
+                          Projects ranked by calibrated latent skill parameter &lambda; from
+                          automated head-to-head simulations.
+                        </p>
                       </div>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Projects ranked by calibrated latent skill parameter \( \lambda_i \) from
-                        automated head-to-head simulations.
-                      </p>
+
+                      <div className="flex items-center gap-2 flex-wrap self-start sm:self-center">
+                        <button
+                          onClick={handleExportEventCsv}
+                          disabled={csvExporting}
+                          className="px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          title="Export full leaderboard, + points, issues & improvements to CSV"
+                        >
+                          <Download
+                            className={`w-3.5 h-3.5 text-blue-600 ${csvExporting ? 'animate-bounce' : ''}`}
+                          />
+                          <span>{csvExporting ? 'Exporting...' : 'Export CSV'}</span>
+                        </button>
+                        <button
+                          onClick={() => setIsNotionModalOpen(true)}
+                          className="px-3 py-1.5 bg-zinc-900 hover:bg-black text-white rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+                          title="Export complete executive report to Notion"
+                        >
+                          <span className="font-serif font-black text-xs">N</span>
+                          <span>Notion Final</span>
+                        </button>
+                        <button
+                          onClick={handleComputeRankingOnly}
+                          disabled={rankingLoading}
+                          className="px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <RefreshCw
+                            className={`w-3.5 h-3.5 ${rankingLoading ? 'animate-spin' : ''}`}
+                          />
+                          Recalibrate
+                        </button>
+                      </div>
                     </div>
 
-                    <button
-                      onClick={handleComputeRankingOnly}
-                      disabled={rankingLoading}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium border border-slate-700 transition flex items-center gap-1.5 self-start sm:self-center"
-                    >
-                      <RefreshCw
-                        className={`w-3.5 h-3.5 ${rankingLoading ? 'animate-spin' : ''}`}
-                      />
-                      Recalibrate
-                    </button>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
-                        <tr>
-                          <th className="py-3 px-4">Rank</th>
-                          <th className="py-3 px-4">Team</th>
-                          <th className="py-3 px-4">Latent Skill Rating</th>
-                          <th className="py-3 px-4">Pairwise Win Rate</th>
-                          <th className="py-3 px-4">Absolute Score</th>
-                          <th className="py-3 px-4">Anomaly Flag</th>
-                          <th className="py-3 px-4 text-right">Details</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/70 font-mono">
-                        {ranking.leaderboard.map((entry) => (
-                          <tr key={entry.submissionId} className="hover:bg-slate-800/40 transition">
-                            <td className="py-3.5 px-4 font-bold text-base">
-                              {entry.rank === 1 && <span className="text-amber-400">🥇 #1</span>}
-                              {entry.rank === 2 && <span className="text-slate-300">🥈 #2</span>}
-                              {entry.rank === 3 && <span className="text-amber-700">🥉 #3</span>}
-                              {entry.rank > 3 && (
-                                <span className="text-slate-500 font-normal">#{entry.rank}</span>
-                              )}
-                            </td>
-                            <td className="py-3.5 px-4 font-sans">
-                              <span className="font-semibold text-white block">
-                                {entry.teamName}
-                              </span>
-                              <span className="text-[10px] text-slate-500 font-mono">
-                                {entry.submissionId}
-                              </span>
-                            </td>
-                            <td className="py-3.5 px-4 text-indigo-300 font-bold text-sm">
-                              {entry.latentSkillScore}
-                            </td>
-                            <td className="py-3.5 px-4 text-slate-300">
-                              {(entry.winRate * 100).toFixed(1)}%
-                            </td>
-                            <td className="py-3.5 px-4 text-slate-300">
-                              {entry.absoluteScore}/100
-                            </td>
-                            <td className="py-3.5 px-4">
-                              {entry.discrepancyAnomalyFlag ? (
-                                <span className="text-[10px] px-2 py-0.5 bg-red-950 text-red-300 border border-red-800 rounded font-bold flex items-center gap-1 w-fit">
-                                  <AlertTriangle className="w-3 h-3" /> DISCREPANCY
-                                </span>
-                              ) : (
-                                <span className="text-[10px] px-2 py-0.5 bg-emerald-950/60 text-emerald-300 border border-emerald-800/50 rounded flex items-center gap-1 w-fit">
-                                  <CheckCircle2 className="w-3 h-3" /> Normal
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3.5 px-4 text-right font-sans">
-                              <button
-                                onClick={() => {
-                                  setInspectSubmissionId(entry.submissionId);
-                                  setDetailInitialTab('SCORECARD');
-                                }}
-                                className="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/40 rounded text-xs transition"
-                              >
-                                View Scorecard
-                              </button>
-                            </td>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-zinc-50 text-zinc-500 uppercase text-[10px] font-semibold border-b border-zinc-200">
+                          <tr>
+                            <th className="py-3 px-4">Rank</th>
+                            <th className="py-3 px-4">Team</th>
+                            <th className="py-3 px-4">Latent Skill</th>
+                            <th className="py-3 px-4">Win Rate</th>
+                            <th className="py-3 px-4">Calibrated Score</th>
+                            <th className="py-3 px-4">Confidence</th>
+                            <th className="py-3 px-4">Audit Status</th>
+                            <th className="py-3 px-4 text-right">Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100">
+                          {ranking.leaderboard.map((entry) => {
+                            const isExpanded = !!expandedSubmissions[entry.submissionId];
+                            const why = entry.whyAmIExplanation;
+                            const rel = entry.relativeAnalysis;
+                            const grading = entry.relativeGrading;
+
+                            return (
+                              <React.Fragment key={entry.submissionId}>
+                                <tr className="hover:bg-zinc-50/60 transition-colors">
+                                  <td className="py-3.5 px-4 font-bold text-base">
+                                    {entry.rank === 1 && (
+                                      <span className="text-amber-500 flex items-center gap-1">
+                                        🥇 #1
+                                      </span>
+                                    )}
+                                    {entry.rank === 2 && (
+                                      <span className="text-zinc-600 flex items-center gap-1">
+                                        🥈 #2
+                                      </span>
+                                    )}
+                                    {entry.rank === 3 && (
+                                      <span className="text-amber-700 flex items-center gap-1">
+                                        🥉 #3
+                                      </span>
+                                    )}
+                                    {entry.rank > 3 && (
+                                      <span className="text-zinc-400 font-normal">
+                                        #{entry.rank}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3.5 px-4">
+                                    <span className="font-bold text-zinc-900 block text-sm">
+                                      {entry.teamName}
+                                    </span>
+                                    <span className="text-[11px] text-zinc-400 font-mono">
+                                      {entry.submissionId}
+                                    </span>
+                                  </td>
+                                  <td className="py-3.5 px-4 text-blue-600 font-black text-sm">
+                                    {entry.latentSkillScore}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-zinc-700 font-medium">
+                                    {(entry.winRate * 100).toFixed(1)}%
+                                  </td>
+                                  <td className="py-3.5 px-4">
+                                    <span className="text-zinc-900 font-bold text-sm block">
+                                      {(entry.absoluteScore / 10).toFixed(2)} / 10
+                                    </span>
+                                    <span className="text-[10px] text-zinc-400 font-mono">
+                                      {entry.absoluteScore} / 100
+                                    </span>
+                                  </td>
+                                  <td className="py-3.5 px-4">
+                                    <span className="text-[11px] px-2 py-0.5 rounded font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                      {why?.confidenceScore || 92}%
+                                    </span>
+                                  </td>
+                                  <td className="py-3.5 px-4">
+                                    {entry.discrepancyAnomalyFlag ? (
+                                      <span className="text-[10px] px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded font-semibold flex items-center gap-1 w-fit">
+                                        <AlertTriangle className="w-3 h-3" /> DISCREPANCY
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-semibold flex items-center gap-1 w-fit">
+                                        <CheckCircle2 className="w-3 h-3" /> Normal
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3.5 px-4 text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <button
+                                        onClick={() => toggleExpanded(entry.submissionId)}
+                                        className="px-2.5 py-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                                        title="Toggle comparative details"
+                                      >
+                                        <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
+                                        <span>Why #{entry.rank}?</span>
+                                        {isExpanded ? (
+                                          <ChevronUp className="w-3.5 h-3.5" />
+                                        ) : (
+                                          <ChevronDown className="w-3.5 h-3.5" />
+                                        )}
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setInspectSubmissionId(entry.submissionId);
+                                          setDetailInitialTab('SCORECARD');
+                                        }}
+                                        className="px-3 py-1 bg-white hover:bg-zinc-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer"
+                                      >
+                                        Scorecard
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {/* Expandable Relative Analysis Drawer */}
+                                {isExpanded && (
+                                  <tr className="bg-zinc-50/70 border-b border-zinc-200">
+                                    <td colSpan={8} className="p-5">
+                                      <div className="space-y-4 max-w-5xl">
+                                        {/* §18 "Why Am I #X?" Transparent Explanation Card */}
+                                        {why && (
+                                          <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm space-y-3">
+                                            <div className="flex items-center justify-between gap-2 flex-wrap border-b border-zinc-100 pb-2.5">
+                                              <div className="flex items-center gap-2">
+                                                <HelpCircle className="w-4 h-4 text-amber-500" />
+                                                <span className="text-xs font-bold text-zinc-900 uppercase tracking-wide">
+                                                  Why Am I #{entry.rank}? (Relative Engineering
+                                                  Explanation)
+                                                </span>
+                                              </div>
+                                              <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold bg-amber-50 text-amber-800 border border-amber-200 font-mono">
+                                                Confidence: {why.confidenceScore}% &bull;
+                                                Calibrated: {(why.score / 10).toFixed(2)}/10
+                                              </span>
+                                            </div>
+                                            <p className="text-xs text-zinc-700 font-medium leading-relaxed bg-zinc-50 p-3 rounded-lg border border-zinc-100">
+                                              {why.whyThisRankHeadline}
+                                            </p>
+
+                                            {/* Ranked Below Previous */}
+                                            {why.whyRankedAboveBelow?.rankedBelowPrevious && (
+                                              <div className="p-3 bg-rose-50/50 rounded-xl border border-rose-200 space-y-2">
+                                                <div className="flex items-center gap-1.5 text-xs font-bold text-rose-800">
+                                                  <ArrowUpRight className="w-4 h-4 text-rose-600" />
+                                                  <span>
+                                                    What #{entry.rank - 1} (
+                                                    {
+                                                      why.whyRankedAboveBelow.rankedBelowPrevious
+                                                        .targetTeamName
+                                                    }
+                                                    ) Did Better:
+                                                  </span>
+                                                </div>
+                                                <p className="text-xs text-zinc-700">
+                                                  {
+                                                    why.whyRankedAboveBelow.rankedBelowPrevious
+                                                      .reason
+                                                  }
+                                                </p>
+                                                {why.whyRankedAboveBelow.rankedBelowPrevious
+                                                  .keyDeficits.length > 0 && (
+                                                  <div>
+                                                    <span className="text-[10px] uppercase font-bold text-rose-700 block mb-1">
+                                                      Concrete Deficits in Your Codebase:
+                                                    </span>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                      {why.whyRankedAboveBelow.rankedBelowPrevious.keyDeficits.map(
+                                                        (def, idx) => (
+                                                          <span
+                                                            key={idx}
+                                                            className="text-[11px] px-2.5 py-1 bg-white border border-rose-200 rounded-lg text-rose-900 font-medium"
+                                                          >
+                                                            &bull; {def}
+                                                          </span>
+                                                        )
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                                {why.whyRankedAboveBelow.rankedBelowPrevious
+                                                  .higherRankedAdvantages.length > 0 && (
+                                                  <div className="pt-1">
+                                                    <span className="text-[10px] uppercase font-bold text-zinc-600 block mb-1">
+                                                      Their Competitive Advantages:
+                                                    </span>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                      {why.whyRankedAboveBelow.rankedBelowPrevious.higherRankedAdvantages.map(
+                                                        (adv, idx) => (
+                                                          <span
+                                                            key={idx}
+                                                            className="text-[11px] px-2.5 py-1 bg-zinc-100 border border-zinc-200 rounded-lg text-zinc-800"
+                                                          >
+                                                            + {adv}
+                                                          </span>
+                                                        )
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+
+                                            {/* Ranked Above Next */}
+                                            {why.whyRankedAboveBelow?.rankedAboveNext && (
+                                              <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-200 space-y-2">
+                                                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800">
+                                                  <ArrowDownRight className="w-4 h-4 text-emerald-600" />
+                                                  <span>
+                                                    Competitive Lead over #{entry.rank + 1} (
+                                                    {
+                                                      why.whyRankedAboveBelow.rankedAboveNext
+                                                        .targetTeamName
+                                                    }
+                                                    ):
+                                                  </span>
+                                                </div>
+                                                <p className="text-xs text-zinc-700">
+                                                  {why.whyRankedAboveBelow.rankedAboveNext.reason}
+                                                </p>
+                                                {why.whyRankedAboveBelow.rankedAboveNext
+                                                  .keyAdvantages.length > 0 && (
+                                                  <div className="flex flex-wrap gap-1.5">
+                                                    {why.whyRankedAboveBelow.rankedAboveNext.keyAdvantages.map(
+                                                      (adv, idx) => (
+                                                        <span
+                                                          key={idx}
+                                                          className="text-[11px] px-2.5 py-1 bg-white border border-emerald-200 rounded-lg text-emerald-900 font-medium"
+                                                        >
+                                                          &check; {adv}
+                                                        </span>
+                                                      )
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+
+                                            {/* Comparison with Champion (#1) */}
+                                            {why.comparisonWithChampion && entry.rank > 1 && (
+                                              <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-200 space-y-2">
+                                                <div className="flex items-center justify-between text-xs font-bold text-amber-900">
+                                                  <div className="flex items-center gap-1.5">
+                                                    <Trophy className="w-4 h-4 text-amber-500" />
+                                                    <span>
+                                                      Comparison with Champion (
+                                                      {why.comparisonWithChampion.championTeamName})
+                                                    </span>
+                                                  </div>
+                                                  <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                                    Champion Score:{' '}
+                                                    {(
+                                                      why.comparisonWithChampion.championScore / 10
+                                                    ).toFixed(2)}
+                                                    /10
+                                                  </span>
+                                                </div>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                                                  <div className="bg-white p-2.5 rounded-lg border border-amber-200 space-y-1">
+                                                    <span className="text-[10px] font-bold uppercase text-amber-800 block">
+                                                      Where Champion Excelled:
+                                                    </span>
+                                                    <ul className="space-y-1 text-zinc-700 text-[11px]">
+                                                      {why.comparisonWithChampion.championKeyStrengths.map(
+                                                        (s, idx) => (
+                                                          <li
+                                                            key={idx}
+                                                            className="flex items-start gap-1.5"
+                                                          >
+                                                            <span className="text-amber-600 font-bold">
+                                                              &bull;
+                                                            </span>
+                                                            <span>{s}</span>
+                                                          </li>
+                                                        )
+                                                      )}
+                                                    </ul>
+                                                  </div>
+                                                  <div className="bg-white p-2.5 rounded-lg border border-amber-200 space-y-1">
+                                                    <span className="text-[10px] font-bold uppercase text-emerald-800 block">
+                                                      Your Counter-Advantages:
+                                                    </span>
+                                                    <ul className="space-y-1 text-zinc-700 text-[11px]">
+                                                      {why.comparisonWithChampion.yourAdvantagesOverChampion.map(
+                                                        (s, idx) => (
+                                                          <li
+                                                            key={idx}
+                                                            className="flex items-start gap-1.5"
+                                                          >
+                                                            <span className="text-emerald-600 font-bold">
+                                                              &check;
+                                                            </span>
+                                                            <span>{s}</span>
+                                                          </li>
+                                                        )
+                                                      )}
+                                                    </ul>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )}
+
+                                            {/* High Impact Improvements (§19) */}
+                                            {why.highestImpactImprovements &&
+                                              why.highestImpactImprovements.length > 0 && (
+                                                <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-200 space-y-2">
+                                                  <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900">
+                                                    <TrendingUp className="w-4 h-4 text-blue-600" />
+                                                    <span>
+                                                      Highest-Impact Improvement Roadmap (§19)
+                                                    </span>
+                                                  </div>
+                                                  <div className="grid grid-cols-1 gap-2">
+                                                    {why.highestImpactImprovements.map(
+                                                      (imp, idx) => (
+                                                        <div
+                                                          key={idx}
+                                                          className="p-2.5 bg-white border border-blue-200 rounded-lg text-xs space-y-1 shadow-sm"
+                                                        >
+                                                          <div className="flex items-center justify-between">
+                                                            <span className="font-semibold text-zinc-900">
+                                                              Priority #{idx + 1}
+                                                            </span>
+                                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono">
+                                                              High Score Impact
+                                                            </span>
+                                                          </div>
+                                                          <p className="text-zinc-700 leading-snug">
+                                                            {imp}
+                                                          </p>
+                                                        </div>
+                                                      )
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              )}
+                                          </div>
+                                        )}
+                                        {/* Rank Reason & Cohort Placement */}
+                                        <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm space-y-2">
+                                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                                            <div className="flex items-center gap-2">
+                                              <Award className="w-4 h-4 text-blue-600" />
+                                              <span className="text-xs font-bold text-zinc-900 uppercase tracking-wide">
+                                                Rank Evaluation Summary
+                                              </span>
+                                            </div>
+                                            {grading && (
+                                              <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                                                {grading.tierLabel} • {grading.percentile}th
+                                                Percentile
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p className="text-xs text-zinc-700 font-medium">
+                                            {entry.rankReason}
+                                          </p>
+                                          {grading && (
+                                            <p className="text-xs text-zinc-500 bg-zinc-50 p-2.5 rounded-lg border border-zinc-100">
+                                              {grading.whyTheseMarks}
+                                            </p>
+                                          )}
+                                        </div>
+
+                                        {/* Compared to Above (What to Improve to Rank Up) */}
+                                        {rel?.comparedToAbove && (
+                                          <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-sm space-y-3">
+                                            <div className="flex items-center gap-2">
+                                              <ArrowUpRight className="w-4 h-4 text-rose-600" />
+                                              <h4 className="text-xs font-bold text-zinc-900 uppercase tracking-wide">
+                                                What to Improve (Compared to Rank #
+                                                {rel.comparedToAbove.targetRank} –{' '}
+                                                {rel.comparedToAbove.targetTeamName})
+                                              </h4>
+                                              <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-rose-50 text-rose-700 border border-rose-200 ml-auto">
+                                                {rel.comparedToAbove.scoreDifference} pts Gap
+                                              </span>
+                                            </div>
+                                            <p className="text-xs text-zinc-700">
+                                              {rel.comparedToAbove.summary}
+                                            </p>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                                              {rel.comparedToAbove.criteriaDeltas.map((delta) => (
+                                                <div
+                                                  key={delta.criterionId}
+                                                  className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200 text-xs space-y-1"
+                                                >
+                                                  <div className="flex items-center justify-between">
+                                                    <span className="font-semibold text-zinc-800">
+                                                      {delta.criterionName}
+                                                    </span>
+                                                    <span className="text-rose-600 font-bold">
+                                                      {delta.delta} pts
+                                                    </span>
+                                                  </div>
+                                                  <p className="text-[11px] text-zinc-500 leading-snug">
+                                                    {delta.feedback}
+                                                  </p>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Compared to Below (Defending Rank) */}
+                                        {rel?.comparedToBelow && (
+                                          <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-sm space-y-3">
+                                            <div className="flex items-center gap-2">
+                                              <ArrowDownRight className="w-4 h-4 text-emerald-600" />
+                                              <h4 className="text-xs font-bold text-zinc-900 uppercase tracking-wide">
+                                                Competitive Edge (Lead over Rank #
+                                                {rel.comparedToBelow.targetRank} –{' '}
+                                                {rel.comparedToBelow.targetTeamName})
+                                              </h4>
+                                              <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 ml-auto">
+                                                +{rel.comparedToBelow.scoreDifference} pts Lead
+                                              </span>
+                                            </div>
+                                            <p className="text-xs text-zinc-700">
+                                              {rel.comparedToBelow.summary}
+                                            </p>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                                              {rel.comparedToBelow.criteriaDeltas.map((delta) => (
+                                                <div
+                                                  key={delta.criterionId}
+                                                  className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200 text-xs space-y-1"
+                                                >
+                                                  <div className="flex items-center justify-between">
+                                                    <span className="font-semibold text-zinc-800">
+                                                      {delta.criterionName}
+                                                    </span>
+                                                    <span className="text-emerald-700 font-bold">
+                                                      +{delta.delta} pts
+                                                    </span>
+                                                  </div>
+                                                  <p className="text-[11px] text-zinc-500 leading-snug">
+                                                    {delta.feedback}
+                                                  </p>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Path to 100% & Industry Recommendations (for #1 Rank or leaders) */}
+                                        {rel?.selfImprovement && (
+                                          <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-sm space-y-3">
+                                            <div className="flex items-center gap-2">
+                                              <Target className="w-4 h-4 text-blue-600" />
+                                              <h4 className="text-xs font-bold text-zinc-900 uppercase tracking-wide">
+                                                {rel.selfImprovement.title} (Gap:{' '}
+                                                {rel.selfImprovement.gapPoints} pts)
+                                              </h4>
+                                            </div>
+                                            <p className="text-xs text-zinc-700">
+                                              {rel.selfImprovement.summary}
+                                            </p>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                                              {rel.selfImprovement.recommendations.map((rec) => (
+                                                <div
+                                                  key={rec.criterionId}
+                                                  className="p-2.5 bg-zinc-50 rounded-lg border border-zinc-200 text-xs space-y-1"
+                                                >
+                                                  <div className="flex items-center justify-between">
+                                                    <span className="font-semibold text-zinc-800">
+                                                      {rec.criterionName}
+                                                    </span>
+                                                    <span className="text-blue-600 font-bold">
+                                                      {rec.currentScore}/100
+                                                    </span>
+                                                  </div>
+                                                  <p className="text-[11px] text-zinc-500 leading-snug">
+                                                    {rec.actionableSteps}
+                                                  </p>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* VIEW: 9-Dimension Comparison Matrix & Close Boundary Detection (§22) */}
+          {activeReportTab === 'MATRIX' && (
+            <div className="space-y-6">
+              {/* Close Boundary Alert Banner (§16 & §22) */}
+              {comparisonMatrixData?.closeRankingBoundaries &&
+                comparisonMatrixData.closeRankingBoundaries.length > 0 && (
+                  <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl shadow-sm space-y-2">
+                    <div className="flex items-center gap-2 text-amber-900 font-bold text-sm">
+                      <Scale className="w-4 h-4 text-amber-600" />
+                      <span>Ranking Boundary Detection Active (§16 / §22)</span>
+                    </div>
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      Close neighboring candidates (&Delta; &le; 5.0 pts) triggered automated
+                      pairwise tie-breaker evaluation across all 9 engineering dimensions.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                      {comparisonMatrixData.closeRankingBoundaries.map((b, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 bg-white border border-amber-200 rounded-lg text-xs space-y-1.5 shadow-sm"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-zinc-900">
+                              {b.subAName} <span className="text-zinc-400 font-normal">vs</span>{' '}
+                              {b.subBName}
+                            </span>
+                            <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold border border-amber-200">
+                              &Delta; {b.scoreDelta.toFixed(2)} pts
+                            </span>
+                          </div>
+                          <p className="text-zinc-600 text-[11px] leading-snug">
+                            {b.boundaryReason}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* 9-Dimension Comparison Matrix Table */}
+              <div className="bg-white border border-zinc-200 rounded-xl shadow-sm overflow-hidden p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 pb-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Grid className="w-5 h-5 text-indigo-600" />
+                      <h3 className="text-base font-bold text-zinc-900">
+                        9-Dimension Engineering Comparison Matrix (§22)
+                      </h3>
+                      <span className="text-[10px] px-2.5 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-full font-semibold">
+                        Side-by-Side Multi-Project Analysis
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      Compare all projects across every core engineering dimension with automated
+                      dimension winner indicators.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap self-start sm:self-center">
+                    <button
+                      onClick={handleExportEventCsv}
+                      disabled={csvExporting || submissions.length === 0}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.98]"
+                      title="Export full leaderboard, positive points, issues, improvements & 9-dimension scores to CSV"
+                    >
+                      <Download
+                        className={`w-3.5 h-3.5 text-white ${csvExporting ? 'animate-bounce' : ''}`}
+                      />
+                      <span>{csvExporting ? 'Exporting...' : 'Export CSV'}</span>
+                    </button>
+                    <button
+                      onClick={() => setIsNotionModalOpen(true)}
+                      disabled={submissions.length === 0}
+                      className="px-3.5 py-1.5 bg-zinc-900 hover:bg-black text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.98]"
+                      title="Export complete executive report to Notion"
+                    >
+                      <span className="font-serif font-black text-xs">N</span>
+                      <span>Notion Final</span>
+                    </button>
+                    <button
+                      onClick={handleComputeRankingOnly}
+                      disabled={rankingLoading || submissions.length === 0}
+                      className="px-3.5 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      title="Recalibrate Bradley-Terry relative rankings"
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 ${rankingLoading ? 'animate-spin text-blue-600' : ''}`}
+                      />
+                      <span>{rankingLoading ? 'Recalibrating...' : 'Recalibrate'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {!comparisonMatrixData || comparisonMatrixData.comparisonMatrix.length === 0 ? (
+                  <div className="text-center py-12 text-zinc-500 text-xs">
+                    No comparison matrix generated yet. Run the pipeline on submissions to view
+                    dimension breakdowns.
+                  </div>
+                ) : (
+                  (() => {
+                    // `absoluteScore` is the canonical 9-dimension weighted composite computed by
+                    // the ranking service. Recalculating it in the browser used a separate weight
+                    // map and allowed the matrix total to disagree with the persisted leaderboard.
+                    const matrixColumns = (ranking?.leaderboard || []).map((entry) => ({
+                      ...entry,
+                      calculatedScore: entry.absoluteScore
+                    }));
+
+                    return (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-zinc-50 text-zinc-600 uppercase text-[10px] font-semibold border-b border-zinc-200">
+                            <tr>
+                              <th className="py-3 px-4 font-bold text-zinc-700 min-w-[200px]">
+                                Engineering Dimension
+                              </th>
+                              {matrixColumns.map((entry, idx) => (
+                                <th
+                                  key={entry.submissionId}
+                                  className="py-3 px-4 text-center min-w-[140px]"
+                                >
+                                  <div className="flex flex-col items-center">
+                                    <span className="font-bold text-zinc-900 text-xs">
+                                      {entry.teamName}
+                                    </span>
+                                    <span className="text-[10px] px-2 py-0.5 rounded font-bold font-mono mt-0.5 bg-zinc-200/70 text-zinc-700">
+                                      #{idx + 1} &bull; {(entry.calculatedScore / 10).toFixed(1)}/10
+                                    </span>
+                                  </div>
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100 font-sans">
+                            {comparisonMatrixData.comparisonMatrix.map((dim) => {
+                              const allScores = matrixColumns.map((entry) => {
+                                const sc =
+                                  dim.scores[entry.teamName] ?? dim.scores[entry.submissionId] ?? 0;
+                                return sc;
+                              });
+                              const maxScore = Math.max(...allScores, 0);
+
+                              return (
+                                <tr
+                                  key={dim.dimension}
+                                  className="hover:bg-zinc-50/60 transition-colors"
+                                >
+                                  <td className="py-3.5 px-4 font-semibold text-zinc-900">
+                                    <div className="flex items-center gap-1.5">
+                                      <span>{dim.dimensionName}</span>
+                                    </div>
+                                  </td>
+                                  {matrixColumns.map((entry) => {
+                                    const rawScore =
+                                      dim.scores[entry.teamName] ??
+                                      dim.scores[entry.submissionId] ??
+                                      0;
+                                    const isWinner = rawScore > 0 && rawScore === maxScore;
+                                    const scoreOutOf10 = (rawScore / 10).toFixed(1);
+
+                                    return (
+                                      <td
+                                        key={entry.submissionId}
+                                        className="py-3.5 px-4 text-center"
+                                      >
+                                        <div className="inline-flex flex-col items-center gap-0.5">
+                                          <span
+                                            className={`px-3 py-1 rounded-lg font-mono font-bold text-xs border ${
+                                              rawScore >= 80
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                : rawScore >= 60
+                                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                                  : 'bg-rose-50 text-rose-700 border-rose-200'
+                                            }`}
+                                          >
+                                            {scoreOutOf10} / 10
+                                          </span>
+                                          {isWinner && (
+                                            <span className="text-[10px] text-amber-600 font-bold flex items-center gap-0.5 mt-0.5">
+                                              👑 Top
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              );
+                            })}
+                            {/* Overall Score Row */}
+                            <tr className="bg-zinc-50 font-bold border-t-2 border-zinc-200">
+                              <td className="py-4 px-4 text-zinc-900 font-bold uppercase text-[11px]">
+                                Overall Calibrated Score
+                              </td>
+                              {matrixColumns.map((entry) => (
+                                <td key={entry.submissionId} className="py-4 px-4 text-center">
+                                  <div className="flex flex-col items-center">
+                                    <span className="text-sm font-black text-blue-600 font-mono">
+                                      {(entry.calculatedScore / 10).toFixed(2)} / 10
+                                    </span>
+                                    <span className="text-[10px] text-zinc-500 font-normal mt-0.5">
+                                      {entry.calculatedScore.toFixed(1)} / 100
+                                    </span>
+                                  </div>
+                                </td>
+                              ))}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
             </div>
           )}
 
@@ -599,22 +1413,22 @@ export const ReviewDashboard: React.FC = () => {
           {activeReportTab === 'SCORECARDS' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {submissions.length === 0 ? (
-                <div className="col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center text-slate-400">
-                  No submissions yet. Share the submission link to collect candidate projects.
+                <div className="col-span-2 bg-white border border-zinc-200 rounded-xl p-12 text-center text-zinc-500 shadow-sm">
+                  No submissions yet. Share the submission link above to collect candidate projects.
                 </div>
               ) : (
                 submissions.map((sub) => (
                   <div
                     key={sub._id}
-                    className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-5 shadow-xl space-y-4 transition flex flex-col justify-between"
+                    className="bg-white border border-zinc-200 hover:border-zinc-300 rounded-xl p-5 shadow-sm space-y-4 transition-all flex flex-col justify-between"
                   >
                     <div className="space-y-3">
                       {/* Card Header */}
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-white">{sub.teamName}</h3>
-                            <span className="text-[10px] px-2 py-0.5 rounded font-mono bg-slate-800 text-slate-300">
+                            <h3 className="text-base font-bold text-zinc-900">{sub.teamName}</h3>
+                            <span className="text-[10px] px-2 py-0.5 rounded font-mono bg-zinc-100 text-zinc-600 border border-zinc-200">
                               {sub.teamId}
                             </span>
                           </div>
@@ -622,38 +1436,38 @@ export const ReviewDashboard: React.FC = () => {
                             href={sub.repositoryUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-xs text-indigo-400 hover:underline flex items-center gap-1 font-mono mt-1"
+                            className="text-xs text-blue-600 hover:underline flex items-center gap-1 font-mono mt-1"
                           >
                             <span>{sub.repositoryUrl.replace(/^https?:\/\//, '')}</span>
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         </div>
 
-                        {/* Injection Defense Status Badge */}
+                        {/* Defense Status Badge */}
                         {sub.status === 'SUBMITTED' ? (
-                          <span className="text-[11px] px-2.5 py-1 bg-slate-800 text-slate-400 border border-slate-700 rounded-full font-medium flex items-center gap-1 shadow-sm">
+                          <span className="text-[11px] px-2.5 py-1 bg-zinc-100 text-zinc-600 border border-zinc-200 rounded-full font-semibold flex items-center gap-1">
                             <Clock className="w-3.5 h-3.5" /> PENDING EVALUATION
                           </span>
                         ) : sub.flaggedForHumanReview ? (
-                          <span className="text-[11px] px-2.5 py-1 bg-red-950 text-red-300 border border-red-800 rounded-full font-bold flex items-center gap-1 shadow-sm">
+                          <span className="text-[11px] px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-full font-bold flex items-center gap-1">
                             <ShieldAlert className="w-3.5 h-3.5" /> INJECTION FLAGGED
                           </span>
                         ) : (
-                          <span className="text-[11px] px-2.5 py-1 bg-emerald-950 text-emerald-300 border border-emerald-800 rounded-full font-semibold flex items-center gap-1 shadow-sm">
+                          <span className="text-[11px] px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-semibold flex items-center gap-1">
                             <CheckCircle2 className="w-3.5 h-3.5" /> DEFENSE CLEAN
                           </span>
                         )}
                       </div>
 
                       {/* Scope & Links Details */}
-                      <div className="flex flex-wrap gap-2 text-[11px] text-slate-400 font-mono">
+                      <div className="flex flex-wrap gap-2 text-[11px] text-zinc-500 font-mono">
                         {sub.liveSiteUrl && (
-                          <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
+                          <span className="px-2 py-0.5 rounded bg-zinc-100 border border-zinc-200 text-zinc-700">
                             Live: {sub.liveSiteUrl.replace(/^https?:\/\//, '')}
                           </span>
                         )}
                         {sub.apiSpecUrl && (
-                          <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
+                          <span className="px-2 py-0.5 rounded bg-zinc-100 border border-zinc-200 text-zinc-700">
                             API: OpenAPI Spec
                           </span>
                         )}
@@ -661,10 +1475,12 @@ export const ReviewDashboard: React.FC = () => {
                     </div>
 
                     {/* Bottom Actions */}
-                    <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+                    <div className="pt-4 border-t border-zinc-100 flex items-center justify-between">
                       <div>
-                        <span className="text-[10px] text-slate-500 uppercase block">Status</span>
-                        <span className="text-xs font-semibold text-indigo-300 font-mono">
+                        <span className="text-[10px] text-zinc-400 uppercase font-semibold block">
+                          Status
+                        </span>
+                        <span className="text-xs font-bold text-blue-600 font-mono">
                           {sub.status}
                         </span>
                       </div>
@@ -673,14 +1489,14 @@ export const ReviewDashboard: React.FC = () => {
                         <button
                           onClick={() => setEditingSubmission(sub)}
                           title="Edit Submission"
-                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 rounded-lg transition"
+                          className="p-2 bg-white hover:bg-zinc-50 text-zinc-600 border border-zinc-200 rounded-lg transition-colors cursor-pointer shadow-sm"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => handleDeleteSubmission(sub._id, sub.teamName)}
                           title="Delete Submission"
-                          className="p-1.5 bg-slate-800 hover:bg-red-950 text-slate-400 hover:text-red-400 border border-slate-700 hover:border-red-800 rounded-lg transition"
+                          className="p-2 bg-white hover:bg-rose-50 text-zinc-600 hover:text-rose-600 border border-zinc-200 hover:border-rose-200 rounded-lg transition-colors cursor-pointer shadow-sm"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -688,7 +1504,7 @@ export const ReviewDashboard: React.FC = () => {
                           <button
                             onClick={() => handleRunSinglePipeline(sub._id, sub.teamName)}
                             disabled={pipelineRunning}
-                            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow transition flex items-center gap-1.5"
+                            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
                           >
                             <Play className="w-3 h-3" /> Run Pipeline
                           </button>
@@ -699,18 +1515,18 @@ export const ReviewDashboard: React.FC = () => {
                                 setInspectSubmissionId(sub._id);
                                 setDetailInitialTab('REPLAY');
                               }}
-                              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium border border-slate-700 transition flex items-center gap-1"
+                              className="px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 transition-colors shadow-sm flex items-center gap-1 cursor-pointer"
                             >
-                              <History className="w-3.5 h-3.5 text-emerald-400" /> Replay
+                              <History className="w-3.5 h-3.5 text-emerald-600" /> Replay
                             </button>
                             <button
                               onClick={() => {
                                 setInspectSubmissionId(sub._id);
                                 setDetailInitialTab('SCORECARD');
                               }}
-                              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow transition flex items-center gap-1"
+                              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1 cursor-pointer"
                             >
-                              Inspect Full Report <ArrowRight className="w-3 h-3" />
+                              Inspect Report <ArrowRight className="w-3 h-3" />
                             </button>
                           </>
                         )}
@@ -724,56 +1540,56 @@ export const ReviewDashboard: React.FC = () => {
 
           {/* VIEW C: Replayable Links & Verifiable Audit Trail */}
           {activeReportTab === 'REPLAY' && (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-              <div className="border-b border-slate-800 pb-4">
+            <div className="bg-white border border-zinc-200 rounded-xl p-6 shadow-sm space-y-4">
+              <div className="border-b border-zinc-100 pb-4">
                 <div className="flex items-center gap-2">
-                  <History className="w-5 h-5 text-emerald-400" />
-                  <h3 className="text-base font-bold text-white">
+                  <History className="w-5 h-5 text-emerald-600" />
+                  <h3 className="text-base font-bold text-zinc-900">
                     Verifiable Evaluation Replay Traces (§20)
                   </h3>
                 </div>
-                <p className="text-xs text-slate-400 mt-1">
-                  Every pipeline run produces a deterministic replay trace containing sha256 input
-                  hashes, exact prompt templates, temperature=0 LLM outputs, and sandbox logs.
+                <p className="text-xs text-zinc-500 mt-1">
+                  Every pipeline run produces a deterministic replay trace containing input
+                  snapshots, activity logs, exact scoring justifications, and timing breakdown.
                 </p>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-xs text-left font-mono">
-                  <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                  <thead className="bg-zinc-50 text-zinc-500 uppercase text-[10px] font-semibold border-b border-zinc-200">
                     <tr>
                       <th className="py-3 px-4">Team</th>
                       <th className="py-3 px-4">Pipeline Status</th>
-                      <th className="py-3 px-4">Replayable Action</th>
-                      <th className="py-3 px-4 text-right">Trace Viewer</th>
+                      <th className="py-3 px-4">Replayable API Link</th>
+                      <th className="py-3 px-4 text-right">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/80">
+                  <tbody className="divide-y divide-zinc-100">
                     {submissions.map((sub) => (
-                      <tr key={sub._id} className="hover:bg-slate-800/30">
-                        <td className="py-3.5 px-4 font-sans font-semibold text-white">
+                      <tr key={sub._id} className="hover:bg-zinc-50/60 transition-colors">
+                        <td className="py-3.5 px-4 font-sans font-semibold text-zinc-900">
                           <div>
-                            <span>{sub.teamName}</span>
-                            <span className="block text-[10px] text-slate-500 font-mono">
+                            <span className="text-sm">{sub.teamName}</span>
+                            <span className="block text-[10px] text-zinc-400 font-mono">
                               {sub.teamId}
                             </span>
                           </div>
                         </td>
                         <td className="py-3.5 px-4">
-                          <span className="text-[10px] px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-100 border border-zinc-200 text-zinc-700 font-semibold">
                             {sub.status}
                           </span>
                         </td>
                         {sub.status === 'SUBMITTED' ? (
                           <>
-                            <td className="py-3.5 px-4 text-slate-500 italic text-[11px]">
+                            <td className="py-3.5 px-4 text-zinc-400 italic text-[11px] font-sans">
                               Awaiting pipeline run
                             </td>
                             <td className="py-3.5 px-4 text-right font-sans">
                               <button
                                 onClick={() => handleRunSinglePipeline(sub._id, sub.teamName)}
                                 disabled={pipelineRunning}
-                                className="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 hover:text-white border border-indigo-500/40 rounded-lg text-xs transition inline-flex items-center gap-1.5 ml-auto font-semibold"
+                                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition-colors inline-flex items-center gap-1.5 ml-auto cursor-pointer"
                               >
                                 <Play className="w-3 h-3" /> Run Pipeline
                               </button>
@@ -781,16 +1597,16 @@ export const ReviewDashboard: React.FC = () => {
                           </>
                         ) : (
                           <>
-                            <td className="py-3.5 px-4 text-indigo-400">
+                            <td className="py-3.5 px-4">
                               <button
                                 onClick={() => {
                                   const replayUrl = `${window.location.origin}/api/review/submissions/${sub._id}/replay`;
                                   navigator.clipboard.writeText(replayUrl);
                                   alert(`Copied replay trace API link:\n${replayUrl}`);
                                 }}
-                                className="text-xs hover:underline flex items-center gap-1 font-mono text-indigo-300"
+                                className="text-xs text-blue-600 hover:underline flex items-center gap-1 font-mono cursor-pointer"
                               >
-                                <Copy className="w-3 h-3" /> Copy API Replay Link
+                                <Copy className="w-3 h-3" /> Copy API Link
                               </button>
                             </td>
                             <td className="py-3.5 px-4 text-right font-sans">
@@ -799,10 +1615,10 @@ export const ReviewDashboard: React.FC = () => {
                                   setInspectSubmissionId(sub._id);
                                   setDetailInitialTab('REPLAY');
                                 }}
-                                className="px-3 py-1.5 bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ml-auto"
+                                className="px-3 py-1.5 bg-white hover:bg-zinc-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-semibold transition-colors shadow-sm flex items-center gap-1.5 ml-auto cursor-pointer"
                               >
                                 <History className="w-3.5 h-3.5" />
-                                View Step-by-Step Replay
+                                View Step Replay
                               </button>
                             </td>
                           </>
@@ -860,6 +1676,14 @@ export const ReviewDashboard: React.FC = () => {
         onUpdated={() => {
           if (selectedEventId) loadSubmissions(selectedEventId);
         }}
+      />
+
+      <NotionExportModal
+        isOpen={isNotionModalOpen}
+        onClose={() => setIsNotionModalOpen(false)}
+        type="event"
+        id={selectedEventId || ''}
+        title={selectedEvent?.name || 'Event Final Report'}
       />
     </div>
   );

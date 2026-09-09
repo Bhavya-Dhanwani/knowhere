@@ -93,17 +93,98 @@ export interface RequirementComplianceResult {
   evidenceSummary: string;
 }
 
+export interface StructuredEvidenceFinding {
+  id?: string;
+  dimension: string;
+  observedFact: string;
+  interpretation: string;
+  aiJudgment: string;
+  scoreImpact: number;
+  sourceFiles: string[];
+}
+
+export interface DimensionScoreResult {
+  dimension: string;
+  dimensionName: string;
+  objectiveScore: number;
+  qualitativeScore: number;
+  finalScore: number;
+  weight: number;
+  confidence: number;
+  findings: StructuredEvidenceFinding[];
+  strengths: string[];
+  weaknesses: string[];
+}
+
+export const DEFAULT_DIMENSION_WEIGHTS: Record<string, number> = {
+  architecture: 0.15,
+  codeQuality: 0.15,
+  maintainability: 0.15,
+  testing: 0.1,
+  reliability: 0.1,
+  complexity: 0.1,
+  engineeringPractices: 0.1,
+  securityPractices: 0.1,
+  technicalDebt: 0.05
+};
+
+export interface DeterministicMetrics {
+  loc: number;
+  cyclomaticComplexity: {
+    average: number;
+    max: number;
+    highComplexityFiles: string[];
+  };
+  codeDuplication: {
+    duplicateBlocksCount: number;
+    duplicationPercentage: number;
+    sampleLocations: string[];
+  };
+  testMetrics: {
+    testFilesCount: number;
+    testCasesCount: number;
+    assertionsCount: number;
+    testToCodeRatio: number;
+  };
+  typeSafety: {
+    anyTypeCount: number;
+    tsIgnoreCount: number;
+    explicitTypesCount: number;
+  };
+  techDebtMarkers: {
+    todoCount: number;
+    fixmeCount: number;
+    hackCount: number;
+    markerLocations: string[];
+  };
+  observedFacts: string[];
+}
+
 export interface ReviewEvaluation {
   _id: string;
   submissionId: string;
   eventId: string;
   overallScore: number;
+  objectiveScore?: number;
+  qualitativeScore?: number;
+  confidenceScore?: number;
+  dimensionScores?: Record<string, DimensionScoreResult>;
+  engineeringEvidence?: StructuredEvidenceFinding[];
+  highestImpactImprovements?: string[];
+  reproducibility?: {
+    evaluationId?: string;
+    repoUrl?: string;
+    timestamp?: string;
+    frameworkVersion?: string;
+    modelVersion?: string;
+  };
   criterionScores: CriterionScoreResult[];
   requirementCompliance: RequirementComplianceResult[];
   synthesisSummary: string;
   judgeOverride?: {
     overridden: boolean;
     judgeId?: string;
+    action?: 'ACCEPT' | 'MODIFY' | 'FLAG_FOR_REVIEW';
     originalScore?: number;
     newScore?: number;
     reason?: string;
@@ -285,6 +366,37 @@ export interface RelativeGrading {
   }>;
 }
 
+export interface RedesignWhyThisRankExplanation {
+  submissionId: string;
+  rank: number;
+  score: number;
+  confidenceScore: number;
+  whyThisRankHeadline: string;
+  whyRankedAboveBelow: {
+    rankedAboveNext?: {
+      targetTeamName: string;
+      targetScore: number;
+      keyAdvantages: string[];
+      reason: string;
+    } | null;
+    rankedBelowPrevious?: {
+      targetTeamName: string;
+      targetScore: number;
+      keyDeficits: string[];
+      higherRankedAdvantages: string[];
+      yourAdvantagesOverThem: string[];
+      reason: string;
+    } | null;
+  };
+  comparisonWithChampion?: {
+    championTeamName: string;
+    championScore: number;
+    championKeyStrengths: string[];
+    yourAdvantagesOverChampion: string[];
+  } | null;
+  highestImpactImprovements: string[];
+}
+
 export interface LeaderboardEntry {
   rank: number;
   submissionId: string;
@@ -296,6 +408,8 @@ export interface LeaderboardEntry {
   discrepancyAnomalyFlag: boolean;
   rankReason?: string;
   relativeGrading?: RelativeGrading;
+  whyAmIExplanation?: RedesignWhyThisRankExplanation;
+  dimensionScores?: Record<string, DimensionScoreResult>;
   relativeAnalysis?: {
     comparedToAbove?: RelativeComparison | null;
     comparedToBelow?: RelativeComparison | null;
@@ -310,6 +424,8 @@ export interface PairwiseMatch {
   winner: string;
   margin: number;
   rationale: string;
+  dimensionComparisons?: Record<string, any>;
+  contradictsInitialOrder?: boolean;
 }
 
 export interface EventRanking {
@@ -319,6 +435,19 @@ export interface EventRanking {
   totalPairwiseMatches: number;
   leaderboard: LeaderboardEntry[];
   pairwiseMatrix: PairwiseMatch[];
+  closeRankingBoundaries?: Array<{
+    subAId: string;
+    subBId: string;
+    subAName: string;
+    subBName: string;
+    scoreDelta: number;
+    boundaryReason: string;
+  }>;
+  comparisonMatrix?: Array<{
+    dimension: string;
+    dimensionName: string;
+    scores: Record<string, number>;
+  }>;
   generatedAt: string;
 }
 

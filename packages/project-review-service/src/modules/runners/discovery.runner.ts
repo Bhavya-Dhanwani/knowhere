@@ -7,7 +7,11 @@ export class ProjectDiscoveryRunner {
   /**
    * Discovers repo structure, languages, dependencies, and OpenAPI specifications.
    */
-  public static async discover(repoPathOrUrl: string, branch = 'main'): Promise<DiscoveryResult> {
+  public static async discover(
+    repoPathOrUrl: string,
+    branch = 'main',
+    submissionId = 'sub-unknown'
+  ): Promise<DiscoveryResult> {
     logger.info({ repoPathOrUrl, branch }, 'Executing Project Discovery Stage');
 
     // Default clean discovery structure (zero hardcoded fake frameworks or languages)
@@ -28,8 +32,34 @@ export class ProjectDiscoveryRunner {
     // Case A: If local directory exists, inspect real files on disk
     if (fs.existsSync(repoPathOrUrl)) {
       try {
-        const files = fs.readdirSync(repoPathOrUrl);
+        const getAllFiles = (dir: string, base = ''): string[] => {
+          let results: string[] = [];
+          const entries = fs.readdirSync(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const relPath = base ? `${base}/${entry.name}` : entry.name;
+            const fullPath = path.join(dir, entry.name);
+            if (
+              entry.name === '.git' ||
+              entry.name === 'node_modules' ||
+              entry.name === 'dist' ||
+              entry.name === 'build' ||
+              entry.name === '.next' ||
+              entry.name === '.turbo'
+            ) {
+              continue;
+            }
+            if (entry.isDirectory()) {
+              results = results.concat(getAllFiles(fullPath, relPath));
+            } else {
+              results.push(relPath);
+            }
+          }
+          return results;
+        };
+
+        const files = getAllFiles(repoPathOrUrl);
         result.fileList = files;
+        result.keyFileSnippets = {};
 
         // 1. Read README
         const readmeFile = files.find((f) => /^readme(\.(md|txt|markdown))?$/i.test(f));
@@ -37,7 +67,40 @@ export class ProjectDiscoveryRunner {
           result.rawReadme = fs.readFileSync(path.join(repoPathOrUrl, readmeFile), 'utf-8');
         }
 
-        // 2. Language & Dependency detection
+        // 2. Read all text/code files across the entire local directory
+        for (const relPath of files) {
+          const lower = relPath.toLowerCase();
+          const isCodeOrDoc =
+            lower.endsWith('.html') ||
+            lower.endsWith('.htm') ||
+            lower.endsWith('.js') ||
+            lower.endsWith('.mjs') ||
+            lower.endsWith('.cjs') ||
+            lower.endsWith('.ts') ||
+            lower.endsWith('.jsx') ||
+            lower.endsWith('.tsx') ||
+            lower.endsWith('.css') ||
+            lower.endsWith('.scss') ||
+            lower.endsWith('.json') ||
+            lower.endsWith('.py') ||
+            lower.endsWith('.md') ||
+            lower.endsWith('.txt') ||
+            lower.endsWith('.sql') ||
+            lower.endsWith('.sh') ||
+            lower.endsWith('.yaml') ||
+            lower.endsWith('.yml') ||
+            lower.endsWith('.xml') ||
+            lower.endsWith('.svg');
+
+          if (isCodeOrDoc) {
+            try {
+              const full = path.join(repoPathOrUrl, relPath);
+              result.keyFileSnippets[relPath] = fs.readFileSync(full, 'utf-8').slice(0, 10000);
+            } catch {}
+          }
+        }
+
+        // 3. Language & Dependency detection
         const packageJsonPath = path.join(repoPathOrUrl, 'package.json');
         if (fs.existsSync(packageJsonPath)) {
           result.detectedFrameworks.push('Node.js');
@@ -64,13 +127,13 @@ export class ProjectDiscoveryRunner {
         }
 
         // Check HTML files
-        const htmlFiles = files.filter((f) => f.endsWith('.html'));
+        const htmlFiles = files.filter((f) => f.endsWith('.html') || f.endsWith('.htm'));
         if (htmlFiles.length > 0 && result.detectedFrameworks.length === 0) {
           result.primaryLanguage = 'HTML';
           result.detectedFrameworks.push('HTML5 / Web');
         }
 
-        // 3. OpenAPI / Swagger discovery
+        // 4. OpenAPI / Swagger discovery
         const swaggerCandidates = ['swagger.json', 'swagger.yaml', 'openapi.json', 'openapi.yaml'];
         for (const candidate of swaggerCandidates) {
           const candidatePath = path.join(repoPathOrUrl, candidate);
@@ -101,7 +164,12 @@ export class ProjectDiscoveryRunner {
         .replace(/\/+$/, '');
       const match = cleanUrl.match(/github\.com\/([^/]+)\/([^/]+)/i);
 
-      if (match) {
+      if (!match) {
+        logger.warn({ repoPathOrUrl }, 'Repository URL is not a valid GitHub repository');
+        result.repoValid = false;
+        result.repoErrorMessage = `Repository URL "${repoPathOrUrl}" is invalid (must be a valid GitHub repository)`;
+        result.primaryLanguage = 'None';
+      } else {
         const [, owner, repo] = match;
         const targetBranch = branch && branch.trim() ? branch.trim() : 'main';
 
@@ -251,55 +319,148 @@ export class ProjectDiscoveryRunner {
           }
         } catch {}
 
-        // 8. Fetch real key file snippets (e.g. index.html, other pages) for grounded code evaluation
+        // 8. Fetch real file contents across the entire repository for deep code inspection
         const relevantFiles = filePaths.filter((p) => {
           const lower = p.toLowerCase();
           return (
             (lower.endsWith('.html') ||
+              lower.endsWith('.htm') ||
               lower.endsWith('.js') ||
+              lower.endsWith('.mjs') ||
+              lower.endsWith('.cjs') ||
               lower.endsWith('.ts') ||
               lower.endsWith('.jsx') ||
               lower.endsWith('.tsx') ||
               lower.endsWith('.css') ||
-              lower.endsWith('.py')) &&
+              lower.endsWith('.scss') ||
+              lower.endsWith('.json') ||
+              lower.endsWith('.py') ||
+              lower.endsWith('.md') ||
+              lower.endsWith('.txt') ||
+              lower.endsWith('.sql') ||
+              lower.endsWith('.sh') ||
+              lower.endsWith('.yaml') ||
+              lower.endsWith('.yml') ||
+              lower.endsWith('.xml') ||
+              lower.endsWith('.svg')) &&
             !lower.includes('node_modules') &&
-            !lower.includes('.git') &&
-            !lower.includes('dist')
+            !lower.includes('.git/') &&
+            !lower.includes('dist/') &&
+            !lower.includes('build/') &&
+            !lower.includes('package-lock.json') &&
+            !lower.includes('pnpm-lock.yaml') &&
+            !lower.includes('yarn.lock')
           );
         });
 
-        // Ensure index.html or main entry is prioritized first
+        // Ensure all HTML files and primary entry points are prioritized
         relevantFiles.sort((a, b) => {
-          const aIndex = a.toLowerCase().includes('index') ? -1 : 1;
-          const bIndex = b.toLowerCase().includes('index') ? -1 : 1;
-          return aIndex - bIndex;
+          const aHtml = a.endsWith('.html') || a.endsWith('.htm') ? -2 : 0;
+          const bHtml = b.endsWith('.html') || b.endsWith('.htm') ? -2 : 0;
+          const aIndex = a.toLowerCase().includes('index') ? -1 : 0;
+          const bIndex = b.toLowerCase().includes('index') ? -1 : 0;
+          return aHtml + aIndex - (bHtml + bIndex);
         });
 
-        const selectedFiles = relevantFiles.slice(0, 4);
-        result.keyFileSnippets = {};
-        for (const kf of selectedFiles) {
-          try {
-            const kRes = await fetch(
-              `https://raw.githubusercontent.com/${owner}/${repo}/${targetBranch}/${kf}`,
-              {
-                headers: { 'User-Agent': 'Knowhere-Discovery/2.0' },
-                signal: AbortSignal.timeout(4000)
-              }
-            );
-            if (kRes.ok) {
-              const content = await kRes.text();
-              result.keyFileSnippets[kf] = content.slice(0, 3000);
-            }
-          } catch {}
+        // Scan ALL files across the entire project in concurrent batches (no file count limit)
+        const snippets: Record<string, string> = {};
+        const BATCH_SIZE = 10;
+        for (let i = 0; i < relevantFiles.length; i += BATCH_SIZE) {
+          const batch = relevantFiles.slice(i, i + BATCH_SIZE);
+          await Promise.all(
+            batch.map(async (kf) => {
+              try {
+                const kRes = await fetch(
+                  `https://raw.githubusercontent.com/${owner}/${repo}/${targetBranch}/${kf}`,
+                  {
+                    headers: { 'User-Agent': 'Knowhere-Discovery/2.0' },
+                    signal: AbortSignal.timeout(6000)
+                  }
+                );
+                if (kRes.ok) {
+                  const content = await kRes.text();
+                  snippets[kf] = content.slice(0, 10000);
+                }
+              } catch {}
+            })
+          );
         }
+        result.keyFileSnippets = snippets;
       }
     }
 
-    // Ensure primaryLanguage has a sensible default if completely empty
-    if (!result.primaryLanguage || result.primaryLanguage === 'Unknown') {
-      result.primaryLanguage = result.detectedFrameworks.includes('HTML5 / Web')
-        ? 'HTML'
-        : 'Generic Code';
+    if (result.fileList && result.fileList.length > 0) {
+      result.repoValid = true;
+    } else {
+      result.repoValid = false;
+      result.repoErrorMessage =
+        result.repoErrorMessage || 'Repository is empty or unreachable: 0 files discovered';
+      result.primaryLanguage = 'None';
+    }
+
+    // 9. Execute Mistral + LangChain Deep Project Discovery Agent (Whole-Project Inspection)
+    if (result.repoValid && result.fileList && result.fileList.length > 0) {
+      try {
+        const { MistralDiscoveryAgent } = await import('../ai/discovery.agent.js');
+        const deepDiscovery = await MistralDiscoveryAgent.analyzeProject(submissionId, {
+          repoUrl: repoPathOrUrl,
+          branch,
+          allFilePaths: result.fileList || [],
+          allFilesContent: result.keyFileSnippets || {},
+          rawReadme: result.rawReadme,
+          languagesBreakdown: result.languages
+        });
+        result.deepAnalysis = deepDiscovery;
+        if (
+          deepDiscovery.primaryLanguage &&
+          (!result.primaryLanguage || result.primaryLanguage === 'Unknown')
+        ) {
+          result.primaryLanguage = deepDiscovery.primaryLanguage;
+        }
+        if (
+          Array.isArray(deepDiscovery.detectedFrameworks) &&
+          deepDiscovery.detectedFrameworks.length > 0
+        ) {
+          for (const fw of deepDiscovery.detectedFrameworks) {
+            if (!result.detectedFrameworks.includes(fw)) {
+              result.detectedFrameworks.push(fw);
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn(
+          { err, submissionId },
+          'Mistral deep discovery agent failed, continuing with static discovery metadata'
+        );
+      }
+    } else {
+      result.deepAnalysis = {
+        primaryLanguage: 'None',
+        detectedFrameworks: [],
+        uiArchitecture: {
+          pageCount: 0,
+          pages: [],
+          stylingApproach: 'None',
+          visualAndMediaAssets: [],
+          responsiveness: 'None',
+          semanticStructureQuality: 'INCOMPLETE'
+        },
+        functionalityAndLogic: {
+          interactiveFeatures: [],
+          clientSideScripts: [],
+          crossPageNavigation: false,
+          formsAndInputsCount: 0
+        },
+        complexityAndScope: {
+          tier: 'ELEMENTARY_STARTER',
+          estimatedTotalLines: 0,
+          fileCount: 0,
+          hasMultimedia: false,
+          technicalDepthScore: 0,
+          minorAspectsAndNuances: []
+        },
+        executiveSummary: `Repository inspection failed: ${result.repoErrorMessage}`
+      };
     }
 
     logger.info(
@@ -307,7 +468,8 @@ export class ProjectDiscoveryRunner {
         primaryLanguage: result.primaryLanguage,
         detectedFrameworks: result.detectedFrameworks,
         fileCount: result.fileList?.length || 0,
-        hasOpenApi: result.hasOpenApi
+        hasOpenApi: result.hasOpenApi,
+        scopeTier: result.deepAnalysis?.complexityAndScope?.tier
       },
       'Project Discovery Stage Completed'
     );
