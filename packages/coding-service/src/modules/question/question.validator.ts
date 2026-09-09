@@ -22,7 +22,12 @@ export const getQuestionDisplayValidators = [
 
 export const submitCodeValidators = [
   param('id').isMongoId().withMessage('Invalid question ID format'),
-  body('language').isString().trim().notEmpty().withMessage('Programming language is required'),
+  body('language')
+    .isString()
+    .trim()
+    .toLowerCase()
+    .isIn(['javascript', 'js', 'node'])
+    .withMessage('The configured runner currently supports JavaScript/Node.js submissions.'),
   body('code').isString().notEmpty().withMessage('Source code is required'),
   validateErrors
 ];

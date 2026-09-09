@@ -20,11 +20,12 @@ export const authApi = {
     };
   },
 
-  refresh: async (): Promise<{ accessToken: string }> => {
+  refresh: async (): Promise<{ accessToken: string; user: User }> => {
     const response = await axiosClient.post('/auth/refresh');
     const data = response.data?.data || response.data;
     return {
-      accessToken: data.accessToken
+      accessToken: data.accessToken,
+      user: data.user
     };
   },
 
@@ -34,6 +35,15 @@ export const authApi = {
 
   getCurrentUser: async (): Promise<User> => {
     const response = await axiosClient.get('/auth/me');
-    return response.data?.data || response.data;
+    const data = response.data?.data || response.data;
+    return data.user || data;
+  },
+
+  verifyEmail: async (email: string, token: string): Promise<void> => {
+    await axiosClient.post('/auth/verify-email', { email, token });
+  },
+
+  resetPassword: async (token: string, password: string): Promise<void> => {
+    await axiosClient.post('/auth/reset-password', { token, password });
   }
 };

@@ -1,6 +1,7 @@
 import ResourceDao from '../shared/dao/resource.dao.js';
 import env from '../shared/config/env.config.js';
 import logger from '../shared/config/logger.config.js';
+import connectDB from '../shared/config/db.config.js';
 
 interface EventBridgeMediaConvertDetail {
   status: 'COMPLETE' | 'ERROR';
@@ -24,6 +25,7 @@ interface EventBridgeEvent {
 export async function handler(
   event: EventBridgeEvent
 ): Promise<{ statusCode: number; body: string }> {
+  await connectDB();
   logger.info({ event }, 'MediaConvert Completion Lambda invoked');
 
   const resourceDao = new ResourceDao();

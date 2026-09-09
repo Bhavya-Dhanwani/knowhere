@@ -7,12 +7,15 @@ export const createEventValidators = [
   body('criteria').isArray({ min: 1 }).withMessage('At least one criterion is required'),
   body('criteria.*.id').isString().notEmpty(),
   body('criteria.*.name').isString().notEmpty(),
+  body('criteria.*.description').isString().notEmpty(),
   body('criteria.*.weight')
     .isFloat({ min: 0, max: 1 })
     .withMessage('Weight must be between 0 and 1'),
   body('criteria.*.category')
     .isIn(['CODE_QUALITY', 'SECURITY', 'FRONTEND', 'BACKEND_API', 'REQUIREMENTS', 'INNOVATION'])
     .withMessage('Invalid criterion category'),
+  body('criteria.*.minScore').optional().isFloat({ min: 0, max: 100 }),
+  body('criteria.*.maxScore').optional().isFloat({ min: 0, max: 100 }),
   body('requirements').optional().isArray(),
   body('projectType')
     .optional()
@@ -39,8 +42,19 @@ export const createSubmissionValidators = [
   param('id').isMongoId().withMessage('Valid event ID required'),
   body('teamName').isString().notEmpty().withMessage('Team name is required'),
   body('teamId').isString().notEmpty().withMessage('Team ID is required'),
-  body('repositoryUrl').isString().notEmpty().withMessage('Repository URL is required'),
-  body('branch').optional({ checkFalsy: true }).isString(),
+  body('repositoryUrl')
+    .isString()
+    .matches(
+      /^(https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?|git@github\.com:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?)$/i
+    )
+    .withMessage('A canonical GitHub HTTPS or SSH repository URL is required'),
+  body('branch')
+    .optional({ checkFalsy: true })
+    .matches(/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,199}$/)
+    .custom((value) => !value.startsWith('-') && !value.includes('..')),
+  body('commitHash')
+    .optional({ checkFalsy: true })
+    .matches(/^[a-fA-F0-9]{7,40}$/),
   body('liveSiteUrl')
     .optional({ checkFalsy: true })
     .isURL()
@@ -53,8 +67,18 @@ export const updateSubmissionValidators = [
   param('id').isMongoId().withMessage('Valid submission ID required'),
   body('teamName').optional().isString().notEmpty(),
   body('teamId').optional().isString().notEmpty(),
-  body('repositoryUrl').optional().isString().notEmpty(),
-  body('branch').optional({ checkFalsy: true }).isString(),
+  body('repositoryUrl')
+    .optional()
+    .matches(
+      /^(https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?|git@github\.com:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?)$/i
+    ),
+  body('branch')
+    .optional({ checkFalsy: true })
+    .matches(/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,199}$/)
+    .custom((value) => !value.startsWith('-') && !value.includes('..')),
+  body('commitHash')
+    .optional({ checkFalsy: true })
+    .matches(/^[a-fA-F0-9]{7,40}$/),
   body('liveSiteUrl')
     .optional({ checkFalsy: true })
     .isURL()

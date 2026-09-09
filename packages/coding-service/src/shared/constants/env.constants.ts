@@ -3,8 +3,11 @@ const envConstants = {
   NODE_ENV: 'development',
   MONGO_URI: 'mongodb://localhost:27017/codingService',
   CORS_ORIGIN: '*',
-  ACCESS_TOKEN_SECRET: 'super_secret_access_jwt_key_auth_service',
-  JUDGE_WORKER_TIMEOUT_MS: 5000
+  ACCESS_TOKEN_SECRET: 'dev_only_access_secret_change_me_32_chars',
+  JUDGE_WORKER_TIMEOUT_MS: 30000,
+  REDIS_URL: '',
+  CODING_RUNNER_URL: '',
+  CODING_RUNNER_TOKEN: ''
 } as const;
 
 export default envConstants;

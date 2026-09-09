@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { axiosClient as reviewClient } from '../../../shared/lib/axiosClient';
 import {
   ReviewEvent,
   ReviewSubmission,
@@ -8,11 +8,6 @@ import {
   ReplayTrace,
   EventRanking
 } from '../types';
-
-const reviewClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
-  withCredentials: true
-});
 
 export interface CreateEventPayload {
   name: string;
@@ -116,6 +111,20 @@ export const reviewApi = {
     return data.data;
   },
 
+  async waitForEvaluation(
+    submissionId: string,
+    timeoutMs = 30 * 60_000
+  ): Promise<{ status: string; flaggedForHumanReview: boolean; flagReason?: string }> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const state = await this.getEvaluationStatus(submissionId);
+      if (['EVALUATED', 'PARTIAL', 'FLAGGED_FOR_REVIEW'].includes(state.status)) return state;
+      if (state.status === 'FAILED') throw new Error('Evaluation workflow failed.');
+      await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+    }
+    throw new Error('Evaluation is still running. Refresh later to see its final result.');
+  },
+
   // Reports & Audits
   async getEvaluationReport(submissionId: string): Promise<{
     submission: ReviewSubmission;
@@ -150,6 +159,21 @@ export const reviewApi = {
   async getReplayTrace(submissionId: string): Promise<ReplayTrace> {
     const { data } = await reviewClient.get(`/review/submissions/${submissionId}/replay`);
     return data.data;
+  },
+
+  async downloadReport(submissionId: string, format: 'csv' | 'md'): Promise<void> {
+    const response = await reviewClient.get(
+      `/review/submissions/${submissionId}/report.${format}`,
+      {
+        responseType: 'blob'
+      }
+    );
+    const url = URL.createObjectURL(response.data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `evaluation-${submissionId}.${format}`;
+    link.click();
+    URL.revokeObjectURL(url);
   },
 
   // Relative Ranking & Leaderboard

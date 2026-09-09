@@ -57,7 +57,7 @@ const forgotPasswordValidators = [
 
 const resetPasswordValidators = [
   // validating the reset token field
-  body('token').notEmpty().withMessage('Reset Token is required'),
+  body('token').isString().notEmpty().withMessage('Reset Token is required'),
 
   // validating the new password field
   body('password')
@@ -67,6 +67,15 @@ const resetPasswordValidators = [
     .withMessage('Password must be at least 6 characters long'),
 
   // validating errors
+  validateErrors
+];
+
+const verifyEmailValidators = [
+  body('email').isString().isEmail().normalizeEmail().withMessage('A valid email is required'),
+  body('token')
+    .isString()
+    .matches(/^\d{6}$/)
+    .withMessage('A valid 6-digit OTP is required'),
   validateErrors
 ];
 
@@ -83,5 +92,6 @@ export {
   loginValidators,
   forgotPasswordValidators,
   resetPasswordValidators,
-  googleLoginValidators
+  googleLoginValidators,
+  verifyEmailValidators
 };

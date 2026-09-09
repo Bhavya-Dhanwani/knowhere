@@ -15,6 +15,8 @@ router.use('/profile', profileRouter);
 router.use('/profiles', profileRouter);
 router.use('/competencies', competencyRouter);
 router.use('/courses/:courseId', membershipRouter);
+router.use('/memberships/courses/:courseId', membershipRouter);
+router.use('/memberships/courses/:courseId', membershipRouter);
 router.use('/rbac', rbacRouter);
 
 export default router;

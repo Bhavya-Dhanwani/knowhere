@@ -6,7 +6,10 @@ import { ContentItemDetail } from '../../../shared/types';
 export interface ContentDetailPaneProps {
   item: ContentItemDetail | null;
   isLoading: boolean;
-  onComplete: (itemId: string) => void;
+  onComplete: (
+    item: ContentItemDetail,
+    payload?: { selectedOption?: string; code?: string }
+  ) => void;
   isCompleting?: boolean;
 }
 
@@ -167,9 +170,21 @@ export const ContentDetailPane: React.FC<ContentDetailPaneProps> = ({
               variant="primary"
               size="md"
               isLoading={isCompleting}
-              onClick={() => onComplete(item.id)}
+              disabled={
+                isCompleting ||
+                (item.type === 'mcq' && !selectedOption) ||
+                (item.type === 'coding' && !(code || item.starterCode))
+              }
+              onClick={() =>
+                onComplete(item, {
+                  selectedOption: selectedOption || undefined,
+                  code: code || item.starterCode
+                })
+              }
             >
-              Complete & Claim {item.marks} Pts
+              {item.type === 'mcq' || item.type === 'coding'
+                ? 'Submit for grading'
+                : `Complete & Claim ${item.marks} Pts`}
             </Button>
           )}
         </div>

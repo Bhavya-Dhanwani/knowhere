@@ -1,0 +1,11 @@
+{
+  "name": "@lms/code-runner-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "typecheck": "node --check server.mjs",
+    "test": "node test-runner.mjs"
+  }
+}

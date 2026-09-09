@@ -9,6 +9,7 @@ import SubmoduleDao from '../../shared/dao/submodule.dao.js';
 import Ok from '../../shared/responses/Ok.response.js';
 import NotFound from '../../shared/errors/NotFound.error.js';
 import BadRequest from '../../shared/errors/BadRequest.error.js';
+import { requireCourseMembership } from '../../services/courseAuthorization.service.js';
 
 class ProgressController {
   progressDao: CourseProgressDao;
@@ -64,15 +65,20 @@ class ProgressController {
         throw new NotFound(`Content item with ID '${itemId}' not found.`);
       }
 
+      const submodule = await this.submoduleDao.findSubmoduleById(item.submoduleId.toString());
+      if (!submodule) throw new NotFound('Parent submodule not found.');
+      const parentModule = await this.moduleDao.findModuleById(submodule.moduleId.toString());
+      if (!parentModule || parentModule.courseId.toString() !== courseId) {
+        throw new BadRequest('Content item does not belong to the specified course.');
+      }
+      await requireCourseMembership(userId, courseId);
+
+      if (item.type === 'mcq' || item.type === 'coding') {
+        throw new BadRequest('Assessment scores must be recorded by the assessment service.');
+      }
+
       // determine marks to reward
       let scoreToAward = item.max_score || 0;
-      if (req.body.scoreEarned !== undefined) {
-        const customScore = Number(req.body.scoreEarned);
-        if (customScore > (item.max_score || 0)) {
-          throw new BadRequest(`scoreEarned cannot exceed item max_score of ${item.max_score}`);
-        }
-        scoreToAward = customScore;
-      }
 
       const progress = await this.progressDao.recordCompletion({
         courseId,
@@ -107,6 +113,8 @@ class ProgressController {
       const courseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
       const userId = req.user!.userId;
 
+      await requireCourseMembership(userId, courseId);
+
       const progress = await this.progressDao.findProgress(courseId, userId);
       const courseMaxScore = await this.calculateCourseMaxScore(courseId);
 
@@ -132,6 +140,8 @@ class ProgressController {
     try {
       const rawCourseId = req.params.courseId;
       const courseId = Array.isArray(rawCourseId) ? rawCourseId[0] : rawCourseId;
+
+      await requireCourseMembership(req.user!.userId, courseId, ['admin', 'trainer']);
 
       const course = await this.courseDao.findCourseById(courseId);
       if (!course) {

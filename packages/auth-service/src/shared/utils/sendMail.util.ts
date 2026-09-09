@@ -4,9 +4,9 @@ import logger from '../config/logger.config.js';
 import env from '../config/env.config.js';
 
 // function to send the mails
-function sendMail(to: string, subject: string, html: string) {
+async function sendMail(to: string, subject: string, html: string): Promise<void> {
   if (env.SEND_MAIL) {
-    transporter.sendMail({
+    await transporter.sendMail({
       from: env.SENDING_USER || 'noreply@example.com',
       to,
       subject,

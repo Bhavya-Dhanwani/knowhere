@@ -2,12 +2,35 @@ services:
   mongodb:
     image: mongo:7
     container_name: knowhere-mongo
+    command: ['mongod', '--replSet', 'rs0', '--bind_ip_all']
     ports:
       - '27017:27017'
     environment:
       MONGO_INITDB_DATABASE: knowhere
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'mongosh --quiet --eval "try { rs.status().ok } catch (e) { rs.initiate({_id:''rs0'',members:[{_id:0,host:''mongodb:27017''}]}).ok }" | grep 1'
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: knowhere-redis
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   auth-service:
     build:
@@ -19,8 +42,9 @@ services:
     environment:
       - PORT=5000
       - NODE_ENV=development
-      - MONGO_URI=mongodb://mongodb:27017/authService
-      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+      - MONGO_URI=mongodb://mongodb:27017/authService?replicaSet=rs0
+      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET:?Set ACCESS_TOKEN_SECRET}
+      - REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET:?Set REFRESH_TOKEN_SECRET}
     depends_on:
       - mongodb
 
@@ -34,8 +58,9 @@ services:
     environment:
       - PORT=5001
       - NODE_ENV=development
-      - MONGO_URI=mongodb://mongodb:27017/userService
-      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+      - MONGO_URI=mongodb://mongodb:27017/userService?replicaSet=rs0
+      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET:?Set ACCESS_TOKEN_SECRET}
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN}
     depends_on:
       - mongodb
 
@@ -49,8 +74,13 @@ services:
     environment:
       - PORT=5002
       - NODE_ENV=development
-      - MONGO_URI=mongodb://mongodb:27017/courseService
-      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+      - MONGO_URI=mongodb://mongodb:27017/courseService?replicaSet=rs0
+      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET:?Set ACCESS_TOKEN_SECRET}
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN}
+      - USER_SERVICE_URL=http://user-service:5001
+      - MEDIA_SERVICE_URL=http://media-service:5003
+      - MCQ_SERVICE_URL=http://mcq-service:5004
+      - CODING_SERVICE_URL=http://coding-service:5005
     depends_on:
       - mongodb
 
@@ -64,14 +94,18 @@ services:
     environment:
       - PORT=5003
       - NODE_ENV=development
-      - MONGO_URI=mongodb://mongodb:27017/mediaService
-      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
-      - AWS_REGION=us-east-1
-      - AWS_ACCESS_KEY_ID=test_access_key
-      - AWS_SECRET_ACCESS_KEY=test_secret_key
-      - S3_RAW_BUCKET=lms-raw-media
-      - S3_TRANSCODED_BUCKET=lms-transcoded-media
-      - CLOUDFRONT_DOMAIN=https://cdn.example.com
+      - MONGO_URI=mongodb://mongodb:27017/mediaService?replicaSet=rs0
+      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET:?Set ACCESS_TOKEN_SECRET}
+      - USER_SERVICE_URL=http://user-service:5001
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN}
+      - AWS_REGION=${AWS_REGION:?Set AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?Set AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?Set AWS_SECRET_ACCESS_KEY}
+      - S3_RAW_BUCKET=${S3_RAW_BUCKET:?Set S3_RAW_BUCKET}
+      - S3_TRANSCODED_BUCKET=${S3_TRANSCODED_BUCKET:?Set S3_TRANSCODED_BUCKET}
+      - CLOUDFRONT_DOMAIN=${CLOUDFRONT_DOMAIN:?Set CLOUDFRONT_DOMAIN}
+      - MEDIACONVERT_ENDPOINT=${MEDIACONVERT_ENDPOINT:?Set MEDIACONVERT_ENDPOINT}
+      - MEDIACONVERT_ROLE_ARN=${MEDIACONVERT_ROLE_ARN:?Set MEDIACONVERT_ROLE_ARN}
     depends_on:
       - mongodb
 
@@ -85,8 +119,10 @@ services:
     environment:
       - PORT=5004
       - NODE_ENV=development
-      - MONGO_URI=mongodb://mongodb:27017/mcqService
-      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+      - MONGO_URI=mongodb://mongodb:27017/mcqService?replicaSet=rs0
+      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET:?Set ACCESS_TOKEN_SECRET}
+      - USER_SERVICE_URL=http://user-service:5001
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN}
     depends_on:
       - mongodb
 
@@ -100,10 +136,40 @@ services:
     environment:
       - PORT=5005
       - NODE_ENV=development
-      - MONGO_URI=mongodb://mongodb:27017/codingService
-      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+      - MONGO_URI=mongodb://mongodb:27017/codingService?replicaSet=rs0
+      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET:?Set ACCESS_TOKEN_SECRET}
+      - USER_SERVICE_URL=http://user-service:5001
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN}
+      - REDIS_URL=redis://redis:6379
+      - CODING_RUNNER_URL=http://code-runner-service:7001/execute
+      - CODING_RUNNER_TOKEN=${CODING_RUNNER_TOKEN:?Set CODING_RUNNER_TOKEN}
     depends_on:
       - mongodb
+      - redis
+      - code-runner-service
+    networks:
+      - default
+      - runner_net
+
+  code-runner-service:
+    build:
+      context: .
+      dockerfile: packages/code-runner-service/Dockerfile
+    environment:
+      - PORT=7001
+      - CODING_RUNNER_TOKEN=${CODING_RUNNER_TOKEN:?Set CODING_RUNNER_TOKEN}
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 768m
+    cpus: 1.0
+    networks:
+      - runner_net
 
   project-review-service:
     build:
@@ -115,12 +181,49 @@ services:
     environment:
       - PORT=5006
       - NODE_ENV=development
-      - MONGO_URI=mongodb://mongodb:27017/projectReviewService
-      - ACCESS_TOKEN_SECRET=super_secret_access_jwt_key_auth_service
+      - MONGO_URI=mongodb://mongodb:27017/projectReviewService?replicaSet=rs0
+      - ACCESS_TOKEN_SECRET=${ACCESS_TOKEN_SECRET:?Set ACCESS_TOKEN_SECRET}
       - CORS_ORIGIN=*
       - TEMPORAL_ADDRESS=temporal:7233
+      - REDIS_URL=redis://redis:6379
+      - EVALUATION_RUNNER_TOKEN=${EVALUATION_RUNNER_TOKEN:?Set EVALUATION_RUNNER_TOKEN}
+      - STATIC_ANALYSIS_RUNNER_URL=http://evaluation-runner-service:7002/static
+      - EXECUTION_EVALUATION_RUNNER_URL=http://evaluation-runner-service:7002/execute
+      - BROWSER_EVALUATION_RUNNER_URL=http://evaluation-runner-service:7002/browser
+      - API_EVALUATION_RUNNER_URL=http://evaluation-runner-service:7002/api
     depends_on:
       - mongodb
+      - redis
+      - evaluation-runner-service
+    networks:
+      - default
+      - evaluation_net
+
+  evaluation-runner-service:
+    build:
+      context: .
+      dockerfile: packages/evaluation-runner-service/Dockerfile
+    environment:
+      - PORT=7002
+      - EVALUATION_RUNNER_TOKEN=${EVALUATION_RUNNER_TOKEN:?Set EVALUATION_RUNNER_TOKEN}
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 3g
+    cpus: 2.0
+    networks:
+      - evaluation_net
 
 volumes:
   mongo_data:
+  redis_data:
+
+networks:
+  runner_net:
+    internal: true
+  evaluation_net:

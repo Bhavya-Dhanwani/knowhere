@@ -48,6 +48,22 @@ spec:
                 secretKeyRef:
                   name: database
                   key: CODING_DB
+            - name: REDIS_URL
+              value: 'redis://redis-service:6379'
+            - name: CODING_RUNNER_URL
+              value: 'http://code-runner-service:7001/execute'
+            - name: CODING_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: coding-runner
+                  key: token
+            - name: USER_SERVICE_URL
+              value: 'http://user-service:80'
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: internal-services
+                  key: token
             - name: PORT
               value: '5005'
             - name: NODE_ENV

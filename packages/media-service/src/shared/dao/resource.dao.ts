@@ -9,6 +9,10 @@ class ResourceDao {
     return await Resource.findById(id);
   }
 
+  async findResourceByS3Key(s3Key: string): Promise<IResource | null> {
+    return await Resource.findOne({ s3Key });
+  }
+
   async updateResourceStatus(
     id: string,
     status: ResourceStatus,

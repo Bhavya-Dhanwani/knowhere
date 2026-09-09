@@ -20,8 +20,12 @@ export function authMiddleware(
       process.env.ACCESS_TOKEN_SECRET ||
       process.env.JWT_SECRET ||
       process.env.JWT_PUBLIC_KEY ||
-      'default_jwt_secret';
+      (process.env.NODE_ENV === 'test' ? 'test_only_access_secret_at_least_32_chars' : '');
+    if (!secret) throw new UnauthorizedError('Authentication is not configured.');
     const decoded = jwt.verify(token, secret) as Record<string, unknown>;
+    if (decoded.isVerified === false) {
+      throw new UnauthorizedError('Email verification is required.');
+    }
 
     const userId = (decoded.userId || decoded._id || decoded.id || decoded.sub) as string;
     if (!userId) {

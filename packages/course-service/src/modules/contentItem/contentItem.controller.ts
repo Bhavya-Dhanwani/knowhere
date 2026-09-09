@@ -6,12 +6,31 @@ import sanitizeContentItem from '../../shared/sanitizers/contentItem.sanitizer.j
 import externalContentService from '../../services/externalContent.service.js';
 import Ok from '../../shared/responses/Ok.response.js';
 import NotFound from '../../shared/errors/NotFound.error.js';
+import SubmoduleDao from '../../shared/dao/submodule.dao.js';
+import ModuleDao from '../../shared/dao/module.dao.js';
+import { requireCourseMembership } from '../../services/courseAuthorization.service.js';
 
 class ContentItemController {
   contentItemDao: ContentItemDao;
+  submoduleDao: SubmoduleDao;
+  moduleDao: ModuleDao;
 
   constructor() {
     this.contentItemDao = new ContentItemDao();
+    this.submoduleDao = new SubmoduleDao();
+    this.moduleDao = new ModuleDao();
+  }
+
+  private async authorizeItem(
+    req: AuthenticatedRequest,
+    item: any,
+    roles?: Array<'admin' | 'trainer'>
+  ) {
+    const submodule = await this.submoduleDao.findSubmoduleById(item.submoduleId.toString());
+    if (!submodule) throw new NotFound('Parent submodule not found.');
+    const module = await this.moduleDao.findModuleById(submodule.moduleId.toString());
+    if (!module) throw new NotFound('Parent module not found.');
+    await requireCourseMembership(req.user!.userId, module.courseId.toString(), roles);
   }
 
   // GET /content-items/:id � detail call
@@ -24,10 +43,12 @@ class ContentItemController {
       if (!item) {
         throw new NotFound(`Content item with ID '${id}' not found.`);
       }
+      await this.authorizeItem(req, item);
 
       const details = await externalContentService.fetchItemDetail(
         item.type as any,
-        item.ref_id.toString()
+        item.ref_id.toString(),
+        req.headers.authorization
       );
 
       return Ok(res, 'Content item details fetched successfully', {
@@ -44,6 +65,9 @@ class ContentItemController {
     try {
       const rawId = req.params.id;
       const id = Array.isArray(rawId) ? rawId[0] : rawId;
+      const existing = await this.contentItemDao.findContentItemById(id);
+      if (!existing) throw new NotFound(`Content item with ID '${id}' not found.`);
+      await this.authorizeItem(req, existing, ['admin', 'trainer']);
       const { title, max_score, order } = req.body;
 
       const updated = await this.contentItemDao.updateContentItemById(id, {

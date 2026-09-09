@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import createApp from '../app.js';
 import CodingQuestionDao from '../shared/dao/question.dao.js';
 import CodingSubmissionDao from '../shared/dao/submission.dao.js';
+import judgeWorker from '../workers/judge.worker.js';
 import { getQuestionById } from '../services/codingExport.service.js';
 import env from '../shared/config/env.config.js';
 
@@ -120,6 +121,7 @@ describe('Coding Service Questions & Unlimited Submissions', () => {
 
   describe('POST /api/questions/:id/submit (Unlimited Attempts Queued)', () => {
     it('allows submission and returns queued status', async () => {
+      jest.spyOn(judgeWorker, 'queueSubmission').mockResolvedValue();
       jest.spyOn(CodingQuestionDao.prototype, 'findQuestionById').mockResolvedValue({
         _id: '507f1f77bcf86cd799439088',
         title: 'Two Sum',

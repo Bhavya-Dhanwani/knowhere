@@ -5,16 +5,17 @@ const isProduction = env.NODE_ENV === 'production';
 
 const logger = pino({
   level: isProduction ? 'info' : 'debug',
-  transport: !isProduction
-    ? {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'SYS:standard',
-          ignore: 'pid,hostname'
+  transport:
+    process.env.PRETTY_LOGS === 'true'
+      ? {
+          target: 'pino-pretty',
+          options: {
+            colorize: true,
+            translateTime: 'SYS:standard',
+            ignore: 'pid,hostname'
+          }
         }
-      }
-    : undefined
+      : undefined
 });
 
 export default logger;

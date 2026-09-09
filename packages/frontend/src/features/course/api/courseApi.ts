@@ -238,44 +238,50 @@ const MOCK_LEADERBOARD: LeaderboardData = {
   aheadPercentage: 74
 };
 
+// Retained as Storybook/demo fixtures; production requests never fall back to them.
+void MOCK_COURSE_STRUCTURE;
+void MOCK_CONTENT_DETAILS;
+void MOCK_LEADERBOARD;
+
 export const courseApi = {
   getCourseStructure: async (courseId: string): Promise<CourseStructure> => {
-    try {
-      const response = await axiosClient.get(`/courses/${courseId}`);
-      const course = response.data?.data || response.data;
-      if (course && course.modules && course.modules.length > 0) {
-        return course;
-      }
-      return { ...MOCK_COURSE_STRUCTURE, id: courseId };
-    } catch {
-      return { ...MOCK_COURSE_STRUCTURE, id: courseId };
-    }
+    const response = await axiosClient.get(`/courses/${courseId}`);
+    return response.data?.data || response.data;
   },
 
   getSubmoduleContent: async (contentItemId: string): Promise<ContentItemDetail> => {
-    try {
-      const response = await axiosClient.get(`/content-items/${contentItemId}`);
-      const item = response.data?.data || response.data;
-      if (item && item.title) {
-        return item;
-      }
-      return MOCK_CONTENT_DETAILS[contentItemId] || MOCK_CONTENT_DETAILS['item-201'];
-    } catch {
-      return MOCK_CONTENT_DETAILS[contentItemId] || MOCK_CONTENT_DETAILS['item-201'];
-    }
+    const response = await axiosClient.get(`/content-items/${contentItemId}`);
+    const data = response.data?.data || response.data;
+    const item = data.item;
+    const details = data.details || {};
+    return {
+      id: item._id || item.id,
+      referenceId: String(item.ref_id || details.id || ''),
+      title: item.title,
+      type: item.type === 'notes' ? 'resource' : item.type,
+      marks: item.max_score || 0,
+      status: 'in_progress',
+      description: details.description || details.stem,
+      videoUrl: details.playbackUrl,
+      starterCode:
+        typeof details.starterCode === 'string'
+          ? details.starterCode
+          : details.starterCode?.typescript || Object.values(details.starterCode || {})[0],
+      language: 'typescript',
+      mcqOptions: details.options
+    } as ContentItemDetail;
   },
 
   getLeaderboard: async (courseId: string): Promise<LeaderboardData> => {
-    try {
-      const response = await axiosClient.get(`/courses/${courseId}/grades`);
-      const data = response.data?.data || response.data;
-      if (data && data.rankings) {
-        return data;
-      }
-      return MOCK_LEADERBOARD;
-    } catch {
-      return MOCK_LEADERBOARD;
-    }
+    const response = await axiosClient.get(`/courses/${courseId}/grades`);
+    const data = response.data?.data || response.data;
+    const rankings = (data.grades || []).map((grade: any, index: number) => ({
+      id: grade.userId,
+      name: grade.userId,
+      rank: index + 1,
+      points: grade.totalScoreEarned
+    }));
+    return { topThree: rankings.slice(0, 3), rankings: rankings.slice(3), aheadPercentage: 0 };
   },
 
   completeContentItem: async (
@@ -285,6 +291,21 @@ export const courseApi = {
     const response = await axiosClient.post(
       `/courses/${courseId}/content-items/${itemId}/complete`
     );
+    return response.data?.data || response.data;
+  },
+
+  submitMcq: async (questionId: string, selectedOptionId: string) => {
+    const response = await axiosClient.post(`/questions/${questionId}/submit`, {
+      selected_option_id: selectedOptionId
+    });
+    return response.data?.data || response.data;
+  },
+
+  submitCode: async (questionId: string, language: string, code: string) => {
+    const response = await axiosClient.post(`/coding/questions/${questionId}/submit`, {
+      language,
+      code
+    });
     return response.data?.data || response.data;
   }
 };

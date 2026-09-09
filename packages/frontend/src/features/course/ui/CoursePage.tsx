@@ -13,6 +13,7 @@ import { Spinner } from '../../../shared/ui/Spinner';
 import { CourseProgressBar } from './CourseProgressBar';
 import { ModuleTree } from './ModuleTree';
 import { ContentDetailPane } from './ContentDetailPane';
+import { authApi } from '../../auth/api/authApi';
 import { LeaderboardPanel } from './LeaderboardPanel';
 
 export const CoursePage: React.FC = () => {
@@ -47,31 +48,46 @@ export const CoursePage: React.FC = () => {
 
   const { data: contentDetail, isLoading: isContentLoading } = useSubmoduleContent(selectedItemId);
 
-  const handleLogout = () => {
-    dispatch(logout());
-    navigate('/');
+  const handleLogout = async () => {
+    try {
+      await authApi.logout();
+    } finally {
+      queryClient.clear();
+      dispatch(logout());
+      navigate('/');
+    }
   };
 
-  const handleComplete = async (itemId: string) => {
+  const handleComplete = async (
+    item: import('../../../shared/types').ContentItemDetail,
+    payload?: { selectedOption?: string; code?: string }
+  ) => {
     try {
       setIsCompleting(true);
-      await courseApi.completeContentItem(activeCourseId, itemId);
+      if (item.type === 'mcq') {
+        await courseApi.submitMcq(item.referenceId || '', payload?.selectedOption || '');
+      } else if (item.type === 'coding') {
+        await courseApi.submitCode(
+          item.referenceId || '',
+          item.language || 'typescript',
+          payload?.code || ''
+        );
+      } else {
+        await courseApi.completeContentItem(activeCourseId, item.id);
+      }
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ['course', activeCourseId, 'structure']
         }),
         queryClient.invalidateQueries({
-          queryKey: ['content-item', itemId, 'detail']
+          queryKey: ['content-item', item.id, 'detail']
         }),
         queryClient.invalidateQueries({
           queryKey: ['course', activeCourseId, 'leaderboard']
         })
       ]);
-    } catch {
-      // In mock/offline mode, still invalidate to refresh UI
-      await queryClient.invalidateQueries({
-        queryKey: ['course', activeCourseId]
-      });
+    } catch (error) {
+      console.error('Unable to complete or submit content item', error);
     } finally {
       setIsCompleting(false);
     }

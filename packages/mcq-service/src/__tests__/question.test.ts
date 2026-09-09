@@ -136,13 +136,16 @@ describe('MCQ Service Questions & 3-Strike Attempt Tests', () => {
       title: 'JavaScript Event Loop',
       correct_option_id: 'opt-1',
       max_score: 2,
-      explanation: 'Promises run first'
+      explanation: 'Promises run first',
+      options: [
+        { id: 'opt-1', text: 'Correct' },
+        { id: 'opt-2', text: 'Incorrect' }
+      ]
     };
 
     it('allows 1st attempt and computes score', async () => {
       jest.spyOn(QuestionDao.prototype, 'findQuestionById').mockResolvedValue(mockQuestion as any);
-      jest.spyOn(AttemptDao.prototype, 'getAttemptCount').mockResolvedValue(0);
-      jest.spyOn(AttemptDao.prototype, 'createAttempt').mockResolvedValue({
+      jest.spyOn(AttemptDao.prototype, 'createNextAttempt').mockResolvedValue({
         _id: 'attempt-1',
         attemptNumber: 1
       } as any);
@@ -162,7 +165,7 @@ describe('MCQ Service Questions & 3-Strike Attempt Tests', () => {
     it('strictly rejects 4th attempt with 403 Forbidden', async () => {
       jest.spyOn(QuestionDao.prototype, 'findQuestionById').mockResolvedValue(mockQuestion as any);
       // Already 3 attempts recorded
-      jest.spyOn(AttemptDao.prototype, 'getAttemptCount').mockResolvedValue(3);
+      jest.spyOn(AttemptDao.prototype, 'createNextAttempt').mockResolvedValue(null);
 
       const res = await request(app)
         .post('/api/questions/507f1f77bcf86cd799439077/submit')

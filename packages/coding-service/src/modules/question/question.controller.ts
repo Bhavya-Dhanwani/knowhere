@@ -11,6 +11,7 @@ import {
 import Ok from '../../shared/responses/Ok.response.js';
 import Created from '../../shared/responses/Created.response.js';
 import NotFound from '../../shared/errors/NotFound.error.js';
+import Forbidden from '../../shared/errors/Forbidden.error.js';
 
 class CodingController {
   questionDao: CodingQuestionDao;
@@ -91,7 +92,7 @@ class CodingController {
       });
 
       // Delegate evaluation to background judge worker
-      judgeWorker.queueSubmission(submission._id.toString());
+      await judgeWorker.queueSubmission(submission._id.toString());
 
       return Created(
         res,
@@ -112,6 +113,11 @@ class CodingController {
       const submission = await this.submissionDao.findSubmissionById(id);
       if (!submission) {
         throw new NotFound(`Submission with ID '${id}' not found.`);
+      }
+
+      const privileged = req.user!.role === 'admin' || req.user!.role === 'trainer';
+      if (submission.userId !== req.user!.userId && !privileged) {
+        throw new Forbidden('You may only view your own coding submissions.');
       }
 
       return Ok(res, 'Submission fetched successfully', sanitizeSubmission(submission.toObject()));

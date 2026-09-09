@@ -15,7 +15,7 @@ export function useSignup() {
     onSuccess: (data) => {
       dispatch(setCredentials({ accessToken: data.accessToken, user: data.user }));
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-      navigate('/dashboard');
+      navigate('/verify-email', { state: { email: data.user.email } });
     }
   });
 }

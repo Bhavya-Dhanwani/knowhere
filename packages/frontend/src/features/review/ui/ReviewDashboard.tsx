@@ -117,6 +117,7 @@ export const ReviewDashboard: React.FC = () => {
         setPipelineProgress({ current: i + 1, total, teamName: sub.teamName });
         try {
           await reviewApi.evaluateSubmission(sub._id);
+          await reviewApi.waitForEvaluation(sub._id);
         } catch (err) {
           console.error(`Evaluation failed for submission ${sub._id}:`, err);
         }
@@ -160,6 +161,7 @@ export const ReviewDashboard: React.FC = () => {
       setPipelineRunning(true);
       setPipelineProgress({ current: 1, total: 1, teamName });
       await reviewApi.evaluateSubmission(submissionId);
+      await reviewApi.waitForEvaluation(submissionId);
       const rankingRes = await reviewApi.computeRanking(selectedEventId);
       setRanking(rankingRes);
       await loadSubmissions(selectedEventId);

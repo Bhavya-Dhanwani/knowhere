@@ -48,6 +48,13 @@ spec:
                 secretKeyRef:
                   name: database
                   key: MEDIA_DB
+            - name: USER_SERVICE_URL
+              value: 'http://user-service:80'
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: internal-services
+                  key: token
             - name: PORT
               value: '5003'
             - name: NODE_ENV
@@ -82,6 +89,16 @@ spec:
                 secretKeyRef:
                   name: media-secrets
                   key: CLOUDFRONT_DOMAIN
+            - name: MEDIACONVERT_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: media-secrets
+                  key: MEDIACONVERT_ENDPOINT
+            - name: MEDIACONVERT_ROLE_ARN
+              valueFrom:
+                secretKeyRef:
+                  name: media-secrets
+                  key: MEDIACONVERT_ROLE_ARN
           ports:
             - containerPort: 5003
               name: http

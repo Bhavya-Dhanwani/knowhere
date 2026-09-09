@@ -6,7 +6,8 @@ import {
   loginValidators,
   forgotPasswordValidators,
   resetPasswordValidators,
-  googleLoginValidators
+  googleLoginValidators,
+  verifyEmailValidators
 } from './auth.validator.js';
 import authMiddleware from '../../../shared/middlewares/auth.middleware.js';
 import refreshMiddleware from '../../../shared/middlewares/refresh.middleware.js';
@@ -23,6 +24,7 @@ const authController = new AuthController();
     @access Public
 */
 router.post('/signup', signupValidators, authController.signup);
+router.post('/verify-email', verifyEmailValidators, authController.verifyEmail);
 
 /*
     @route POST /api/auth/login

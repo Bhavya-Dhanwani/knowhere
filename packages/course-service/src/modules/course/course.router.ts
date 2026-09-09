@@ -16,7 +16,7 @@ const courseController = new CourseController();
 router.post(
   '/',
   authMiddleware,
-  requireRole('admin', 'trainer'),
+  requireRole('admin', 'trainer', 'instructor'),
   createCourseValidators,
   courseController.createCourse
 );

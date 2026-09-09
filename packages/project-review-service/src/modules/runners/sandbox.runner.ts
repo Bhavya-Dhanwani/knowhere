@@ -1,148 +1,120 @@
-import { exec } from 'child_process';
-import util from 'util';
-import env from '../../shared/config/env.config.js';
-import logger from '../../shared/config/logger.config.js';
-
-const execPromise = util.promisify(exec);
-
-export interface SandboxExecutionOptions {
-  timeoutMs?: number;
-  maxBufferBytes?: number;
-  envVars?: Record<string, string>;
-  cwd?: string;
+export interface SandboxResourceLimits {
+  cpu: string;
+  memory: string;
+  ephemeralStorage: string;
+  activeDeadlineSeconds: number;
 }
 
-export interface SandboxExecutionOutput {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-  durationMs: number;
+export interface EvaluationJobInput {
+  evaluationId: string;
+  repositoryUrl: string;
+  commitSha: string;
+  image: string;
+  command: string[];
+  allowNetworkTo?: Array<{ cidr: string; port: number }>;
+  limits?: Partial<SandboxResourceLimits>;
 }
 
-export interface ISandboxRunner {
-  executeCommand(cmd: string, options?: SandboxExecutionOptions): Promise<SandboxExecutionOutput>;
-  isAvailable(): boolean;
-}
+const dnsLabel = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 45);
 
 /**
- * Tier 1: E2B / Sandboxed Runner
- * Connects to E2B sandbox microVM if E2B_API_KEY is configured,
- * otherwise executes within an isolated, timeout-guarded local process environment.
+ * Produces the Kubernetes resources used to execute participant repositories. The API service only
+ * creates declarative jobs; participant commands are never executed in the API container.
  */
-export class Tier1SandboxRunner implements ISandboxRunner {
-  private hasE2B: boolean;
+export class KubernetesSandboxManifestGenerator {
+  public static generate(input: EvaluationJobInput): object[] {
+    const name = `evaluation-${dnsLabel(input.evaluationId)}`;
+    const limits: SandboxResourceLimits = {
+      cpu: input.limits?.cpu || '1',
+      memory: input.limits?.memory || '1Gi',
+      ephemeralStorage: input.limits?.ephemeralStorage || '4Gi',
+      activeDeadlineSeconds: input.limits?.activeDeadlineSeconds || 900
+    };
 
-  constructor() {
-    this.hasE2B = Boolean(env.E2B_API_KEY && env.E2B_API_KEY.length > 5);
-  }
+    const networkEgress = (input.allowNetworkTo || []).map((destination) => ({
+      to: [{ ipBlock: { cidr: destination.cidr } }],
+      ports: [{ protocol: 'TCP', port: destination.port }]
+    }));
 
-  public isAvailable(): boolean {
-    return true;
-  }
-
-  public async executeCommand(
-    cmd: string,
-    options: SandboxExecutionOptions = {}
-  ): Promise<SandboxExecutionOutput> {
-    const timeoutMs = options.timeoutMs || 30000;
-    const maxBuffer = options.maxBufferBytes || 1024 * 1024 * 10;
-    const start = Date.now();
-
-    if (this.hasE2B) {
-      logger.info({ cmd, tier: 'E2B_MICRO_VM' }, 'Executing command in Tier 1 E2B sandbox');
-      // In production with E2B SDK installed:
-      // const sandbox = await Sandbox.create({ apiKey: env.E2B_API_KEY });
-      // const res = await sandbox.commands.run(cmd);
-      // return { stdout: res.stdout, stderr: res.stderr, exitCode: res.exitCode, durationMs: ... }
-    }
-
-    try {
-      const { stdout, stderr } = await execPromise(cmd, {
-        timeout: timeoutMs,
-        maxBuffer,
-        cwd: options.cwd || process.cwd(),
-        env: {
-          ...process.env,
-          ...(options.envVars || {}),
-          PATH: process.env.PATH
-        }
-      });
-
-      return {
-        stdout: stdout.toString(),
-        stderr: stderr.toString(),
-        exitCode: 0,
-        durationMs: Date.now() - start
-      };
-    } catch (err: unknown) {
-      const execErr = err as { stdout?: string; stderr?: string; code?: number; message?: string };
-      logger.warn(
-        { cmd, err: execErr.message },
-        'Sandbox process execution completed with non-zero exit code or timeout'
-      );
-      return {
-        stdout: execErr.stdout || '',
-        stderr: execErr.stderr || execErr.message || 'Execution failed',
-        exitCode: execErr.code ?? 1,
-        durationMs: Date.now() - start
-      };
-    }
-  }
-}
-
-/**
- * Tier 2: K8s + gVisor + Argo Workflow Spec Generator
- * Generates declarative production manifests for K8s Jobs with runtimeClass: gvisor
- * and Argo Workflows DAG as defined in §3 Tier 2.
- */
-export class Tier2K8sManifestGenerator {
-  public static generateArgoWorkflowSpec(submissionId: string, repoUrl: string): object {
-    return {
-      apiVersion: 'argoproj.io/v1alpha1',
-      kind: 'Workflow',
-      metadata: {
-        generateName: `eval-${submissionId}-`,
-        labels: { submissionId }
+    return [
+      {
+        apiVersion: 'v1',
+        kind: 'Namespace',
+        metadata: { name, labels: { 'app.kubernetes.io/managed-by': 'knowhere-evaluator' } }
       },
-      spec: {
-        entrypoint: 'submission-eval-pipeline',
-        serviceAccountName: 'eval-workflow-sa',
-        templates: [
-          {
-            name: 'submission-eval-pipeline',
-            dag: {
-              tasks: [
+      {
+        apiVersion: 'networking.k8s.io/v1',
+        kind: 'NetworkPolicy',
+        metadata: { name: 'deny-all-except-allowlist', namespace: name },
+        spec: {
+          podSelector: {},
+          policyTypes: ['Ingress', 'Egress'],
+          ingress: [],
+          egress: networkEgress
+        }
+      },
+      {
+        apiVersion: 'batch/v1',
+        kind: 'Job',
+        metadata: { name: 'runner', namespace: name, labels: { evaluationId: input.evaluationId } },
+        spec: {
+          backoffLimit: 0,
+          activeDeadlineSeconds: limits.activeDeadlineSeconds,
+          ttlSecondsAfterFinished: 600,
+          template: {
+            metadata: { labels: { evaluationId: input.evaluationId } },
+            spec: {
+              runtimeClassName: process.env.EVALUATION_RUNTIME_CLASS || 'gvisor',
+              automountServiceAccountToken: false,
+              restartPolicy: 'Never',
+              securityContext: { runAsNonRoot: true, seccompProfile: { type: 'RuntimeDefault' } },
+              containers: [
                 {
-                  name: 'git-clone',
-                  template: 'git-clone-step',
-                  arguments: { parameters: [{ name: 'repo-url', value: repoUrl }] }
-                },
-                {
-                  name: 'sast-analysis',
-                  dependencies: ['git-clone'],
-                  template: 'semgrep-gvisor-step'
-                },
-                {
-                  name: 'schemathesis-test',
-                  dependencies: ['git-clone'],
-                  template: 'schemathesis-gvisor-step'
+                  name: 'evaluator',
+                  image: input.image,
+                  imagePullPolicy: 'IfNotPresent',
+                  command: input.command,
+                  env: [
+                    { name: 'REPOSITORY_URL', value: input.repositoryUrl },
+                    { name: 'COMMIT_SHA', value: input.commitSha }
+                  ],
+                  resources: {
+                    requests: { cpu: '100m', memory: '128Mi', 'ephemeral-storage': '512Mi' },
+                    limits: {
+                      cpu: limits.cpu,
+                      memory: limits.memory,
+                      'ephemeral-storage': limits.ephemeralStorage
+                    }
+                  },
+                  securityContext: {
+                    allowPrivilegeEscalation: false,
+                    readOnlyRootFilesystem: true,
+                    runAsNonRoot: true,
+                    runAsUser: 65532,
+                    capabilities: { drop: ['ALL'] }
+                  },
+                  volumeMounts: [
+                    { name: 'workspace', mountPath: '/workspace' },
+                    { name: 'tmp', mountPath: '/tmp' }
+                  ]
                 }
+              ],
+              volumes: [
+                { name: 'workspace', emptyDir: { sizeLimit: limits.ephemeralStorage } },
+                { name: 'tmp', emptyDir: { sizeLimit: '512Mi' } }
               ]
             }
-          },
-          {
-            name: 'semgrep-gvisor-step',
-            podSpecPatch: '{"spec":{"runtimeClassName":"gvisor"}}',
-            container: {
-              image: 'returntocorp/semgrep:latest',
-              command: ['semgrep', 'scan', '--json', '--output=/tmp/semgrep.json']
-            }
           }
-        ]
+        }
       }
-    };
+    ];
   }
 }
 
-export const defaultSandboxRunner = new Tier1SandboxRunner();
-export default defaultSandboxRunner;
+/** Compatibility alias for callers from the previous implementation. */
+export const Tier2K8sManifestGenerator = KubernetesSandboxManifestGenerator;

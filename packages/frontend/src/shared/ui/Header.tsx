@@ -6,7 +6,7 @@ import { User } from '../types';
 
 export interface HeaderProps {
   user: User | null;
-  onLogout: () => void;
+  onLogout: () => void | Promise<void>;
   onNavigateHome?: () => void;
 }
 

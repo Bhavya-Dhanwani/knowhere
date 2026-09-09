@@ -20,7 +20,8 @@ function authMiddleware(
 
   try {
     // verifying the access token
-    const decoded = jwt.verify(accessToken, env.ACCESS_TOKEN_SECRET);
+    const decoded = jwt.verify(accessToken, env.ACCESS_TOKEN_SECRET) as Record<string, unknown>;
+    if (decoded.isVerified === false) throw new Unauthorized('Email verification is required.');
 
     // if the access token is valid, attach the decoded user to the request object
     req.user = decoded as Record<string, unknown>;

@@ -13,6 +13,8 @@ RUN pnpm --filter @lms/project-review-service deploy --legacy /prod/project-revi
 # --- runtime stage ---
 FROM node:22-alpine
 WORKDIR /app
+RUN apk add --no-cache git openssh-client
+RUN apk add --no-cache git openssh-client
 COPY --from=build /prod/project-review-service ./
 COPY --from=build /app/packages/project-review-service/dist ./dist
 EXPOSE 5006
