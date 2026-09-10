@@ -23,6 +23,13 @@ export const Header: React.FC<HeaderProps> = ({ user, onLogout, onNavigateHome }
           <Link to="/dashboard" className="text-muted hover:text-white transition-colors">
             Dashboard
           </Link>
+          <Link
+            to="/chat"
+            className="text-muted hover:text-white transition-colors flex items-center gap-1.5"
+          >
+            <span>Community Chat</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          </Link>
           <Link to="/review" className="text-muted hover:text-white transition-colors">
             Project Review
           </Link>

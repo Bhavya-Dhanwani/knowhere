@@ -4,6 +4,9 @@ metadata:
   name: knowhere-ingress
   labels:
     app.kubernetes.io/name: knowhere-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '3600'
 spec:
   ingressClassName: nginx
   rules:
@@ -112,6 +115,20 @@ spec:
             backend:
               service:
                 name: project-review-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/api/chat'
+            backend:
+              service:
+                name: chat-service
+                port:
+                  number: 80
+          - pathType: Prefix
+            path: '/socket.io'
+            backend:
+              service:
+                name: chat-service
                 port:
                   number: 80
           - pathType: Prefix

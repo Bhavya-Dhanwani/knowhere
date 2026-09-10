@@ -60,6 +60,14 @@ build:
         manual:
           - src: 'packages/project-review-service/src/**/*.ts'
             dest: '/app'
+    - image: chat-service
+      context: .
+      docker:
+        dockerfile: packages/chat-service/Dockerfile
+      sync:
+        manual:
+          - src: 'packages/chat-service/src/**/*.ts'
+            dest: '/app'
     - image: frontend
       context: .
       docker:
@@ -79,6 +87,10 @@ portForward:
     resourceName: frontend-service
     port: 80
     localPort: 3000
+  - resourceType: service
+    resourceName: chat-service
+    port: 80
+    localPort: 5007
   - resourceType: service
     resourceName: project-review-service
     port: 80

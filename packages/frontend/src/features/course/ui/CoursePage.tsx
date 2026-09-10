@@ -14,6 +14,7 @@ import { CourseProgressBar } from './CourseProgressBar';
 import { ModuleTree } from './ModuleTree';
 import { ContentDetailPane } from './ContentDetailPane';
 import { LeaderboardPanel } from './LeaderboardPanel';
+import { MessageSquare } from 'lucide-react';
 
 export const CoursePage: React.FC = () => {
   const { courseId } = useParams<{ courseId: string }>();
@@ -119,9 +120,18 @@ export const CoursePage: React.FC = () => {
                   <span className="text-[11px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-primary/20 text-primary-hover border border-primary/30">
                     {courseStructure?.badge || 'Batch 2026'}
                   </span>
-                  <span className="text-xs text-muted">
-                    {courseStructure?.totalModules || 0} Modules
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to="/chat"
+                      className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition shadow-sm"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Chat</span>
+                    </Link>
+                    <span className="text-xs text-muted">
+                      {courseStructure?.totalModules || 0} Modules
+                    </span>
+                  </div>
                 </div>
 
                 <h1 className="text-lg font-bold text-white leading-snug">

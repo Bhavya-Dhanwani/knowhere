@@ -12,6 +12,7 @@ import { ReviewDashboard } from '../features/review/ui/ReviewDashboard';
 import { PublicSubmissionPage } from '../features/review/ui/PublicSubmissionPage';
 
 import { ApiDocsPage } from '../features/docs/ui/ApiDocsPage';
+import { ChatPage } from '../features/chat/ui/ChatPage';
 
 export const requireAuth = async () => {
   const state = store.getState().auth;
@@ -70,6 +71,11 @@ export const router = createBrowserRouter([
     path: '/course/:courseId',
     loader: requireAuth,
     element: <CoursePage />
+  },
+  {
+    path: '/chat',
+    loader: requireAuth,
+    element: <ChatPage />
   },
   {
     path: '/review',
