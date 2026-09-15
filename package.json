@@ -12,6 +12,7 @@
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
+    "seed": "node packages/auth-service/scripts/seed-all-dbs.mjs",
     "prepare": "husky"
   },
   "devDependencies": {

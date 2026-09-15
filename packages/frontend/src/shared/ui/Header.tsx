@@ -43,6 +43,36 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Logo size="md" theme={isDark ? 'dark' : 'light'} />
         </div>
+        <nav className="hidden md:flex items-center gap-4 text-xs font-medium">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className={`transition-colors cursor-pointer ${isDark ? 'text-gray-400 hover:text-white' : 'text-zinc-600 hover:text-zinc-900'}`}
+          >
+            Dashboard
+          </button>
+          <button
+            onClick={() => navigate('/chat')}
+            className={`transition-colors flex items-center gap-1.5 cursor-pointer ${isDark ? 'text-gray-400 hover:text-white' : 'text-zinc-600 hover:text-zinc-900'}`}
+          >
+            <span>Community Chat</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          </button>
+          <button
+            onClick={() => navigate('/review')}
+            className={`transition-colors cursor-pointer ${isDark ? 'text-gray-400 hover:text-white' : 'text-zinc-600 hover:text-zinc-900'}`}
+          >
+            Project Review
+          </button>
+          <button
+            onClick={() => navigate('/docs')}
+            className="text-blue-600 hover:text-blue-700 transition-colors flex items-center gap-1 font-semibold cursor-pointer"
+          >
+            <span>API Docs</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-500/20 border border-blue-500/30">
+              Scalar
+            </span>
+          </button>
+        </nav>
       </div>
 
       <div className="flex items-center gap-3 sm:gap-4">

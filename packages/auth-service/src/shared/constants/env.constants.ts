@@ -3,7 +3,7 @@ const envConstants = {
   NODE_ENV: 'development',
   MONGO_URI: 'mongodb://localhost:27017/authService',
   CORS_ORIGIN: '*',
-  ACCESS_TOKEN_SECRET: 'super_secret_access_jwt_key_change_in_production',
+  ACCESS_TOKEN_SECRET: 'super_secret_access_jwt_key_auth_service',
   REFRESH_TOKEN_SECRET: 'super_secret_refresh_jwt_key_change_in_production',
   SMTP_HOST: 'smtp.gmail.com',
   SMTP_PORT: 587,

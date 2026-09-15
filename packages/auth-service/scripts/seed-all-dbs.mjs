@@ -22,7 +22,7 @@ function getBaseUri() {
     }
   } catch {}
 
-  throw new Error('Please set MONGO_BASE_URI, AUTH_DB, or MONGO_URI in your environment variables.');
+  return 'mongodb://localhost:27017';
 }
 
 const BASE_URI = getBaseUri();
@@ -30,29 +30,41 @@ const BASE_URI = getBaseUri();
 async function seed() {
   console.log(' Connecting to MongoDB Atlas...');
 
+  const authDb = process.env.AUTH_DB || `${BASE_URI}/authService`;
+  const userDb = process.env.USER_DB || `${BASE_URI}/userService`;
+  const mediaDb = process.env.MEDIA_DB || `${BASE_URI}/mediaService`;
+  const mcqDb = process.env.MCQ_DB || `${BASE_URI}/mcqService`;
+  const codingDb = process.env.CODING_DB || `${BASE_URI}/codingService`;
+  const courseDb = process.env.COURSE_DB || `${BASE_URI}/courseService`;
+  const chatDb = process.env.CHAT_DB || `${BASE_URI}/chatService`;
+
   // 1. Connect to AUTH DB
-  const authConn = await mongoose.createConnection(`${BASE_URI}/auth`).asPromise();
-  console.log(' Connected to auth DB');
+  const authConn = await mongoose.createConnection(authDb).asPromise();
+  console.log(' Connected to authService DB');
 
   // 2. Connect to USER DB
-  const userConn = await mongoose.createConnection(`${BASE_URI}/user`).asPromise();
-  console.log(' Connected to user DB');
+  const userConn = await mongoose.createConnection(userDb).asPromise();
+  console.log(' Connected to userService DB');
 
   // 3. Connect to MEDIA DB
-  const mediaConn = await mongoose.createConnection(`${BASE_URI}/media`).asPromise();
-  console.log(' Connected to media DB');
+  const mediaConn = await mongoose.createConnection(mediaDb).asPromise();
+  console.log(' Connected to mediaService DB');
 
   // 4. Connect to MCQ DB
-  const mcqConn = await mongoose.createConnection(`${BASE_URI}/mcq`).asPromise();
-  console.log(' Connected to mcq DB');
+  const mcqConn = await mongoose.createConnection(mcqDb).asPromise();
+  console.log(' Connected to mcqService DB');
 
   // 5. Connect to CODING DB
-  const codingConn = await mongoose.createConnection(`${BASE_URI}/coding`).asPromise();
-  console.log(' Connected to coding DB');
+  const codingConn = await mongoose.createConnection(codingDb).asPromise();
+  console.log(' Connected to codingService DB');
 
   // 6. Connect to COURSE DB
-  const courseConn = await mongoose.createConnection(`${BASE_URI}/course`).asPromise();
-  console.log(' Connected to course DB');
+  const courseConn = await mongoose.createConnection(courseDb).asPromise();
+  console.log(' Connected to courseService DB');
+
+  // 7. Connect to CHAT DB
+  const chatConn = await mongoose.createConnection(chatDb).asPromise();
+  console.log(' Connected to chatService DB');
 
   console.log('\n Seeding AUTH and USER databases...');
 
@@ -661,6 +673,130 @@ async function seed() {
   }
   console.log('  Seeded CourseProgress for 5 students for Live Leaderboard.');
 
+  // 11. Seed CHAT DB
+  console.log('\n Seeding CHAT database...');
+  const ChatRoom = chatConn.model('ChatRoom', new mongoose.Schema({
+    name: String,
+    slug: { type: String, unique: true },
+    description: String,
+    type: String,
+    courseId: String,
+    icon: String,
+    creatorId: String,
+    members: [{ userId: String, role: String, joinedAt: Date, lastReadAt: Date }],
+    isArchived: Boolean,
+    pinnedMessageIds: [String],
+    lastMessage: Object,
+  }, { timestamps: true }));
+
+  const ChatMessage = chatConn.model('ChatMessage', new mongoose.Schema({
+    roomId: String,
+    sender: { userId: String, name: String, avatar: String, role: String },
+    content: String,
+    attachments: Array,
+    replyTo: Object,
+    reactions: [{ emoji: String, users: [String], count: Number }],
+    isPinned: Boolean,
+    isEdited: Boolean,
+    deletedAt: Date,
+  }, { timestamps: true }));
+
+  const allUserMembers = createdUserRecords.map(u => ({
+    userId: u.userId,
+    role: u.role === 'admin' ? 'owner' : u.role === 'trainer' ? 'moderator' : 'member',
+    joinedAt: new Date(),
+    lastReadAt: new Date()
+  }));
+
+  const generalRoom = await ChatRoom.findOneAndUpdate(
+    { slug: 'general' },
+    {
+      name: 'general',
+      slug: 'general',
+      description: 'General community discussion and introductions',
+      type: 'public',
+      creatorId: trainerId,
+      members: allUserMembers,
+      isArchived: false,
+    },
+    { upsert: true, new: true }
+  );
+
+  const webDevRoom = await ChatRoom.findOneAndUpdate(
+    { slug: 'web-development' },
+    {
+      name: 'web-development',
+      slug: 'web-development',
+      description: 'Modern TypeScript, distributed systems, and backend design questions',
+      type: 'public',
+      creatorId: trainerId,
+      members: allUserMembers,
+      isArchived: false,
+    },
+    { upsert: true, new: true }
+  );
+
+  const courseChatRoom = await ChatRoom.findOneAndUpdate(
+    { slug: 'course-mastery-qa' },
+    {
+      name: 'course-mastery-qa',
+      slug: 'course-mastery-qa',
+      description: 'Questions and study group for Full Stack Web Development & System Design',
+      type: 'course',
+      courseId: course1._id.toString(),
+      creatorId: trainerId,
+      members: allUserMembers,
+      isArchived: false,
+    },
+    { upsert: true, new: true }
+  );
+
+  // Seed sample messages
+  const sarahUser = createdUserRecords.find(u => u.role === 'trainer');
+  const alexUser = createdUserRecords.find(u => u.email === 'student@example.com');
+  const sophiaUser = createdUserRecords.find(u => u.email === 'sophia.chen@example.com');
+
+  if (sarahUser && alexUser && sophiaUser) {
+    await ChatMessage.deleteMany({ roomId: generalRoom._id.toString() });
+
+    const msg1 = await ChatMessage.create({
+      roomId: generalRoom._id.toString(),
+      sender: { userId: sarahUser.userId, name: sarahUser.name, avatar: sarahUser.avatar, role: 'trainer' },
+      content: 'Welcome to the Knowhere LMS community chat! Feel free to ask questions, share code snippets, and collaborate with your peers.',
+      reactions: [{ emoji: '👋', users: [alexUser.userId, sophiaUser.userId], count: 2 }],
+      createdAt: new Date(Date.now() - 3600000 * 2)
+    });
+
+    const msg2 = await ChatMessage.create({
+      roomId: generalRoom._id.toString(),
+      sender: { userId: sophiaUser.userId, name: sophiaUser.name, avatar: sophiaUser.avatar, role: 'trainee' },
+      content: 'Excited to be here! The V8 engine module and microtask scheduling walkthrough was super clear.',
+      replyTo: { messageId: msg1._id.toString(), senderName: sarahUser.name, snippet: 'Welcome to the Knowhere LMS community chat!' },
+      reactions: [{ emoji: '🔥', users: [sarahUser.userId], count: 1 }],
+      createdAt: new Date(Date.now() - 3600000)
+    });
+
+    await ChatMessage.create({
+      roomId: generalRoom._id.toString(),
+      sender: { userId: alexUser.userId, name: alexUser.name, avatar: alexUser.avatar, role: 'trainee' },
+      content: 'Hey everyone! Working on the LRU Cache coding challenge right now. Anyone want to discuss eviction strategies?',
+      reactions: [{ emoji: '🚀', users: [sophiaUser.userId], count: 1 }, { emoji: '💡', users: [sarahUser.userId], count: 1 }],
+      createdAt: new Date(Date.now() - 600000)
+    });
+
+    await generalRoom.updateOne({
+      lastMessage: {
+        messageId: msg2._id.toString(),
+        content: 'Hey everyone! Working on the LRU Cache coding challenge right now...',
+        senderId: alexUser.userId,
+        senderName: alexUser.name,
+        createdAt: new Date()
+      }
+    });
+  }
+
+  console.log('  Seeded 3 Chat Rooms (#general, #web-development, #course-mastery-qa) with sample messages.');
+
   // Close all connections
   await Promise.all([
     authConn.close(),
@@ -669,9 +805,10 @@ async function seed() {
     mcqConn.close(),
     codingConn.close(),
     courseConn.close(),
+    chatConn.close(),
   ]);
 
-  console.log('\n SUCCESS! All 6 databases populated successfully.');
+  console.log('\n SUCCESS! All 7 databases populated successfully.');
   console.log('====================================================');
   console.log('Test Accounts (Password for all: Password123!):');
   console.log('  1. Student: student@example.com');

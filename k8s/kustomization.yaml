@@ -18,6 +18,8 @@ resources:
   - coding-service.yml
   - project-review-deployment.yml
   - project-review-service.yml
+  - chat-deployment.yml
+  - chat-service.yml
   - frontend-deployment.yml
   - frontend-service.yml
   - redis-deployment.yml

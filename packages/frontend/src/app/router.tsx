@@ -16,6 +16,7 @@ import { AdminDashboardPage } from '../features/admin/ui/AdminDashboardPage';
 import { AdminCoursePage } from '../features/admin/ui/AdminCoursePage';
 
 import { ApiDocsPage } from '../features/docs/ui/ApiDocsPage';
+import { ChatPage } from '../features/chat/ui/ChatPage';
 
 export const requireAuth = async () => {
   const state = store.getState().auth;
@@ -98,6 +99,11 @@ export const router = createBrowserRouter([
     path: '/admin/course/:courseId',
     loader: requireAuth,
     element: <AdminCoursePage />
+  },
+  {
+    path: '/chat',
+    loader: requireAuth,
+    element: <ChatPage />
   },
   {
     path: '/review',

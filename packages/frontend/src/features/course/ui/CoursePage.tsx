@@ -14,6 +14,7 @@ import { CourseProgressBar } from './CourseProgressBar';
 import { ModuleTree } from './ModuleTree';
 import { ContentDetailPane } from './ContentDetailPane';
 import { LeaderboardPanel } from './LeaderboardPanel';
+import { MessageSquare } from 'lucide-react';
 
 export const CoursePage: React.FC = () => {
   const { courseId } = useParams<{ courseId: string }>();

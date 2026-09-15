@@ -1,0 +1,12 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: chat-service
+spec:
+  selector:
+    app: chat
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 5007
