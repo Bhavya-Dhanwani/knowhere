@@ -15,7 +15,11 @@ export function useLogin() {
     onSuccess: (data) => {
       dispatch(setCredentials({ accessToken: data.accessToken, user: data.user }));
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-      navigate('/dashboard');
+      if (data.user?.roles?.includes('admin')) {
+        navigate('/admin/dashboard');
+      } else {
+        navigate('/dashboard');
+      }
     }
   });
 }

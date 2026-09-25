@@ -23,9 +23,9 @@ export const CourseList: React.FC<CourseListProps> = ({ courses, onResume }) => 
   }, [courses, searchTerm, sortBy]);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col flex-1 min-h-0 h-full">
       {/* Header and Controls */}
-      <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1">
+      <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-1">
         <h2 className="text-lg sm:text-xl font-bold text-zinc-900 tracking-tight">
           Your Enrolled Courses
         </h2>
@@ -80,18 +80,18 @@ export const CourseList: React.FC<CourseListProps> = ({ courses, onResume }) => 
         </div>
       </div>
 
-      {/* Course List Stack */}
-      {filteredCourses.length > 0 ? (
-        <div className="flex flex-col gap-3.5">
-          {filteredCourses.map((course) => (
+      {/* Course List Stack (Scrollable Area) */}
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 pb-2 space-y-3.5">
+        {filteredCourses.length > 0 ? (
+          filteredCourses.map((course) => (
             <CourseCard key={course.id} {...course} onResume={onResume} />
-          ))}
-        </div>
-      ) : (
-        <div className="bg-white border border-zinc-200 rounded-2xl p-12 text-center shadow-xs">
-          <p className="text-sm text-zinc-500">No matching enrolled courses found.</p>
-        </div>
-      )}
+          ))
+        ) : (
+          <div className="bg-white border border-zinc-200 rounded-2xl p-12 text-center shadow-xs">
+            <p className="text-sm text-zinc-500">No matching enrolled courses found.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

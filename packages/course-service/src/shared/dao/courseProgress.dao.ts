@@ -1,4 +1,5 @@
 // Importing modules
+import { Types } from 'mongoose';
 import CourseProgress, { ICourseProgress } from '../models/courseProgress.model.js';
 
 class CourseProgressDao {
@@ -63,7 +64,7 @@ class CourseProgressDao {
 
     // Add new completion item and increment totalScoreEarned
     progress.completedItems.push({
-      contentItemId: contentItemId as any,
+      contentItemId: new Types.ObjectId(contentItemId),
       type,
       scoreEarned,
       maxScore,

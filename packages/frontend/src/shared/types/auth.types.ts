@@ -16,7 +16,7 @@ export interface SignupCredentials {
   name: string;
   email: string;
   password: string;
-  role?: 'student' | 'trainer';
+  role?: 'student' | 'trainer' | 'admin';
 }
 
 export interface AuthResponse {

@@ -7,6 +7,9 @@ import SubmoduleDao from '../shared/dao/submodule.dao.js';
 import ContentItemDao from '../shared/dao/contentItem.dao.js';
 import externalContentService from '../services/externalContent.service.js';
 import env from '../shared/config/env.config.js';
+import { ICourseDocument } from '../shared/models/course.model.js';
+import { ISubmoduleDocument } from '../shared/models/submodule.model.js';
+import { ICourseProgress } from '../shared/models/courseProgress.model.js';
 
 describe('Course Service Integration & Content Attach Tests', () => {
   const app = createApp();
@@ -39,7 +42,7 @@ describe('Course Service Integration & Content Attach Tests', () => {
         toObject: function () {
           return this;
         }
-      } as any);
+      } as unknown as ICourseDocument);
 
       const res = await request(app)
         .post('/api/courses')
@@ -75,7 +78,7 @@ describe('Course Service Integration & Content Attach Tests', () => {
         _id: '507f1f77bcf86cd799439022',
         title: 'Introduction Submodule',
         moduleId: '507f1f77bcf86cd799439033'
-      } as any);
+      } as unknown as ISubmoduleDocument);
 
       jest.spyOn(externalContentService, 'validateAndFetchReference').mockResolvedValue({
         title: 'Intro Video',
@@ -95,7 +98,9 @@ describe('Course Service Integration & Content Attach Tests', () => {
         toObject: function () {
           return this;
         }
-      } as any);
+      } as unknown as ReturnType<ContentItemDao['createContentItem']> extends Promise<infer U>
+        ? U
+        : never);
 
       const res = await request(app)
         .post('/api/submodules/507f1f77bcf86cd799439022/content-items')
@@ -127,7 +132,11 @@ describe('Course Service Integration & Content Attach Tests', () => {
             return this;
           }
         }
-      ] as any);
+      ] as unknown as ReturnType<ContentItemDao['listContentItemsBySubmoduleId']> extends Promise<
+        infer U
+      >
+        ? U
+        : never);
 
       const res = await request(app)
         .get('/api/submodules/507f1f77bcf86cd799439022/content-items')
@@ -153,7 +162,9 @@ describe('Course Service Integration & Content Attach Tests', () => {
         toObject: function () {
           return this;
         }
-      } as any);
+      } as unknown as ReturnType<ContentItemDao['findContentItemById']> extends Promise<infer U>
+        ? U
+        : never);
 
       jest.spyOn(externalContentService, 'fetchItemDetail').mockResolvedValue({
         playback_url: 'https://cdn.example.com/hls/master.m3u8',
@@ -174,7 +185,7 @@ describe('Course Service Integration & Content Attach Tests', () => {
         _id: '507f1f77bcf86cd799439022',
         title: 'Introduction Submodule',
         moduleId: '507f1f77bcf86cd799439033'
-      } as any);
+      } as unknown as ISubmoduleDocument);
 
       jest.spyOn(externalContentService, 'validateAndFetchReference').mockResolvedValue({
         title: 'Important Video',
@@ -183,17 +194,28 @@ describe('Course Service Integration & Content Attach Tests', () => {
 
       jest
         .spyOn(ContentItemDao.prototype, 'createContentItem')
-        .mockImplementation(async (data: any) => {
-          return {
-            _id: '507f1f77bcf86cd799439044',
-            ...data,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            toObject: function () {
-              return this;
-            }
-          } as any;
-        });
+        .mockImplementation(
+          async (data: {
+            submoduleId: string;
+            type: string;
+            ref_id: string;
+            title: string;
+            max_score: number;
+            order: number;
+          }) => {
+            return {
+              _id: '507f1f77bcf86cd799439044',
+              ...data,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              toObject: function () {
+                return this;
+              }
+            } as unknown as ReturnType<ContentItemDao['createContentItem']> extends Promise<infer U>
+              ? U
+              : never;
+          }
+        );
 
       const res = await request(app)
         .post('/api/submodules/507f1f77bcf86cd799439022/content-items')
@@ -224,7 +246,9 @@ describe('Course Service Integration & Content Attach Tests', () => {
         toObject: function () {
           return this;
         }
-      } as any);
+      } as unknown as ReturnType<ContentItemDao['updateContentItemById']> extends Promise<infer U>
+        ? U
+        : never);
 
       const res = await request(app)
         .put('/api/content-items/507f1f77bcf86cd799439044')
@@ -245,13 +269,15 @@ describe('Course Service Integration & Content Attach Tests', () => {
       jest.spyOn(CourseDao.prototype, 'findCourseById').mockResolvedValue({
         _id: '507f1f77bcf86cd799439011',
         title: 'TypeScript Masterclass'
-      } as any);
+      } as unknown as ICourseDocument);
 
       jest.spyOn(ContentItemDao.prototype, 'findContentItemById').mockResolvedValue({
         _id: '507f1f77bcf86cd799439044',
         type: 'video',
         max_score: 10
-      } as any);
+      } as unknown as ReturnType<ContentItemDao['findContentItemById']> extends Promise<infer U>
+        ? U
+        : never);
 
       const { default: CourseProgressDao } = await import('../shared/dao/courseProgress.dao.js');
       const { default: ModuleDao } = await import('../shared/dao/module.dao.js');
@@ -269,7 +295,7 @@ describe('Course Service Integration & Content Attach Tests', () => {
             completedAt: new Date()
           }
         ]
-      } as any);
+      } as unknown as ICourseProgress);
 
       jest.spyOn(ModuleDao.prototype, 'findModulesByCourseId').mockResolvedValue([]);
 
@@ -303,7 +329,7 @@ describe('Course Service Integration & Content Attach Tests', () => {
             completedAt: new Date()
           }
         ]
-      } as any);
+      } as unknown as ICourseProgress);
 
       jest.spyOn(ModuleDao.prototype, 'findModulesByCourseId').mockResolvedValue([]);
 

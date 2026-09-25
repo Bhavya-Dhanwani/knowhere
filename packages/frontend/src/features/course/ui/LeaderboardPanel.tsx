@@ -6,9 +6,14 @@ import { LeaderboardData } from '../../../shared/types';
 export interface LeaderboardPanelProps {
   data: LeaderboardData;
   currentUserId?: string;
+  currentUserName?: string;
 }
 
-export const LeaderboardPanel: React.FC<LeaderboardPanelProps> = ({ data }) => {
+export const LeaderboardPanel: React.FC<LeaderboardPanelProps> = ({
+  data,
+  currentUserId,
+  currentUserName
+}) => {
   return (
     <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col h-full overflow-hidden space-y-4">
       {/* Header with Trophy Icon */}
@@ -35,13 +40,16 @@ export const LeaderboardPanel: React.FC<LeaderboardPanelProps> = ({ data }) => {
         <span className="col-span-3 text-right">POINTS</span>
       </div>
 
-      {/* Ranked Table - scrolls smoothly inside with island scrollbar */}
-      <div className="space-y-1 flex-1 min-h-0 overflow-y-auto island-scrollbar pr-1">
+      {/* Ranked Table - scrolls smoothly inside with custom scrollbar */}
+      <div className="space-y-1 flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-1">
         {data.rankings.map((student) => (
           <LeaderboardRow
             key={student.id}
             student={student}
-            isCurrentUser={student.name.toLowerCase().includes('bhavya')}
+            isCurrentUser={Boolean(
+              (currentUserId && student.id === currentUserId) ||
+              (currentUserName && student.name.toLowerCase() === currentUserName.toLowerCase())
+            )}
           />
         ))}
       </div>

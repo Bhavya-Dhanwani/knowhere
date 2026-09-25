@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router';
-import { Button } from '../../../shared/ui/Button';
+import { BookOpen, Users, Shield, ArrowRight } from 'lucide-react';
 import { SignupCredentials } from '../../../shared/types';
 
 export interface SignupFormProps {
@@ -13,7 +13,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSubmit, isLoading, err
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'student' | 'trainer'>('student');
+  const [role, setRole] = useState<'student' | 'trainer' | 'admin'>('student');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,15 +22,15 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSubmit, isLoading, err
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4 text-left font-sans">
       {errorMessage ? (
-        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+        <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
           {errorMessage}
         </div>
       ) : null}
 
       <div>
-        <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">
+        <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
           Full Name
         </label>
         <input
@@ -38,13 +38,13 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSubmit, isLoading, err
           required
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Alex Rivera"
-          className="w-full px-3.5 py-2.5 bg-background border border-white/10 rounded-lg text-white text-sm placeholder:text-muted/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+          placeholder="e.g. Alex Rivera"
+          className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
         />
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">
+        <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
           Email Address
         </label>
         <input
@@ -53,12 +53,12 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSubmit, isLoading, err
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="name@example.com"
-          className="w-full px-3.5 py-2.5 bg-background border border-white/10 rounded-lg text-white text-sm placeholder:text-muted/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+          className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
         />
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">
+        <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
           Password
         </label>
         <input
@@ -67,57 +67,69 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSubmit, isLoading, err
           minLength={6}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="��������"
-          className="w-full px-3.5 py-2.5 bg-background border border-white/10 rounded-lg text-white text-sm placeholder:text-muted/50 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+          placeholder="••••••••"
+          className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
         />
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-muted uppercase tracking-wider mb-1.5">
-          I am joining as a
+        <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
+          I am joining as
         </label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
             onClick={() => setRole('student')}
-            className={`py-2 px-3 text-xs font-semibold rounded-lg border transition-all ${
+            className={`py-2 px-2 text-xs rounded-xl border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
               role === 'student'
-                ? 'bg-primary/20 border-primary text-white shadow-sm shadow-primary/20'
-                : 'bg-background border-white/10 text-muted hover:text-white'
+                ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs font-bold'
+                : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100 font-medium'
             }`}
           >
-            Student
+            <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+            <span className="text-[11px]">Student</span>
           </button>
+
           <button
             type="button"
             onClick={() => setRole('trainer')}
-            className={`py-2 px-3 text-xs font-semibold rounded-lg border transition-all ${
+            className={`py-2 px-2 text-xs rounded-xl border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
               role === 'trainer'
-                ? 'bg-primary/20 border-primary text-white shadow-sm shadow-primary/20'
-                : 'bg-background border-white/10 text-muted hover:text-white'
+                ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs font-bold'
+                : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100 font-medium'
             }`}
           >
-            Trainer
+            <Users className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="text-[11px]">Trainer</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setRole('admin')}
+            className={`py-2 px-2 text-xs rounded-xl border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+              role === 'admin'
+                ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs font-bold'
+                : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100 font-medium'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="text-[11px]">Admin</span>
           </button>
         </div>
       </div>
 
-      <Button
+      <button
         type="submit"
-        variant="primary"
-        size="md"
-        className="w-full mt-2"
-        isLoading={isLoading}
+        disabled={isLoading}
+        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] mt-2"
       >
-        Create Account
-      </Button>
+        <span>{isLoading ? 'Creating Account...' : 'Create Account'}</span>
+        <ArrowRight className="w-3.5 h-3.5" />
+      </button>
 
-      <p className="text-center text-xs text-muted mt-6">
+      <p className="text-center text-xs text-zinc-500 mt-5">
         Already have an account?{' '}
-        <Link
-          to="/login"
-          className="text-primary hover:text-primary-hover font-medium underline underline-offset-4"
-        >
+        <Link to="/login" className="text-blue-600 hover:text-blue-700 font-bold hover:underline">
           Sign in
         </Link>
       </p>

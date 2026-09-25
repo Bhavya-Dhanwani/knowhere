@@ -552,7 +552,37 @@ const MOCK_LEADERBOARD: LeaderboardData = {
   aheadPercentage: 100.0
 };
 
+const COURSE_STRUCTURES_STORE: Record<string, CourseStructure> = {
+  'course-dsa-bootcamp': MOCK_COURSE_STRUCTURE
+};
+
 export const courseApi = {
+  saveCourseStructure: (courseId: string, structure: CourseStructure) => {
+    COURSE_STRUCTURES_STORE[courseId] = structure;
+  },
+
+  saveContentItemDetail: (itemDetail: ContentItemDetail) => {
+    MOCK_CONTENT_DETAILS[itemDetail.id] = itemDetail;
+  },
+
+  initCourseStructure: (courseId: string, title: string) => {
+    if (!COURSE_STRUCTURES_STORE[courseId]) {
+      COURSE_STRUCTURES_STORE[courseId] = {
+        id: courseId,
+        title,
+        overallProgress: 0,
+        totalModules: 0,
+        completedModules: 0,
+        totalSubmodules: 0,
+        completedSubmodules: 0,
+        totalScore: 0,
+        maxScore: 0,
+        modules: []
+      };
+    }
+    return COURSE_STRUCTURES_STORE[courseId];
+  },
+
   getCourseStructure: async (courseId: string): Promise<CourseStructure> => {
     try {
       const response = await axiosClient.get(`/courses/${courseId}`);
@@ -560,8 +590,14 @@ export const courseApi = {
       if (course && course.modules && course.modules.length > 0) {
         return course;
       }
+      if (COURSE_STRUCTURES_STORE[courseId]) {
+        return COURSE_STRUCTURES_STORE[courseId];
+      }
       return { ...MOCK_COURSE_STRUCTURE, id: courseId };
     } catch {
+      if (COURSE_STRUCTURES_STORE[courseId]) {
+        return COURSE_STRUCTURES_STORE[courseId];
+      }
       return { ...MOCK_COURSE_STRUCTURE, id: courseId };
     }
   },

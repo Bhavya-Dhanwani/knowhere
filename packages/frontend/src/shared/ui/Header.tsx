@@ -24,11 +24,15 @@ export const Header: React.FC<HeaderProps> = ({
 
   const isAdminPath = location.pathname.startsWith('/admin');
 
-  const initial = user?.name ? user.name[0].toUpperCase() : 'B';
+  const initial = user?.name?.trim()
+    ? user.name.trim()[0].toUpperCase()
+    : user?.email
+      ? user.email[0].toUpperCase()
+      : 'U';
 
   return (
     <header
-      className={`h-16 px-6 lg:px-10 flex items-center justify-between sticky top-0 z-40 shrink-0 transition-colors ${
+      className={`h-16 px-6 lg:px-10 2xl:px-14 flex items-center justify-between sticky top-0 z-40 shrink-0 transition-colors ${
         isDark
           ? 'bg-[#0e1017] border-b border-[#232532] text-white'
           : 'bg-white border-b border-zinc-200'

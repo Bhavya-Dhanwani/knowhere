@@ -16,7 +16,12 @@ export interface ContentItemDetail extends ContentItemSummary {
   codingPrompt?: string;
   starterCode?: string;
   language?: string;
+  testCases?: { input: string; output: string; isHidden?: boolean }[];
+  timeLimitMs?: number;
+  memoryLimitMb?: number;
   mcqOptions?: { id: string; text: string }[];
+  correctOptionId?: string;
+  explanation?: string;
   resourceLink?: string;
   earnedMarks?: number;
 }

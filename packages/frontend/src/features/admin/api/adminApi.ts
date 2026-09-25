@@ -1,4 +1,5 @@
 import { axiosClient } from '../../../shared/lib/axiosClient';
+import { courseApi } from '../../course/api/courseApi';
 
 export interface AdminCourseSummary {
   id: string;
@@ -212,6 +213,7 @@ export const adminApi = {
     thumbnail?: string;
     category?: string;
     instructorName?: string;
+    status?: 'published' | 'draft';
   }): Promise<AdminCourseSummary> => {
     try {
       const res = await axiosClient.post('/courses', data);
@@ -225,7 +227,7 @@ export const adminApi = {
             c.thumbnail ||
             data.thumbnail ||
             'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80',
-          status: 'published',
+          status: (c.status as 'published' | 'draft') || data.status || 'published',
           category: c.category || data.category || 'General',
           instructorName: c.instructorName || data.instructorName || 'Administrator',
           totalStudents: 0,
@@ -245,7 +247,7 @@ export const adminApi = {
       thumbnail:
         data.thumbnail ||
         'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80',
-      status: 'published',
+      status: data.status || 'published',
       category: data.category || 'Engineering',
       instructorName: data.instructorName || 'Administrator',
       totalStudents: 1,
@@ -258,6 +260,7 @@ export const adminApi = {
         year: 'numeric'
       })
     };
+    courseApi.initCourseStructure(newCourse.id, newCourse.title);
     MOCK_ADMIN_COURSES.unshift(newCourse);
     return newCourse;
   },

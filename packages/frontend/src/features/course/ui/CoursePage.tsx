@@ -14,7 +14,6 @@ import { CourseProgressBar } from './CourseProgressBar';
 import { ModuleTree } from './ModuleTree';
 import { ContentDetailPane } from './ContentDetailPane';
 import { LeaderboardPanel } from './LeaderboardPanel';
-import { MessageSquare } from 'lucide-react';
 
 export const CoursePage: React.FC = () => {
   const { courseId } = useParams<{ courseId: string }>();
@@ -65,7 +64,7 @@ export const CoursePage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
+    <div className="h-screen bg-[#F8FAFC] text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
       {/* Light Theme Header */}
       <Header
         user={user}
@@ -74,18 +73,18 @@ export const CoursePage: React.FC = () => {
         theme="light"
       />
 
-      <div className="flex-1 flex">
-        {/* Main Content Area - Full Page Natural Scroll with Hidden Scrollbar */}
-        <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        {/* Main Content Area - Full Viewport Contained Layout */}
+        <main className="flex-1 w-full p-4 lg:p-6 2xl:p-8 flex flex-col min-h-0 overflow-hidden">
           {isStructureLoading ? (
             <div className="flex flex-col items-center justify-center py-24">
               <Spinner size="lg" />
               <p className="text-sm text-slate-500 mt-4">Loading DSA for Bootcamp...</p>
             </div>
           ) : (
-            <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            <div className="w-full h-full min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-5 xl:gap-7 items-stretch">
               {/* Left Column: 2 Islands (Top Progress + Bottom Syllabus) */}
-              <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-4">
+              <div className="lg:col-span-7 xl:col-span-8 2xl:col-span-9 flex flex-col min-h-0 h-full gap-4">
                 {/* Island 1: Course Progress Card with Back Link and Title inside header */}
                 {courseStructure && (
                   <CourseProgressBar
@@ -113,14 +112,18 @@ export const CoursePage: React.FC = () => {
               </div>
 
               {/* Right Column: Live Leaderboard Island */}
-              <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-4">
+              <div className="lg:col-span-5 xl:col-span-4 2xl:col-span-3 flex flex-col min-h-0 h-full gap-4 overflow-hidden">
                 {isLeaderboardLoading ? (
                   <div className="bg-white border border-slate-200/80 rounded-2xl p-8 flex flex-col items-center justify-center shadow-xs">
                     <Spinner size="md" />
                     <p className="text-xs text-slate-500 mt-2">Loading leaderboard...</p>
                   </div>
                 ) : leaderboard ? (
-                  <LeaderboardPanel data={leaderboard} currentUserId={user?.id} />
+                  <LeaderboardPanel
+                    data={leaderboard}
+                    currentUserId={user?.id}
+                    currentUserName={user?.name}
+                  />
                 ) : null}
               </div>
             </div>
@@ -128,7 +131,7 @@ export const CoursePage: React.FC = () => {
         </main>
 
         {/* Far-Right Icon Strip */}
-        <aside className="hidden md:flex w-14 bg-white border-l border-slate-200 flex-col items-center py-5 justify-between shrink-0 select-none shadow-xs">
+        <aside className="hidden md:flex w-14 bg-white border-l border-slate-200 flex-col items-center py-5 justify-between shrink-0 select-none shadow-xs h-full">
           <div className="flex flex-col items-center gap-6">
             {/* Collapse toggle */}
             <button

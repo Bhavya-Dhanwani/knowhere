@@ -29,9 +29,25 @@ export const ProgressHeatmap: React.FC<ProgressHeatmapProps> = ({ data }) => {
       {/* Title & Subtitle */}
       <div>
         <h3 className="text-base font-bold text-zinc-900 tracking-tight">Progress Heatmap</h3>
-        <p className="text-xs text-blue-600 font-semibold mt-0.5">
-          Crushed {data.totalActivities} activities so far!
-        </p>
+        <div className="flex items-center justify-between mt-1">
+          <p className="text-xs text-blue-600 font-semibold">
+            Crushed {data.totalActivities.toLocaleString()} activities so far!
+          </p>
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-500">
+            <button
+              type="button"
+              className="px-2 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 text-zinc-700 transition-colors cursor-pointer"
+            >
+              Prev
+            </button>
+            <button
+              type="button"
+              className="px-2 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200 text-zinc-700 transition-colors cursor-pointer"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Grid Container Box */}

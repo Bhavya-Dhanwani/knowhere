@@ -26,7 +26,7 @@ class ContentItemController {
       }
 
       const details = await externalContentService.fetchItemDetail(
-        item.type as any,
+        item.type as import('../../shared/models/contentItem.model.js').ContentItemType,
         item.ref_id.toString()
       );
 

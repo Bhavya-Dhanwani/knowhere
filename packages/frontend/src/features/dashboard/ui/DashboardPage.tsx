@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router';
 import { useSelector, useDispatch } from 'react-redux';
-import { Tv, Headphones, Shield } from 'lucide-react';
+import { Tv, Headphones } from 'lucide-react';
 import { RootState } from '../../../app/store';
 import { logout } from '../../auth/state/authSlice';
 import { useEnrolledCourses } from '../hooks/useEnrolledCourses';
@@ -34,26 +34,17 @@ export const DashboardPage: React.FC = () => {
   const isLoading = coursesLoading || notifsLoading || heatmapLoading;
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-zinc-900 flex flex-col font-sans select-none">
+    <div className="h-screen bg-[#F8F9FA] text-zinc-900 flex flex-col font-sans select-none overflow-hidden">
       <Header user={user} onLogout={handleLogout} onNavigateHome={() => navigate('/dashboard')} />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 lg:px-10 py-6 flex flex-col">
+      <main className="flex-1 w-full px-6 lg:px-10 2xl:px-14 py-4 lg:py-5 flex flex-col min-h-0 overflow-hidden">
         {/* Top Subheader: Classroom & Quick Actions */}
-        <div className="shrink-0 flex items-center justify-between gap-4 mb-6">
+        <div className="shrink-0 flex items-center justify-between gap-4 mb-4">
           <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
             Classroom
           </h1>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate('/admin/dashboard')}
-              className="px-4 py-2 rounded-lg bg-white hover:bg-zinc-50 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center gap-2 shadow-xs transition-colors cursor-pointer active:scale-[0.98]"
-              title="Open Administration Console"
-            >
-              <Shield className="w-3.5 h-3.5 text-blue-600" />
-              <span>Admin Console</span>
-            </button>
-
             <button
               onClick={() => alert('Welcome to Knowhere! Explore your courses and progress.')}
               className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors cursor-pointer active:scale-[0.98]"
@@ -80,14 +71,14 @@ export const DashboardPage: React.FC = () => {
             <p className="text-sm text-zinc-500">Loading your learning workspace...</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Main Content Column — Enrolled Courses */}
-            <section className="lg:col-span-8 flex flex-col">
+          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-12 2xl:grid-cols-12 gap-6 lg:gap-8 items-stretch">
+            {/* Main Content Column — Enrolled Courses (Spans full wide section) */}
+            <section className="lg:col-span-8 xl:col-span-8 2xl:col-span-9 flex flex-col min-h-0 h-full">
               <CourseList courses={courses || []} onResume={handleResumeCourse} />
             </section>
 
             {/* Right Sidebar — Notifications & Activity Heatmap */}
-            <aside className="lg:col-span-4 flex flex-col gap-6">
+            <aside className="lg:col-span-4 xl:col-span-4 2xl:col-span-3 flex flex-col gap-6 min-h-0 h-full overflow-y-auto custom-scrollbar pr-1 pb-2">
               <div>
                 <NotificationPanel notifications={notifications || []} />
               </div>

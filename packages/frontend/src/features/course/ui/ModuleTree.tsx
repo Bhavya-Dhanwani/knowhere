@@ -77,7 +77,7 @@ export const ModuleTree: React.FC<ModuleTreeProps> = ({
 
       {/* Module Tree Body - Scrollbar is ONLY inside this container */}
       {activeTab === 'modules' ? (
-        <div className="flex-1 min-h-0 overflow-y-auto island-scrollbar divide-y divide-slate-100 p-1.5">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar divide-y divide-slate-100 p-2 pr-2.5">
           {modules.map((module) => (
             <ModuleTreeItem
               key={module.id}
@@ -90,7 +90,7 @@ export const ModuleTree: React.FC<ModuleTreeProps> = ({
           ))}
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center p-8 text-center text-slate-400 text-sm">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar flex items-center justify-center p-8 text-center text-slate-400 text-sm">
           No new announcements for this batch.
         </div>
       )}

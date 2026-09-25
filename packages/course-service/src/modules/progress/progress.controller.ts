@@ -78,7 +78,7 @@ class ProgressController {
         courseId,
         userId,
         contentItemId: itemId,
-        type: item.type as any,
+        type: item.type as 'video' | 'notes' | 'mcq' | 'coding',
         scoreEarned: scoreToAward,
         maxScore: item.max_score || 0
       });

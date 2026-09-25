@@ -72,56 +72,166 @@ export const ContentDetailPane: React.FC<ContentDetailPaneProps> = ({
             Your browser does not support HTML video playback.
           </video>
         ) : item.type === 'coding' ? (
-          <div className="w-full h-full p-4 bg-[#0A0C10] font-mono text-xs flex flex-col justify-between overflow-y-auto">
-            <div className="flex items-center justify-between pb-2 border-b border-white/10 text-muted">
+          <div className="w-full h-full p-4 bg-[#0A0C10] font-mono text-xs flex flex-col justify-between overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between pb-2 border-b border-white/10 text-muted shrink-0">
               <span className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-red-500/80 inline-block" />
                 <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/80 inline-block" />
                 <span className="w-2.5 h-2.5 rounded-full bg-green-500/80 inline-block" />
-                <span className="text-[11px] text-white/80 ml-2">solution.ts</span>
+                <span className="text-[11px] text-white/80 ml-2">
+                  solution.
+                  {item.language === 'python'
+                    ? 'py'
+                    : item.language === 'cpp'
+                      ? 'cpp'
+                      : item.language === 'java'
+                        ? 'java'
+                        : 'ts'}
+                </span>
               </span>
-              <span className="text-[10px] uppercase font-bold text-primary">
-                TypeScript NodeNext
+              <span className="text-[10px] uppercase font-bold text-emerald-400">
+                {item.language || 'TypeScript'}
               </span>
             </div>
+
+            {item.codingPrompt && (
+              <div className="py-2 px-3 my-2 bg-slate-900/90 border border-slate-800 rounded-lg text-slate-300 font-sans text-xs leading-relaxed shrink-0">
+                <span className="font-bold text-white block mb-0.5">Problem Statement:</span>
+                {item.codingPrompt}
+              </div>
+            )}
+
             <textarea
-              value={code !== '' ? code : item.starterCode || '// Write your solution here'}
+              value={code !== '' ? code : item.starterCode || '// Write your solution here\n'}
               onChange={(e) => setCode(e.target.value)}
-              className="w-full flex-1 bg-transparent resize-none focus:outline-none text-emerald-400 py-3 leading-relaxed"
+              className="w-full flex-1 min-h-[140px] bg-transparent resize-none focus:outline-none text-emerald-400 py-3 leading-relaxed font-mono text-xs"
               spellCheck={false}
             />
-            <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+
+            {item.testCases && item.testCases.length > 0 && (
+              <div className="pt-2 pb-2 border-t border-white/10 space-y-1.5 shrink-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Sample Test Cases ({item.testCases.length})
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono text-[11px]">
+                  {item.testCases.slice(0, 2).map((tc, i) => (
+                    <div
+                      key={i}
+                      className="p-2 rounded bg-slate-900 border border-slate-800 text-slate-300"
+                    >
+                      <span className="text-slate-500 block text-[10px]">
+                        Case {i + 1} {tc.isHidden ? '(Hidden)' : ''}:
+                      </span>
+                      <span className="text-white">In: {tc.input}</span>
+                      <span className="text-emerald-400 block">Expected: {tc.output}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-white/10 flex items-center justify-between shrink-0">
               <span className="text-[11px] text-muted">
-                {code ? 'Code modified' : 'Test cases: 2/2 sample passed'}
+                {code ? 'Solution drafted' : 'Ready to solve'}
               </span>
-              <span className="text-[11px] text-primary font-bold">Reward: {item.marks} marks</span>
+              <span className="text-[11px] text-emerald-400 font-bold">
+                Reward: {item.marks} marks
+              </span>
             </div>
           </div>
         ) : item.type === 'mcq' && item.mcqOptions ? (
-          <div className="w-full h-full p-6 bg-[#0A0C10] flex flex-col justify-center max-w-xl mx-auto space-y-4">
-            <span className="text-xs text-primary font-bold uppercase tracking-wider">
+          <div className="w-full h-full p-6 bg-[#0A0C10] flex flex-col justify-center max-w-xl mx-auto space-y-4 overflow-y-auto custom-scrollbar">
+            <span className="text-xs text-purple-400 font-bold uppercase tracking-wider">
               Multiple Choice Assessment
             </span>
-            <p className="text-sm font-semibold text-white leading-relaxed">{item.description}</p>
+            <p className="text-sm font-semibold text-white leading-relaxed">
+              {item.description || item.title}
+            </p>
             <div className="space-y-2">
-              {item.mcqOptions.map((opt) => (
-                <button
-                  key={opt.id}
-                  onClick={() => setSelectedOption(opt.id)}
-                  className={`w-full text-left p-3 rounded-xl border text-xs font-medium transition-all ${
-                    selectedOption === opt.id
-                      ? 'bg-primary/20 border-primary text-white shadow-sm shadow-primary/20'
-                      : 'bg-surface/50 border-white/10 text-muted hover:text-white hover:bg-surface'
-                  }`}
-                >
-                  {opt.text}
-                </button>
-              ))}
+              {item.mcqOptions.map((opt) => {
+                const isSelected = selectedOption === opt.id;
+                const isCorrect = item.correctOptionId === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => setSelectedOption(opt.id)}
+                    className={`w-full text-left p-3 rounded-xl border text-xs font-medium transition-all cursor-pointer flex items-center justify-between ${
+                      isSelected
+                        ? isCorrect
+                          ? 'bg-emerald-500/20 border-emerald-500 text-white'
+                          : 'bg-purple-500/20 border-purple-500 text-white shadow-xs'
+                        : 'bg-slate-900 border-white/10 text-slate-300 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>{opt.text}</span>
+                    {isSelected && (
+                      <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-purple-500 text-white">
+                        Selected
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
+
+            {item.explanation && selectedOption && (
+              <div className="p-3 rounded-xl bg-purple-950/40 border border-purple-800/60 text-purple-200 text-xs leading-relaxed">
+                <span className="font-bold text-white block mb-0.5">Explanation:</span>
+                {item.explanation}
+              </div>
+            )}
           </div>
         ) : (
-          <div className="text-center p-8">
-            <p className="text-sm text-muted">Resource document or notes</p>
+          <div className="w-full h-full p-6 sm:p-8 bg-[#0F172A] text-slate-100 flex flex-col justify-between overflow-y-auto custom-scrollbar">
+            <div className="space-y-4 max-w-2xl mx-auto w-full">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <span className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                  <span>Lecture Notes & Reading Guide</span>
+                </span>
+                {item.resourceLink && (
+                  <a
+                    href={item.resourceLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-semibold underline cursor-pointer"
+                  >
+                    <span>Open External Doc</span>
+                    <svg
+                      className="w-3.5 h-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                      />
+                    </svg>
+                  </a>
+                )}
+              </div>
+
+              <div className="text-xs sm:text-sm text-slate-300 leading-relaxed whitespace-pre-wrap font-sans">
+                {item.description ||
+                  'Review the documentation and lecture notes for this curriculum item.'}
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 text-center shrink-0">
+              <span className="text-[11px] text-slate-400">
+                Review notes & resources above to complete this topic
+              </span>
+            </div>
           </div>
         )}
       </div>

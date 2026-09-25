@@ -12,10 +12,19 @@ export function useSignup() {
 
   return useMutation({
     mutationFn: (credentials: SignupCredentials) => authApi.signup(credentials),
-    onSuccess: (data) => {
-      dispatch(setCredentials({ accessToken: data.accessToken, user: data.user }));
+    onSuccess: (data, variables) => {
+      const selectedRole = variables.role || data.user.roles?.[0] || 'student';
+      const userWithRole = {
+        ...data.user,
+        roles: data.user.roles?.length ? data.user.roles : [selectedRole]
+      };
+      dispatch(setCredentials({ accessToken: data.accessToken, user: userWithRole }));
       queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-      navigate('/dashboard');
+      if (selectedRole === 'admin') {
+        navigate('/admin/dashboard');
+      } else {
+        navigate('/dashboard');
+      }
     }
   });
 }

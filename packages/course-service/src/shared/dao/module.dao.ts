@@ -1,5 +1,4 @@
-// Importing modules
-import Module from '../models/module.model.js';
+import Module, { IModuleDocument, IModuleReleasePolicy } from '../models/module.model.js';
 
 class ModuleDao {
   ModuleModel: typeof Module;
@@ -9,28 +8,39 @@ class ModuleDao {
   }
 
   async createModule(data: {
-    courseId: string;
+    courseId?: string | null;
     title: string;
     description?: string;
-    order: number;
-  }) {
+    order?: number;
+    submoduleIds?: string[];
+    durationDays?: number;
+    releasePolicy?: IModuleReleasePolicy;
+    progressRequirement?: number;
+  }): Promise<IModuleDocument> {
     return await this.ModuleModel.create(data);
   }
 
-  async findModuleById(id: string) {
+  async findModuleById(id: string): Promise<IModuleDocument | null> {
     return await this.ModuleModel.findById(id);
   }
 
-  async updateModuleById(id: string, updateData: Record<string, unknown>) {
+  async updateModuleById(
+    id: string,
+    updateData: Record<string, unknown>
+  ): Promise<IModuleDocument | null> {
     return await this.ModuleModel.findByIdAndUpdate(
       id,
       { $set: updateData },
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     );
   }
 
-  async findModulesByCourseId(courseId: string) {
+  async findModulesByCourseId(courseId: string): Promise<IModuleDocument[]> {
     return await this.ModuleModel.find({ courseId }).sort({ order: 1 });
+  }
+
+  async findModulesByIds(ids: string[]): Promise<IModuleDocument[]> {
+    return await this.ModuleModel.find({ _id: { $in: ids } });
   }
 }
 
