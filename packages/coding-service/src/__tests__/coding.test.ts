@@ -6,19 +6,24 @@ import CodingQuestionDao from '../shared/dao/question.dao.js';
 import CodingSubmissionDao from '../shared/dao/submission.dao.js';
 import { getQuestionById } from '../services/codingExport.service.js';
 import env from '../shared/config/env.config.js';
+import { signAccessToken } from '@lms/shared';
 
 describe('Coding Service Questions & Unlimited Submissions', () => {
   const app = createApp();
 
-  const trainerToken = jwt.sign(
-    { userId: 'trainer-1', role: 'trainer', email: 'trainer@example.com', name: 'Trainer One' },
-    env.ACCESS_TOKEN_SECRET
-  );
+  const trainerToken = signAccessToken({
+    userId: 'trainer-1',
+    role: 'trainer',
+    email: 'trainer@example.com',
+    name: 'Trainer One'
+  });
 
-  const traineeToken = jwt.sign(
-    { userId: 'trainee-1', role: 'trainee', email: 'trainee@example.com', name: 'Trainee One' },
-    env.ACCESS_TOKEN_SECRET
-  );
+  const traineeToken = signAccessToken({
+    userId: 'trainee-1',
+    role: 'trainee',
+    email: 'trainee@example.com',
+    name: 'Trainee One'
+  });
 
   afterEach(() => {
     jest.restoreAllMocks();
@@ -47,7 +52,7 @@ describe('Coding Service Questions & Unlimited Submissions', () => {
       } as any);
 
       const res = await request(app)
-        .post('/api/questions')
+        .post('/api/coding/questions')
         .set('Authorization', `Bearer ${trainerToken}`)
         .send({
           title: 'Two Sum',
@@ -66,7 +71,7 @@ describe('Coding Service Questions & Unlimited Submissions', () => {
 
     it('rejects trainee from creating questions with 403 Forbidden', async () => {
       const res = await request(app)
-        .post('/api/questions')
+        .post('/api/coding/questions')
         .set('Authorization', `Bearer ${traineeToken}`)
         .send({
           title: 'Illegal problem',
@@ -92,7 +97,7 @@ describe('Coding Service Questions & Unlimited Submissions', () => {
       } as any);
 
       const res = await request(app)
-        .get('/api/questions/507f1f77bcf86cd799439088/display')
+        .get('/api/coding/questions/507f1f77bcf86cd799439088/display')
         .set('Authorization', `Bearer ${traineeToken}`);
 
       expect(res.status).toBe(200);
@@ -143,7 +148,7 @@ describe('Coding Service Questions & Unlimited Submissions', () => {
       } as any);
 
       const res = await request(app)
-        .post('/api/questions/507f1f77bcf86cd799439088/submit')
+        .post('/api/coding/questions/507f1f77bcf86cd799439088/submit')
         .set('Authorization', `Bearer ${traineeToken}`)
         .send({
           language: 'javascript',

@@ -1,51 +1,29 @@
 // Importing modules
 import express from 'express';
 import CourseController from './course.controller.js';
-import { createCourseValidators, updateCourseValidators } from './course.validator.js';
+import { updateCourseValidators, courseIdValidators } from './course.validator.js';
 import authMiddleware from '../../shared/middlewares/auth.middleware.js';
 import requireRole from '../../shared/middlewares/role.middleware.js';
 
+// Course reads for the UI. Authoring (create course, add module) lives under /api/course.
 const router = express.Router();
 const courseController = new CourseController();
+const staff = [authMiddleware, requireRole('admin', 'trainer')];
+const anyRole = [authMiddleware, requireRole('admin', 'trainer', 'trainee')];
 
-/*
-    @route POST /api/courses
-    @desc Create a new course
-    @access Trainer/Admin
-*/
-router.post(
-  '/',
-  authMiddleware,
-  requireRole('admin', 'trainer'),
-  createCourseValidators,
-  courseController.createCourse
-);
+// @route GET /api/courses — list courses
+router.get('/', anyRole, courseController.listCourses);
 
-/*
-    @route PUT /api/courses/:id
-    @desc Update course details
-    @access Trainer/Admin
-*/
-router.put(
-  '/:id',
-  authMiddleware,
-  requireRole('admin', 'trainer'),
-  updateCourseValidators,
-  courseController.updateCourse
-);
+// @route GET /api/courses/:id/structure — outline, progress and personal module deadlines
+router.get('/:id/structure', anyRole, courseIdValidators, courseController.getStructure);
 
-/*
-    @route GET /api/courses/:id
-    @desc Get course by ID
-    @access Private
-*/
-router.get('/:id', authMiddleware, courseController.getCourseById);
+// @route GET /api/courses/:id — course details
+router.get('/:id', anyRole, courseIdValidators, courseController.getCourseById);
 
-/*
-    @route GET /api/courses
-    @desc List all courses
-    @access Private
-*/
-router.get('/', authMiddleware, courseController.listCourses);
+// @route PUT /api/courses/:id — rename, describe, publish / archive
+router.put('/:id', staff, updateCourseValidators, courseController.updateCourse);
+
+// @route DELETE /api/courses/:id — delete a course (its instructors or an admin)
+router.delete('/:id', staff, courseIdValidators, courseController.deleteCourse);
 
 export default router;

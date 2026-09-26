@@ -1,6 +1,7 @@
 import { config } from 'dotenv';
 import z from 'zod';
 import envConstants from '../constants/env.constants.js';
+import { assertKeysConfigured } from '@lms/shared';
 
 config();
 
@@ -10,7 +11,13 @@ const envSchema = z.object({
   MONGO_URI: z.string().default(envConstants.MONGO_URI),
   REDIS_URL: z.string().default(envConstants.REDIS_URL),
   CORS_ORIGIN: z.string().default(envConstants.CORS_ORIGIN),
-  ACCESS_TOKEN_SECRET: z.string().default(envConstants.ACCESS_TOKEN_SECRET)
+  USER_SERVICE_URL: z.string().default('http://localhost:5001'),
+  // database name, so a shared cluster URI (k8s) still lands in the chat database
+  MONGO_DB_NAME: z.string().default('chatService'),
+  // voice channels run on LiveKit (SFU); LIVEKIT_URL is the address browsers connect to
+  LIVEKIT_URL: z.string().default('ws://localhost:7880'),
+  LIVEKIT_API_KEY: z.string().default(''),
+  LIVEKIT_API_SECRET: z.string().default('')
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
@@ -22,6 +29,7 @@ if (!parsedEnv.success) {
 
 const env = parsedEnv.data;
 
-process.env.ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET || env.ACCESS_TOKEN_SECRET;
+// access-token keys: dev defaults locally, required in production
+assertKeysConfigured('verifier');
 
 export default env;

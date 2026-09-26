@@ -1,4 +1,3 @@
-import axios from 'axios';
 import {
   ReviewEvent,
   ReviewSubmission,
@@ -9,10 +8,10 @@ import {
   EventRanking
 } from '../types';
 
-const reviewClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
-  withCredentials: true
-});
+import { axiosClient } from '../../../shared/lib/axiosClient';
+
+// review-service requires a signed-in user, so reuse the authenticated client (token + refresh)
+const reviewClient = axiosClient;
 
 export interface CreateEventPayload {
   name: string;

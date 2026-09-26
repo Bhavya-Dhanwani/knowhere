@@ -1,143 +1,69 @@
 import { axiosClient } from '../../../shared/lib/axiosClient';
+import { apiErrorMessage, normalizeUser, toBackendRole } from '../../../shared/lib/roles';
 import { AuthResponse, LoginCredentials, SignupCredentials, User } from '../../../shared/types';
 
-const USERS_STORAGE_KEY = 'knowhere_registered_users';
+type Payload = { user?: Record<string, unknown>; accessToken?: string };
 
-interface RegisteredUserRecord {
-  name: string;
-  role: 'student' | 'trainer' | 'admin';
-  password?: string;
-}
+const unwrap = (res: { data?: { data?: Payload } & Payload }): Payload =>
+  res.data?.data || res.data || {};
 
-function getRegisteredUsers(): Record<string, RegisteredUserRecord> {
+// wraps a request so callers always get a readable Error message
+async function call<T>(fn: () => Promise<T>, fallback?: string): Promise<T> {
   try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(USERS_STORAGE_KEY) : null;
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveRegisteredUser(
-  email: string,
-  name: string,
-  role: 'student' | 'trainer' | 'admin',
-  password?: string
-) {
-  try {
-    if (typeof window === 'undefined') return;
-    const users = getRegisteredUsers();
-    users[email.toLowerCase().trim()] = { name, role, password };
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-  } catch {
-    // Ignore storage issues
+    return await fn();
+  } catch (err) {
+    throw new Error(apiErrorMessage(err, fallback));
   }
 }
 
 export const authApi = {
-  login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
-    const cleanEmail = credentials.email.toLowerCase().trim();
+  login: (credentials: LoginCredentials): Promise<AuthResponse> =>
+    call(async () => {
+      const data = unwrap(await axiosClient.post('/auth/login', credentials));
+      return { accessToken: data.accessToken as string, user: normalizeUser(data.user) };
+    }, 'Invalid email or password.'),
 
-    try {
-      const response = await axiosClient.post('/auth/login', credentials);
-      const data = response.data?.data || response.data;
-      const registered = getRegisteredUsers()[cleanEmail];
-      const assignedRole: 'student' | 'trainer' | 'admin' = registered?.role || 'student';
-      const assignedName = registered?.name || data.user?.name || credentials.email.split('@')[0];
-
-      const user = data.user || {
-        id: data.userId || `usr-${Date.now()}`,
-        name: assignedName,
-        email: credentials.email,
-        roles: [assignedRole]
-      };
-      if (!user.roles || user.roles.length === 0) {
-        user.roles = [assignedRole];
-      }
-      return {
-        accessToken: data.accessToken,
-        user
-      };
-    } catch (err: any) {
-      if (err.response?.data?.message) {
-        throw new Error(err.response.data.message);
-      }
-
-      // Local authentication check
-      const registered = getRegisteredUsers()[cleanEmail];
-      if (!registered) {
-        throw new Error('No account found with this email. Please sign up first.');
-      }
-      if (registered.password && registered.password !== credentials.password) {
-        throw new Error('Invalid email or password. Please check your credentials.');
-      }
-
-      return {
-        accessToken: `token-${Date.now()}`,
-        user: {
-          id: `usr-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
-          name: registered.name,
-          email: credentials.email,
-          roles: [registered.role]
-        }
-      };
-    }
-  },
-
-  signup: async (credentials: SignupCredentials): Promise<AuthResponse> => {
-    const cleanEmail = credentials.email.toLowerCase().trim();
-    const assignedRole: 'student' | 'trainer' | 'admin' = credentials.role || 'student';
-
-    // Store in real user registry
-    saveRegisteredUser(cleanEmail, credentials.name.trim(), assignedRole, credentials.password);
-
-    try {
-      const response = await axiosClient.post('/auth/signup', credentials);
-      const data = response.data?.data || response.data;
-      const user = data.user || {
-        id: data.userId || `usr-${Date.now()}`,
-        name: credentials.name.trim(),
-        email: credentials.email,
-        roles: [assignedRole]
-      };
-      if (!user.roles || user.roles.length === 0) {
-        user.roles = [assignedRole];
-      }
-      return {
-        accessToken: data.accessToken,
-        user
-      };
-    } catch (err: any) {
-      if (err.response?.data?.message) {
-        throw new Error(err.response.data.message);
-      }
-
-      return {
-        accessToken: `token-${Date.now()}`,
-        user: {
-          id: `usr-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+  signup: (credentials: SignupCredentials): Promise<AuthResponse> =>
+    call(async () => {
+      const role = credentials.role === 'trainer' ? 'trainer' : 'student';
+      const data = unwrap(
+        await axiosClient.post('/auth/signup', {
           name: credentials.name.trim(),
-          email: credentials.email,
-          roles: [assignedRole]
-        }
-      };
-    }
-  },
+          email: credentials.email.trim().toLowerCase(),
+          password: credentials.password,
+          role: toBackendRole(role)
+        })
+      );
+      return { accessToken: data.accessToken as string, user: normalizeUser(data.user) };
+    }),
 
-  refresh: async (): Promise<{ accessToken: string }> => {
-    const response = await axiosClient.post('/auth/refresh');
-    const data = response.data?.data || response.data;
+  refresh: async (): Promise<{ accessToken: string; user: User | null }> => {
+    const data = unwrap(await axiosClient.post('/auth/refresh'));
     return {
-      accessToken: data.accessToken
+      accessToken: data.accessToken as string,
+      user: data.user ? normalizeUser(data.user) : null
     };
   },
 
   logout: async (): Promise<void> => {
-    await axiosClient.post('/auth/logout');
+    await axiosClient.post('/auth/logout').catch(() => undefined);
   },
 
   getCurrentUser: async (): Promise<User> => {
-    const response = await axiosClient.get('/auth/me');
-    return response.data?.data || response.data;
-  }
+    const data = unwrap(await axiosClient.get('/auth/me'));
+    return normalizeUser(data.user);
+  },
+
+  forgotPassword: (email: string) =>
+    call(async () => {
+      await axiosClient.post('/auth/forgot-password', { email: email.trim().toLowerCase() });
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    call(async () => {
+      await axiosClient.post('/auth/reset-password', { token, password });
+    }),
+
+  // full-page redirect into the auth-service Google OAuth flow
+  googleUrl: `${import.meta.env.VITE_API_BASE_URL || '/api'}/auth/google`
 };

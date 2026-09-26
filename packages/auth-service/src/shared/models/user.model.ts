@@ -37,6 +37,13 @@ const userSchema = new mongoose.Schema({
   isVerified: {
     type: Boolean,
     default: false
+  },
+
+  // platform-wide role, carried in the access token for service-level RBAC
+  role: {
+    type: String,
+    enum: ['trainee', 'trainer', 'admin'],
+    default: 'trainee'
   }
 });
 

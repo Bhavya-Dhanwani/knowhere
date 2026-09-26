@@ -11,7 +11,8 @@ function sanitizeUser(user: Record<string, unknown> | null | undefined) {
     _id: u._id,
     name: u.name,
     email: u.email,
-    isVerified: u.isVerified
+    isVerified: u.isVerified,
+    role: u.role || 'trainee'
   };
 }
 

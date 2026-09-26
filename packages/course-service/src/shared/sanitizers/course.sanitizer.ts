@@ -9,6 +9,7 @@ function sanitizeCourse(course: Record<string, unknown> | null | undefined) {
     instructorId: c.instructorId,
     status: c.status,
     tags: c.tags,
+    moduleCount: Array.isArray(c.modules) ? c.modules.length : 0,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt
   };

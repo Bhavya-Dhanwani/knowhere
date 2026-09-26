@@ -27,6 +27,10 @@ class UserProfileDao {
   }
 
   // function to update or create profile by userId
+  async findProfilesByUserIds(userIds: string[]) {
+    return await this.UserProfileModel.find({ userId: { $in: userIds } });
+  }
+
   async upsertProfile(
     userId: string,
     updateData: {

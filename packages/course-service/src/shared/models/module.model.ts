@@ -10,6 +10,7 @@ export interface IModuleReleasePolicy {
 export interface IModuleDocument extends Document {
   _id: Types.ObjectId;
   courseId?: Types.ObjectId | null;
+  creatorId?: string;
   title: string;
   description: string;
   submoduleIds: Types.ObjectId[];
@@ -40,6 +41,11 @@ const moduleSchema = new Schema<IModuleDocument>(
     courseId: {
       type: Schema.Types.ObjectId,
       ref: 'Course',
+      default: null,
+      index: true
+    },
+    creatorId: {
+      type: String,
       default: null,
       index: true
     },

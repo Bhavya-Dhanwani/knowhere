@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ModalShell } from '../../../shared/ui/ModalShell';
 import {
   X,
   Copy,
@@ -138,10 +139,10 @@ export const NotionExportModal: React.FC<NotionExportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl border border-zinc-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+    <ModalShell onClose={onClose} size="4xl">
+      <div className="flex min-h-0 flex-col max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/70 shrink-0">
+        <div className="px-4 py-4 sm:px-6 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/70 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center font-serif font-black text-base shadow-sm">
               N
@@ -235,7 +236,7 @@ export const NotionExportModal: React.FC<NotionExportModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 bg-zinc-50/50">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-zinc-50/50">
           {loading ? (
             <div className="py-20 text-center space-y-3">
               <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto" />
@@ -248,7 +249,7 @@ export const NotionExportModal: React.FC<NotionExportModalProps> = ({
               No report available. Please ensure the pipeline or ranking has been run.
             </div>
           ) : activeTab === 'PREVIEW' ? (
-            <div className="bg-white border border-zinc-200 rounded-xl p-6 shadow-sm space-y-4 max-w-3xl mx-auto">
+            <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-6 shadow-sm space-y-4 max-w-3xl mx-auto">
               {/* Native Notion Style Renderer */}
               <div className="space-y-4 font-sans text-xs leading-relaxed text-zinc-800">
                 <div className="border-b border-zinc-100 pb-4">
@@ -293,7 +294,7 @@ export const NotionExportModal: React.FC<NotionExportModalProps> = ({
             </div>
           ) : (
             /* Tab 3: Direct Push to Notion API */
-            <div className="max-w-xl mx-auto bg-white border border-zinc-200 rounded-xl p-6 shadow-sm space-y-5">
+            <div className="max-w-xl mx-auto bg-white border border-zinc-200 rounded-xl p-4 sm:p-6 shadow-sm space-y-5">
               <div>
                 <div className="flex items-center gap-2">
                   <Terminal className="w-4 h-4 text-emerald-600" />
@@ -425,7 +426,7 @@ export const NotionExportModal: React.FC<NotionExportModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-zinc-100 bg-zinc-50/70 flex items-center justify-between text-xs text-zinc-500 shrink-0">
+        <div className="px-4 py-3 sm:px-6 border-t border-zinc-100 bg-zinc-50/70 flex items-center justify-between text-xs text-zinc-500 shrink-0">
           <span className="flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-blue-600" />
             RE:DESIGN Report Exporter • Ranks, Issues, Roadmap &amp; + Points
@@ -438,6 +439,6 @@ export const NotionExportModal: React.FC<NotionExportModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 };

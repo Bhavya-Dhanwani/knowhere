@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ModalShell } from '../../../shared/ui/ModalShell';
 import {
   X,
   Plus,
@@ -141,11 +142,11 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white border border-zinc-200 rounded-2xl w-full max-w-3xl shadow-2xl my-8 overflow-hidden text-zinc-900 font-sans">
+    <ModalShell onClose={onClose} size="3xl">
+      <div className="flex min-h-0 flex-col overflow-hidden text-zinc-900 font-sans">
         {/* If Event was created, show the Shareable Submission Form URL Screen */}
         {createdEventId ? (
-          <div className="p-8 text-center space-y-6">
+          <div className="p-5 sm:p-8 text-center space-y-6">
             <div className="w-14 h-14 bg-emerald-50 border border-emerald-200 rounded-full flex items-center justify-center mx-auto text-emerald-600">
               <CheckCircle2 className="w-8 h-8" />
             </div>
@@ -195,7 +196,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
         ) : (
           <>
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-white">
+            <div className="flex items-center justify-between px-4 py-4 sm:px-6 border-b border-zinc-200 bg-white">
               <div>
                 <h2 className="text-xl font-bold text-zinc-900 flex items-center gap-2">
                   <Shield className="w-5 h-5 text-blue-600" /> Create Review Event
@@ -214,7 +215,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
             <form
               onSubmit={handleSubmit}
-              className="p-6 space-y-6 max-h-[80vh] overflow-y-auto bg-white"
+              className="p-4 sm:p-6 space-y-6 max-h-[80vh] overflow-y-auto bg-white"
             >
               {error && (
                 <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm flex items-center gap-2">
@@ -227,7 +228,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 <label className="block text-sm font-semibold text-zinc-800 mb-2">
                   Project Evaluation Scope
                 </label>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <button
                     type="button"
                     onClick={() => handleScopeChange('FRONTEND')}
@@ -479,6 +480,6 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           </>
         )}
       </div>
-    </div>
+    </ModalShell>
   );
 };

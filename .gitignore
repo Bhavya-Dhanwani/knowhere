@@ -12,3 +12,12 @@ secrets.yml
 .eval_logs/
 eval_logs/
 *.eval.log
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
+.playwright/
+.claude
+# per-checkout dev keys (packages/shared/src/utils/keys.ts)
+.dev-keys.json
+.dev-keys.json.*.tmp
+# graphify: machine-local cache
+graphify-out/cache/

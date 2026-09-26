@@ -1,88 +1,63 @@
-import { Types } from 'mongoose';
 import ResourceDao from '../shared/dao/resource.dao.js';
+import s3Service from './s3.service.js';
 import logger from '../shared/config/logger.config.js';
-import env from '../shared/config/env.config.js';
+import { packageHls } from './hls.service.js';
 
-export interface DrmJob {
-  resourceId: string;
-  s3Key: string;
-  enqueuedAt: Date;
-}
+const POLL_MS = 10_000;
 
+// Watches a presigned upload: once the object lands in S3 the resource becomes UPLOADED,
+// non-video files go straight to READY, and videos are packaged as encrypted HLS first.
+// If the upload never arrives before the presigned URL expires, the resource is FAILED.
 class DrmWorkerService {
-  private resourceDao: ResourceDao;
-  private queue: DrmJob[] = [];
-  private isProcessing = false;
+  private resourceDao = new ResourceDao();
 
-  constructor() {
-    this.resourceDao = new ResourceDao();
+  enqueueUploadWatch(resourceId: string, s3Key: string, isVideo: boolean, expiresInSec: number) {
+    const giveUpAt = Date.now() + expiresInSec * 1000;
+
+    const tick = async () => {
+      try {
+        if (await s3Service.checkObjectExists(s3Key)) {
+          await this.resourceDao.updateResourceStatus(resourceId, 'UPLOADED');
+          if (isVideo) await this.applyDrm(resourceId, s3Key);
+          else await this.resourceDao.updateResourceStatus(resourceId, 'READY');
+          return;
+        }
+        if (Date.now() >= giveUpAt) {
+          await this.resourceDao.updateResourceStatus(resourceId, 'FAILED', {
+            failureReason: 'Upload was not completed before the presigned URL expired.'
+          });
+          if (isVideo) await this.resourceDao.updateDrmStatus(resourceId, 'DRM_FAILED');
+          return;
+        }
+        setTimeout(tick, POLL_MS).unref();
+      } catch (err) {
+        logger.error({ err, resourceId }, 'Upload watcher failed');
+      }
+    };
+
+    setTimeout(tick, POLL_MS).unref();
+    logger.info({ resourceId, s3Key, isVideo }, 'Watching presigned upload');
   }
 
-  enqueueVideoDrmJob(resourceId: string, s3Key: string): void {
-    this.queue.push({
-      resourceId,
-      s3Key,
-      enqueuedAt: new Date()
-    });
-    logger.info({ resourceId, s3Key }, 'Enqueued DRM processing job for video resource');
-
-    // Trigger asynchronous queue processor
-    void this.processNextJob();
-  }
-
-  private async processNextJob(): Promise<void> {
-    if (this.isProcessing || this.queue.length === 0) {
-      return;
-    }
-
-    const job = this.queue.shift();
-    if (!job) return;
-
-    this.isProcessing = true;
-
+  // Encrypted HLS: AES-128 segments, per-video key held in the DB and released per viewer.
+  async applyDrm(resourceId: string, s3Key: string) {
     try {
-      if (!Types.ObjectId.isValid(job.resourceId)) {
-        logger.warn(
-          { resourceId: job.resourceId },
-          'Invalid ObjectId in DRM job, skipping DB update'
-        );
-        return;
-      }
-
-      logger.info({ resourceId: job.resourceId }, 'Starting DRM transcoding and packaging job');
-
-      // Update status to DRM_PROCESSING
-      await this.resourceDao.updateDrmStatus(job.resourceId, 'DRM_PROCESSING');
-      await this.resourceDao.updateResourceStatus(job.resourceId, 'PROCESSING');
-
-      // Simulating DRM encryption and multi-bitrate packaging
-      // In production, this interacts with AWS Elemental MediaConvert or Bento4 DRM packager
-      const manifestUrl = `${env.CLOUDFRONT_DOMAIN}/drm/manifests/${job.resourceId}/stream.mpd`;
-
-      // Complete DRM packaging
-      await this.resourceDao.updateDrmStatus(job.resourceId, 'DRM_READY', manifestUrl);
-      await this.resourceDao.updateResourceStatus(job.resourceId, 'READY', {
-        playbackUrl: manifestUrl,
-        drmManifestUrl: manifestUrl
+      await this.resourceDao.updateDrmStatus(resourceId, 'DRM_PROCESSING');
+      await this.resourceDao.updateResourceStatus(resourceId, 'PROCESSING');
+      const out = await packageHls(resourceId, s3Key);
+      await this.resourceDao.updateDrmStatus(resourceId, 'DRM_READY', out.playlistKey);
+      await this.resourceDao.updateResourceStatus(resourceId, 'READY', {
+        hlsKey: out.key,
+        hlsIv: out.iv,
+        drmManifestUrl: out.playlistKey
       });
-
-      logger.info(
-        { resourceId: job.resourceId, manifestUrl },
-        'DRM packaging completed successfully'
-      );
+      logger.info({ resourceId, segments: out.segments }, 'Encrypted HLS packaging completed');
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown DRM processing error';
-      logger.error({ err: error, resourceId: job.resourceId }, 'DRM processing failed');
-
-      await this.resourceDao.updateDrmStatus(job.resourceId, 'DRM_FAILED', undefined, errorMessage);
-      await this.resourceDao.updateResourceStatus(job.resourceId, 'FAILED', {
-        failureReason: errorMessage
-      });
-    } finally {
-      this.isProcessing = false;
-      if (this.queue.length > 0) {
-        void this.processNextJob();
-      }
+      // the upload is still playable through the authenticated range stream
+      const failureReason = error instanceof Error ? error.message : 'Unknown packaging error';
+      logger.error({ err: error, resourceId }, 'HLS packaging failed');
+      await this.resourceDao.updateDrmStatus(resourceId, 'DRM_FAILED', undefined, failureReason);
+      await this.resourceDao.updateResourceStatus(resourceId, 'READY');
     }
   }
 }

@@ -5,8 +5,7 @@ export interface UploadResourceBody {
   mimeType: string;
   fileSize: number;
   resourceType: 'video' | 'pdf' | 'docx' | 'xlsx' | 'image' | 'resource';
-  courseId: string;
-  submoduleId?: string | null;
+  courseId?: string;
 }
 
 export interface UploadResourceRequest extends AuthenticatedRequest {
@@ -27,6 +26,7 @@ export interface CreateMcqBody {
   explanationResourceIds?: string[];
   tags?: string[];
   difficulty?: 'easy' | 'medium' | 'hard';
+  points?: number;
   courseId?: string;
 }
 
@@ -45,8 +45,12 @@ export interface CreateCodeQuestionBody {
     output: string;
     explanation?: string;
   }[];
+  // hand-written hidden test cases; AI fills the rest up to 100
+  testCases?: { input: string; expectedOutput: string }[];
   difficulty: 'easy' | 'medium' | 'hard';
   supportedLanguages: string[];
+  points?: number;
+  referenceSolution?: { language: string; code: string };
   courseId?: string;
   testCaseGeneration?: {
     enabled: boolean;
@@ -62,14 +66,13 @@ export interface SubmoduleContentItemInput {
   type: 'video' | 'resource' | 'mcq' | 'code-question';
   resourceId?: string;
   contentId?: string;
-  order: number;
+  order?: number;
 }
 
 export interface CreateSubmoduleBody {
   title: string;
   description?: string;
-  courseId: string;
-  moduleId?: string | null;
+  courseId?: string;
   content?: SubmoduleContentItemInput[];
 }
 
@@ -129,6 +132,7 @@ export interface AddModuleRequest extends AuthenticatedRequest {
 }
 
 export interface CheckMcqBody {
+  courseId?: string;
   mcqId: string;
   selectedOptionId: string;
 }

@@ -13,7 +13,8 @@ export default defineConfig({
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router'],
           tanstack: ['@tanstack/react-query'],
-          redux: ['@reduxjs/toolkit', 'react-redux']
+          redux: ['@reduxjs/toolkit', 'react-redux'],
+          motion: ['motion']
         }
       }
     }
@@ -52,27 +53,18 @@ export default defineConfig({
         changeOrigin: true,
         secure: false
       },
-      '/api/courses': {
-        target: process.env.VITE_COURSE_SERVICE_URL || 'http://localhost:5002',
-        changeOrigin: true,
-        secure: false
-      },
-      '/api/modules': {
-        target: process.env.VITE_COURSE_SERVICE_URL || 'http://localhost:5002',
-        changeOrigin: true,
-        secure: false
-      },
-      '/api/submodules': {
-        target: process.env.VITE_COURSE_SERVICE_URL || 'http://localhost:5002',
-        changeOrigin: true,
-        secure: false
-      },
-      '/api/content-items': {
+      // covers both /api/course/* (authoring & content) and /api/courses/*
+      '/api/course': {
         target: process.env.VITE_COURSE_SERVICE_URL || 'http://localhost:5002',
         changeOrigin: true,
         secure: false
       },
       '/api/profile': {
+        target: process.env.VITE_USER_SERVICE_URL || 'http://localhost:5001',
+        changeOrigin: true,
+        secure: false
+      },
+      '/api/memberships': {
         target: process.env.VITE_USER_SERVICE_URL || 'http://localhost:5001',
         changeOrigin: true,
         secure: false

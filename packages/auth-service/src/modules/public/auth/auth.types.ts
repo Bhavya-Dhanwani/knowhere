@@ -34,6 +34,7 @@ export interface SignupRequestBody {
   email: string;
   password?: string;
   token?: string;
+  role?: 'trainee' | 'trainer';
 }
 
 // Login request body interface

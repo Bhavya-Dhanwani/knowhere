@@ -4,7 +4,8 @@ echo "=== Pre-Commit Checks ==="
 
 # 1. Run secret scanning, ESLint, and Prettier formatting on staged files
 echo "1. Running secretlint, eslint, and prettier formatting..."
-npx lint-staged
+# one task at a time: parallel chunks over hundreds of files exhausted memory
+npx lint-staged --concurrent false
 if [ $? -ne 0 ]; then
   echo "❌ Linting or secret check failed. Commit aborted."
   exit 1

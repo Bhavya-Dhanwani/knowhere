@@ -1,250 +1,188 @@
 import { Server, Socket } from 'socket.io';
-import ChatRoomDao from '../shared/dao/room.dao.js';
-import ChatMessageDao from '../shared/dao/message.dao.js';
-import { addOnlineUser, removeOnlineUser, getOnlineUsers } from '../shared/redis/redis.client.js';
+import { addOnlineUser, removeOnlineUser } from '../shared/redis/redis.client.js';
 import logger from '../shared/config/logger.config.js';
 import { SocketUser } from './socket.auth.js';
+import * as svc from '../community/community.service.js';
+import { onlineUsers } from './socket.server.js';
 
-const roomDao = new ChatRoomDao();
-const messageDao = new ChatMessageDao();
+type Ack = (res: { ok: boolean; error?: string; [k: string]: unknown }) => void;
+
+// Voice media flows through LiveKit (SFU); this socket layer only keeps the roster that the
+// sidebar shows. The roster lives on socket.data, and fetchSockets() goes through the Redis
+// adapter, so it is complete no matter which chat pod each participant is connected to.
+interface VoiceSeat {
+  roomId: string;
+  courseId: string;
+  userId: string;
+  name: string;
+  muted: boolean;
+}
+async function voiceList(io: Server, roomId: string) {
+  const sockets = await io.in(`voice:${roomId}`).fetchSockets();
+  return sockets
+    .map((s) => ({ socketId: s.id, ...(s.data.voice as VoiceSeat | undefined) }))
+    .filter((p) => p.userId)
+    .map(({ socketId, userId, name, muted }) => ({ socketId, userId, name, muted }));
+}
 
 export function registerSocketHandlers(io: Server, socket: Socket): void {
   const user = socket.data.user as SocketUser;
-  logger.info(`Socket connected: ${socket.id} (User: ${user.name} / ${user.userId})`);
+  const actor: svc.Actor = { userId: user.userId, name: user.name, role: user.role };
+  const courses = new Set<string>();
 
-  // Track rooms this socket has joined for cleanup on disconnect
-  const joinedRooms = new Set<string>();
+  socket.join(`user:${user.userId}`);
 
-  // 1. Join Room
-  socket.on('room:join', async (data: { roomId: string }, callback?: Function) => {
-    try {
-      const { roomId } = data;
-      if (!roomId) return;
-
-      const room = await roomDao.findRoomById(roomId);
-      if (!room) {
-        if (callback) callback({ error: 'Room not found' });
-        return;
-      }
-
-      await socket.join(`room:${roomId}`);
-      joinedRooms.add(roomId);
-
-      // Add to presence
-      await addOnlineUser(roomId, user.userId);
-      const onlineUsers = await getOnlineUsers(roomId);
-
-      // Broadcast presence update to everyone in the room
-      io.to(`room:${roomId}`).emit('room:presence', {
-        roomId,
-        onlineUsers
-      });
-
-      logger.debug(`User ${user.userId} joined room ${roomId}`);
-      if (callback) callback({ success: true, roomId, onlineUsers });
-    } catch (err) {
-      logger.error({ err }, 'Error in room:join');
-      if (callback) callback({ error: 'Failed to join room' });
-    }
-  });
-
-  // 2. Leave Room
-  socket.on('room:leave', async (data: { roomId: string }, callback?: Function) => {
-    try {
-      const { roomId } = data;
-      if (!roomId) return;
-
-      socket.leave(`room:${roomId}`);
-      joinedRooms.delete(roomId);
-
-      await removeOnlineUser(roomId, user.userId);
-      const onlineUsers = await getOnlineUsers(roomId);
-
-      io.to(`room:${roomId}`).emit('room:presence', {
-        roomId,
-        onlineUsers
-      });
-
-      if (callback) callback({ success: true });
-    } catch (err) {
-      logger.error({ err }, 'Error in room:leave');
-      if (callback) callback({ error: 'Failed to leave room' });
-    }
-  });
-
-  // 3. Send Message
-  socket.on(
-    'message:send',
-    async (
-      data: {
-        roomId: string;
-        content: string;
-        attachments?: any[];
-        replyTo?: { messageId: string; senderName: string; snippet: string };
-      },
-      callback?: Function
-    ) => {
+  const safe =
+    <T>(fn: (data: T, ack: Ack) => Promise<void>) =>
+    async (data: T, ack?: Ack) => {
+      const reply: Ack = typeof ack === 'function' ? ack : () => undefined;
       try {
-        const { roomId, content, attachments, replyTo } = data;
-        if (!roomId || !content?.trim()) {
-          if (callback) callback({ error: 'Room ID and message content are required' });
-          return;
-        }
-
-        const room = await roomDao.findRoomById(roomId);
-        if (!room) {
-          if (callback) callback({ error: 'Room not found' });
-          return;
-        }
-
-        const newMsg = await messageDao.createMessage({
-          roomId,
-          sender: {
-            userId: user.userId,
-            name: user.name,
-            avatar: user.avatar || '',
-            role: user.role
-          },
-          content: content.trim(),
-          attachments: attachments || [],
-          replyTo: replyTo || undefined
-        });
-
-        // Update room's lastMessage
-        await roomDao.updateLastMessage(roomId, {
-          messageId: newMsg._id.toString(),
-          content: newMsg.content.slice(0, 100),
-          senderId: user.userId,
-          senderName: user.name,
-          createdAt: newMsg.createdAt
-        });
-
-        // Broadcast to all participants in this room
-        io.to(`room:${roomId}`).emit('message:new', newMsg);
-
-        if (callback) callback({ success: true, message: newMsg });
+        await fn(data || ({} as T), reply);
       } catch (err) {
-        logger.error({ err }, 'Error in message:send');
-        if (callback) callback({ error: 'Failed to send message' });
+        reply({ ok: false, error: err instanceof Error ? err.message : 'Something went wrong' });
       }
-    }
+    };
+
+  const broadcastPresence = async (courseId: string) =>
+    io
+      .to(`course:${courseId}`)
+      .emit('presence', { courseId, onlineUserIds: await onlineUsers(courseId) });
+
+  // ------------------------------------------------------------ community & channels
+  socket.on(
+    'community:join',
+    safe<{ courseId: string }>(async ({ courseId }, ack) => {
+      const access = await svc.communityAccess(actor, courseId);
+      await socket.join(`course:${courseId}`);
+      courses.add(courseId);
+      await addOnlineUser(`course:${courseId}`, `${user.userId}:${socket.id}`);
+      await broadcastPresence(courseId);
+      ack({ ok: true, access });
+    })
   );
 
-  // 4. Ephemeral Typing Indicator
-  socket.on('message:typing', (data: { roomId: string; isTyping: boolean }) => {
-    const { roomId, isTyping } = data;
-    if (!roomId) return;
+  socket.on(
+    'community:leave',
+    safe<{ courseId: string }>(async ({ courseId }, ack) => {
+      await socket.leave(`course:${courseId}`);
+      courses.delete(courseId);
+      await removeOnlineUser(`course:${courseId}`, `${user.userId}:${socket.id}`);
+      await broadcastPresence(courseId);
+      ack({ ok: true });
+    })
+  );
 
-    // Broadcast to others in the room (do not echo to sender)
-    socket.to(`room:${roomId}`).emit('user:typing', {
-      roomId,
+  socket.on(
+    'channel:join',
+    safe<{ roomId: string }>(async ({ roomId }, ack) => {
+      const { room } = await svc.channelAccess(actor, roomId);
+      await socket.join(`room:${roomId}`);
+      ack({ ok: true });
+    })
+  );
+
+  socket.on(
+    'channel:leave',
+    safe<{ roomId: string }>(async ({ roomId }, ack) => {
+      await socket.leave(`room:${roomId}`);
+      ack({ ok: true });
+    })
+  );
+
+  // ------------------------------------------------------------------ messages
+  socket.on(
+    'message:send',
+    safe<{
+      roomId: string;
+      content?: string;
+      attachments?: never[];
+      replyToId?: string;
+      mentions?: string[];
+    }>(async (data, ack) => {
+      const { room, message, parent, notifications } = await svc.postMessage(actor, data);
+      io.to(`room:${room._id}`).emit('message:new', message);
+      if (parent) {
+        parent.replyCount += 1;
+        io.to(`room:${room._id}`).emit('message:updated', parent);
+      }
+      io.to(`course:${room.courseId}`).emit('channel:activity', {
+        courseId: room.courseId,
+        roomId: String(room._id),
+        senderId: user.userId,
+        isReply: Boolean(parent)
+      });
+      for (const n of notifications) io.to(`user:${n.userId}`).emit('notification:new', n);
+      ack({ ok: true, message });
+    })
+  );
+
+  socket.on('message:typing', (data: { roomId: string; isTyping: boolean }) => {
+    if (!data?.roomId || !socket.rooms.has(`room:${data.roomId}`)) return;
+    socket.to(`room:${data.roomId}`).emit('user:typing', {
+      roomId: data.roomId,
       userId: user.userId,
       userName: user.name,
-      isTyping
+      isTyping: Boolean(data.isTyping)
     });
   });
 
-  // 5. Toggle Reaction
-  socket.on(
-    'message:react',
-    async (data: { messageId: string; roomId: string; emoji: string }, callback?: Function) => {
-      try {
-        const { messageId, roomId, emoji } = data;
-        if (!messageId || !roomId || !emoji) return;
+  // -------------------------------------------------------------------- voice
+  const seat = () => socket.data.voice as VoiceSeat | undefined;
+  const broadcastRoster = async (roomId: string, courseId: string) =>
+    io
+      .to(`course:${courseId}`)
+      .emit('voice:participants', { roomId, participants: await voiceList(io, roomId) });
 
-        const updatedMsg = await messageDao.toggleReaction(messageId, user.userId, emoji);
-        if (updatedMsg) {
-          io.to(`room:${roomId}`).emit('message:updated', updatedMsg);
-          if (callback) callback({ success: true, message: updatedMsg });
-        }
-      } catch (err) {
-        logger.error({ err }, 'Error in message:react');
-        if (callback) callback({ error: 'Failed to react to message' });
-      }
-    }
+  const leaveVoice = async () => {
+    const current = seat();
+    if (!current) return;
+    socket.data.voice = undefined;
+    await socket.leave(`voice:${current.roomId}`);
+    await broadcastRoster(current.roomId, current.courseId);
+  };
+
+  socket.on(
+    'voice:join',
+    safe<{ roomId: string }>(async ({ roomId }, ack) => {
+      const { room } = await svc.channelAccess(actor, roomId);
+      if (room.kind !== 'voice') throw new Error('Not a voice channel.');
+      await leaveVoice();
+      socket.data.voice = {
+        roomId,
+        courseId: room.courseId!,
+        userId: user.userId,
+        name: user.name,
+        muted: false
+      };
+      await socket.join(`voice:${roomId}`);
+      await broadcastRoster(roomId, room.courseId!);
+      ack({ ok: true });
+    })
   );
 
-  // 6. Edit Message
   socket.on(
-    'message:edit',
-    async (data: { messageId: string; roomId: string; content: string }, callback?: Function) => {
-      try {
-        const { messageId, roomId, content } = data;
-        if (!messageId || !roomId || !content?.trim()) return;
-
-        const updatedMsg = await messageDao.editMessage(messageId, user.userId, content.trim());
-        if (updatedMsg) {
-          io.to(`room:${roomId}`).emit('message:updated', updatedMsg);
-          if (callback) callback({ success: true, message: updatedMsg });
-        } else {
-          if (callback) callback({ error: 'Cannot edit this message' });
-        }
-      } catch (err) {
-        logger.error({ err }, 'Error in message:edit');
-        if (callback) callback({ error: 'Failed to edit message' });
-      }
-    }
+    'voice:leave',
+    safe(async (_d, ack) => {
+      await leaveVoice();
+      ack({ ok: true });
+    })
   );
 
-  // 7. Delete Message
-  socket.on(
-    'message:delete',
-    async (data: { messageId: string; roomId: string }, callback?: Function) => {
-      try {
-        const { messageId, roomId } = data;
-        if (!messageId || !roomId) return;
+  socket.on('voice:mute', async (data: { muted: boolean }) => {
+    const current = seat();
+    if (!current) return;
+    current.muted = Boolean(data?.muted);
+    await broadcastRoster(current.roomId, current.courseId);
+  });
 
-        const isPrivileged = user.role === 'admin' || user.role === 'trainer';
-        const deletedMsg = await messageDao.deleteMessage(messageId, user.userId, isPrivileged);
-
-        if (deletedMsg) {
-          io.to(`room:${roomId}`).emit('message:deleted', { messageId, roomId });
-          if (callback) callback({ success: true });
-        } else {
-          if (callback) callback({ error: 'Cannot delete this message' });
-        }
-      } catch (err) {
-        logger.error({ err }, 'Error in message:delete');
-        if (callback) callback({ error: 'Failed to delete message' });
-      }
-    }
-  );
-
-  // 8. Pin/Unpin Message
-  socket.on(
-    'message:pin',
-    async (data: { messageId: string; roomId: string }, callback?: Function) => {
-      try {
-        const { messageId, roomId } = data;
-        if (!messageId || !roomId) return;
-
-        const { isPinned } = await roomDao.togglePinMessage(roomId, messageId);
-        const updatedMsg = await messageDao.setPinnedStatus(messageId, isPinned);
-
-        if (updatedMsg) {
-          io.to(`room:${roomId}`).emit('message:updated', updatedMsg);
-          if (callback) callback({ success: true, isPinned });
-        }
-      } catch (err) {
-        logger.error({ err }, 'Error in message:pin');
-        if (callback) callback({ error: 'Failed to pin message' });
-      }
-    }
-  );
-
-  // 9. Disconnect Cleanup
+  // -------------------------------------------------------------- disconnect
   socket.on('disconnecting', async () => {
     try {
-      for (const roomId of joinedRooms) {
-        await removeOnlineUser(roomId, user.userId);
-        const onlineUsers = await getOnlineUsers(roomId);
-
-        socket.to(`room:${roomId}`).emit('room:presence', {
-          roomId,
-          onlineUsers
-        });
+      await leaveVoice();
+      for (const courseId of courses) {
+        await removeOnlineUser(`course:${courseId}`, `${user.userId}:${socket.id}`);
+        await broadcastPresence(courseId);
       }
-      logger.debug(`Socket ${socket.id} disconnected, cleaned up ${joinedRooms.size} rooms.`);
     } catch (err) {
       logger.error({ err }, 'Error during socket disconnect cleanup');
     }

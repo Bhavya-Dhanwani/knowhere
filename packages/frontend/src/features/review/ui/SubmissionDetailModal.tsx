@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { ModalShell } from '../../../shared/ui/ModalShell';
 import {
   X,
   Play,
@@ -231,14 +232,14 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
       : allFindings.filter((f) => f.dimension.toLowerCase() === evidenceFilterDim.toLowerCase());
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white border border-zinc-200 rounded-2xl w-full max-w-4xl shadow-2xl my-6 overflow-hidden flex flex-col max-h-[90vh] text-zinc-900 font-sans">
+    <ModalShell onClose={onClose} size="5xl">
+      <div className="flex min-h-0 flex-col overflow-hidden flex flex-col max-h-[90vh] text-zinc-900 font-sans">
         {/* Top Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-white">
-          <div className="flex items-center gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold text-zinc-900">
+        <div className="relative flex flex-col gap-3 border-b border-zinc-200 bg-white px-4 py-4 pr-14 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="break-words text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl">
                   {submission?.teamName || 'Submission Details'}
                 </h2>
                 <span className="text-xs px-2 py-0.5 rounded font-mono bg-zinc-100 text-zinc-700 border border-zinc-200">
@@ -250,11 +251,13 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-xs text-zinc-500 font-mono mt-0.5">{submission?.repositoryUrl}</p>
+              <p className="mt-0.5 break-all font-mono text-xs text-zinc-500">
+                {submission?.repositoryUrl}
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleExportSubmissionCsv}
               disabled={csvExporting || !evaluation}
@@ -285,7 +288,8 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
             </button>
             <button
               onClick={onClose}
-              className="text-zinc-400 hover:text-zinc-600 p-1.5 rounded-lg hover:bg-zinc-100 transition cursor-pointer"
+              aria-label="Close"
+              className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-lg text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 lg:static"
             >
               <X className="w-5 h-5" />
             </button>
@@ -293,8 +297,8 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         </div>
 
         {/* Status / Overall Score Banner */}
-        <div className="px-6 py-3 bg-zinc-50 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-4 text-xs">
+        <div className="px-4 py-3 sm:px-6 bg-zinc-50 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs">
             <div>
               <span className="text-zinc-500">Status: </span>
               <span className="font-semibold text-blue-600 uppercase">{submission?.status}</span>
@@ -312,7 +316,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                   href={submission.liveSiteUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-blue-600 hover:underline font-medium"
+                  className="break-all font-medium text-blue-600 hover:underline"
                 >
                   {submission.liveSiteUrl}
                 </a>
@@ -320,7 +324,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {evaluation?.objectiveScore !== undefined && (
               <span className="text-[11px] px-2 py-0.5 rounded bg-zinc-200/70 text-zinc-700 font-mono">
                 Objective (40%): <strong>{(evaluation.objectiveScore / 10).toFixed(1)}/10</strong>
@@ -350,7 +354,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1 px-6 pt-2 border-b border-zinc-200 bg-white overflow-x-auto">
+        <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-200 bg-white px-2 pt-2 sm:px-6">
           <button
             onClick={() => setActiveTab('SCORECARD')}
             className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition flex items-center gap-1.5 shrink-0 ${
@@ -422,7 +426,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         </div>
 
         {/* Tab Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6">
           {loading && (
             <div className="text-center py-12 text-zinc-400 text-sm">Loading details...</div>
           )}
@@ -444,13 +448,13 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                 <>
                   {/* Relative Standing Banner */}
                   {rankingInfo && (
-                    <div className="p-4 bg-amber-50/50 border border-amber-200 rounded-xl flex items-center justify-between">
+                    <div className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4 sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex items-center gap-3">
                         <div className="p-2 bg-amber-100 border border-amber-200 rounded-lg">
                           <Trophy className="w-5 h-5 text-amber-600" />
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-x-2">
                             <span className="text-xs font-bold text-zinc-900">
                               Event Leaderboard Standing:
                             </span>
@@ -461,7 +465,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                           <p className="text-[11px] text-zinc-500 mt-0.5">
                             Latent Skill Rating:{' '}
                             <span className="text-blue-700 font-mono font-semibold">
-                              {rankingInfo.latentSkillScore}
+                              {Number(rankingInfo.latentSkillScore).toFixed(2)}
                             </span>{' '}
                             &bull; Win Rate:{' '}
                             <span className="text-emerald-700 font-mono font-semibold">
@@ -617,7 +621,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                                 </span>
                               </div>
 
-                              <div className="grid grid-cols-2 gap-1 text-[10px] font-mono pt-1 border-t border-zinc-100">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[10px] font-mono pt-1 border-t border-zinc-100">
                                 <span className="text-zinc-500">
                                   Obj: <strong>{(dim.objectiveScore / 10).toFixed(1)}</strong>
                                 </span>
@@ -783,7 +787,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                           Latent Skill Rating
                         </span>
                         <span className="text-lg font-bold font-mono text-blue-700">
-                          {rankingInfo.latentSkillScore} / 100
+                          {Number(rankingInfo.latentSkillScore).toFixed(2)} / 100
                         </span>
                       </div>
                     </div>
@@ -1463,7 +1467,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                         Low-Privilege Extraction Layer Output (Restructured Data)
                       </h4>
                       <p className="text-xs text-zinc-700">{audit.extractedClaims.summary}</p>
-                      <div className="grid grid-cols-2 gap-3 pt-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                         <div>
                           <span className="text-[10px] font-semibold text-zinc-500 uppercase">
                             Extracted Features:
@@ -1677,7 +1681,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                 </div>
 
                 {filteredFindings.length === 0 ? (
-                  <div className="p-8 text-center bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-500 text-xs">
+                  <div className="p-5 sm:p-8 text-center bg-zinc-50 border border-zinc-200 rounded-xl text-zinc-500 text-xs">
                     No evidence findings found for the selected filter.
                   </div>
                 ) : (
@@ -1687,7 +1691,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                         key={idx}
                         className="p-4 bg-white border border-zinc-200 hover:border-zinc-300 rounded-xl space-y-2.5 shadow-sm transition-all"
                       >
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-[10px] px-2 py-0.5 rounded font-mono font-bold bg-blue-50 text-blue-800 border border-blue-200 uppercase">
                             {finding.dimension}
                           </span>
@@ -1903,7 +1907,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
 
               <form
                 onSubmit={handleApplyOverride}
-                className="p-6 bg-white border border-zinc-200 rounded-xl space-y-5 shadow-sm"
+                className="p-4 sm:p-6 bg-white border border-zinc-200 rounded-xl space-y-5 shadow-sm"
               >
                 <div>
                   <h4 className="text-sm font-semibold text-zinc-900">
@@ -2038,6 +2042,6 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
           submission?.teamName ? `${submission.teamName} Review Dossier` : 'Project Review Dossier'
         }
       />
-    </div>
+    </ModalShell>
   );
 };

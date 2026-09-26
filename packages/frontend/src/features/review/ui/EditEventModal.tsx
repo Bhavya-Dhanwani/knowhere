@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ModalShell } from '../../../shared/ui/ModalShell';
 import { X, Plus, Trash2, Shield, Layers, Layout, Server, AlertCircle, Save } from 'lucide-react';
 import { ProjectScope, Criterion, ReviewEvent, CRITERIA_PRESETS } from '../types';
 import { reviewApi } from '../api/reviewApi';
@@ -125,10 +126,10 @@ export const EditEventModal: React.FC<EditEventModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white border border-zinc-200 rounded-2xl w-full max-w-3xl shadow-2xl my-8 overflow-hidden text-zinc-900 font-sans">
+    <ModalShell onClose={onClose} size="3xl">
+      <div className="flex min-h-0 flex-col overflow-hidden text-zinc-900 font-sans">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-white">
+        <div className="flex items-center justify-between px-4 py-4 sm:px-6 border-b border-zinc-200 bg-white">
           <div>
             <h2 className="text-xl font-bold text-zinc-900 flex items-center gap-2">
               <Shield className="w-5 h-5 text-blue-600" /> Edit Review Event
@@ -147,7 +148,7 @@ export const EditEventModal: React.FC<EditEventModalProps> = ({
 
         <form
           onSubmit={handleSubmit}
-          className="p-6 space-y-6 max-h-[80vh] overflow-y-auto bg-white"
+          className="p-4 sm:p-6 space-y-6 max-h-[80vh] overflow-y-auto bg-white"
         >
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm flex items-center gap-2">
@@ -160,7 +161,7 @@ export const EditEventModal: React.FC<EditEventModalProps> = ({
             <label className="block text-sm font-semibold text-zinc-800 mb-2">
               Project Evaluation Scope
             </label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button
                 type="button"
                 onClick={() => handleScopeChange('FRONTEND')}
@@ -418,6 +419,6 @@ export const EditEventModal: React.FC<EditEventModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </ModalShell>
   );
 };

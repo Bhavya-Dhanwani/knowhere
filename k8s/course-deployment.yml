@@ -38,16 +38,60 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
           env:
-            - name: ACCESS_TOKEN_SECRET
+            - name: ACCESS_TOKEN_PUBLIC_KEY
               valueFrom:
                 secretKeyRef:
-                  name: auth
-                  key: ACCESS_TOKEN_SECRET
+                  name: jwt-keys
+                  key: ACCESS_TOKEN_PUBLIC_KEY
+            - name: SERVICE_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-keys
+                  key: SERVICE_TOKEN_SECRET
+            - name: MEDIA_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-keys
+                  key: MEDIA_SIGNING_SECRET
             - name: MONGO_URI
               valueFrom:
                 secretKeyRef:
                   name: database
                   key: COURSE_DB
+            - name: JUDGE_URL
+              value: 'http://judge-service'
+            - name: USER_SERVICE_URL
+              value: 'http://user-service'
+            - name: AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: media-secrets
+                  key: AWS_REGION
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: media-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: media-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: S3_RAW_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: media-secrets
+                  key: S3_RAW_BUCKET
+            - name: S3_TRANSCODED_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: media-secrets
+                  key: S3_TRANSCODED_BUCKET
+            - name: MISTRAL_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: ai-secrets
+                  key: MISTRAL_API_KEYS
             - name: PORT
               value: '5002'
             - name: NODE_ENV

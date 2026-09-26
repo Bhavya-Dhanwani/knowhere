@@ -1,39 +1,59 @@
 import React from 'react';
+import { cn } from '../lib/cn';
 
 export interface ProgressBarProps {
-  progress: number;
+  progress?: number;
+  value?: number;
   height?: 'sm' | 'md' | 'lg';
   showLabel?: boolean;
+  variant?: 'blue' | 'indigo' | 'primary' | 'success';
   className?: string;
+  trackClassName?: string;
+  barClassName?: string;
 }
+
+const heights = { sm: 'h-1.5', md: 'h-2', lg: 'h-2.5' };
 
 export const ProgressBar: React.FC<ProgressBarProps> = ({
   progress,
+  value,
   height = 'md',
   showLabel = false,
-  className = ''
+  variant = 'blue',
+  className,
+  trackClassName,
+  barClassName
 }) => {
-  const clampedProgress = Math.min(Math.max(progress, 0), 100);
-
-  const heights = {
-    sm: 'h-1.5',
-    md: 'h-2.5',
-    lg: 'h-3.5'
-  };
+  const raw = value ?? progress ?? 0;
+  const pct = Math.min(Math.max(raw, 0), 100);
 
   return (
-    <div className={`w-full ${className}`}>
+    <div className={cn('w-full', className)}>
       <div
-        className={`w-full bg-surface/80 rounded-full overflow-hidden border border-white/5 ${heights[height]}`}
+        className={cn(
+          'w-full overflow-hidden rounded-full bg-zinc-100',
+          heights[height],
+          trackClassName
+        )}
+        role="progressbar"
+        aria-valuenow={Math.round(pct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
       >
         <div
-          className="bg-primary h-full rounded-full transition-all duration-500 ease-out"
-          style={{ width: `${clampedProgress}%` }}
+          className={cn(
+            'h-full rounded-full transition-[width] duration-700 ease-out',
+            variant === 'success'
+              ? 'bg-emerald-500'
+              : 'bg-gradient-to-r from-brand-500 to-brand-700',
+            barClassName
+          )}
+          style={{ width: `${pct}%` }}
         />
       </div>
       {showLabel ? (
-        <span className="text-xs text-muted font-medium mt-1 inline-block">
-          {Math.round(clampedProgress)}%
+        <span className="mt-1 inline-block text-xs font-medium tabular-nums text-zinc-500">
+          {Math.round(pct)}%
         </span>
       ) : null}
     </div>

@@ -17,8 +17,8 @@ export function initRedisClients(): { pubClient: Redis | null; subClient: Redis 
   try {
     pubClient = new Redis(env.REDIS_URL, {
       lazyConnect: true,
-      maxRetriesPerRequest: 1,
-      retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 1000))
+      maxRetriesPerRequest: null,
+      retryStrategy: (times) => Math.min(times * 200, 3000)
     });
 
     subClient = pubClient.duplicate();

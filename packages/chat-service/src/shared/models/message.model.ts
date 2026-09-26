@@ -30,6 +30,10 @@ export interface IChatMessage extends Document {
     snippet: string;
   };
   reactions: IReaction[];
+  // user ids mentioned with @; they get a notification
+  mentions: string[];
+  // replies pointing at this message (thread size)
+  replyCount: number;
   isPinned: boolean;
   isEdited: boolean;
   deletedAt?: Date;
@@ -69,9 +73,10 @@ const ChatMessageSchema = new Schema<IChatMessage>(
       avatar: { type: String, default: '' },
       role: { type: String, default: 'trainee' }
     },
+    // may be empty when the message only carries attachments
     content: {
       type: String,
-      required: [true, 'Message content is required'],
+      default: '',
       trim: true
     },
     attachments: {
@@ -86,6 +91,15 @@ const ChatMessageSchema = new Schema<IChatMessage>(
     reactions: {
       type: [ReactionSchema],
       default: []
+    },
+    mentions: {
+      type: [String],
+      default: [],
+      index: true
+    },
+    replyCount: {
+      type: Number,
+      default: 0
     },
     isPinned: {
       type: Boolean,
@@ -106,6 +120,8 @@ const ChatMessageSchema = new Schema<IChatMessage>(
 );
 
 ChatMessageSchema.index({ roomId: 1, createdAt: -1 });
+ChatMessageSchema.index({ 'replyTo.messageId': 1, createdAt: 1 });
+ChatMessageSchema.index({ content: 'text' });
 
 const ChatMessage = mongoose.model<IChatMessage>('ChatMessage', ChatMessageSchema);
 

@@ -2,7 +2,10 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
-  HeadObjectCommand
+  HeadObjectCommand,
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  ListObjectsV2Command
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Readable } from 'node:stream';
@@ -21,6 +24,7 @@ class S3Service {
   constructor() {
     this.s3Client = new S3Client({
       region: env.AWS_REGION,
+      ...(env.S3_ENDPOINT ? { endpoint: env.S3_ENDPOINT, forcePathStyle: true } : {}),
       credentials: {
         accessKeyId: env.AWS_ACCESS_KEY_ID,
         secretAccessKey: env.AWS_SECRET_ACCESS_KEY
@@ -29,20 +33,12 @@ class S3Service {
   }
 
   async generateUploadUrl(key: string, contentType: string, expiresIn = 900): Promise<string> {
-    try {
-      const command = new PutObjectCommand({
-        Bucket: env.S3_RAW_BUCKET,
-        Key: key,
-        ContentType: contentType
-      });
-      return await getSignedUrl(this.s3Client, command, { expiresIn });
-    } catch (error) {
-      logger.error(
-        { err: error },
-        'Error generating S3 presigned upload URL, using signed fallback'
-      );
-      return `https://${env.S3_RAW_BUCKET}.s3.${env.AWS_REGION}.amazonaws.com/${key}?signed=true&expiresIn=${expiresIn}`;
-    }
+    const command = new PutObjectCommand({
+      Bucket: env.S3_RAW_BUCKET,
+      Key: key,
+      ContentType: contentType
+    });
+    return await getSignedUrl(this.s3Client, command, { expiresIn });
   }
 
   async generateDownloadUrl(
@@ -50,19 +46,8 @@ class S3Service {
     bucket = env.S3_RAW_BUCKET,
     expiresIn = 300
   ): Promise<string> {
-    try {
-      const command = new GetObjectCommand({
-        Bucket: bucket,
-        Key: key
-      });
-      return await getSignedUrl(this.s3Client, command, { expiresIn });
-    } catch (error) {
-      logger.error(
-        { err: error },
-        'Error generating S3 presigned download URL, using signed fallback'
-      );
-      return `https://${bucket}.s3.${env.AWS_REGION}.amazonaws.com/${key}?signed=true&expiresIn=${expiresIn}`;
-    }
+    const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+    return await getSignedUrl(this.s3Client, command, { expiresIn });
   }
 
   async checkObjectExists(key: string, bucket = env.S3_RAW_BUCKET): Promise<boolean> {
@@ -118,6 +103,41 @@ class S3Service {
     } catch (error) {
       logger.warn({ err: error, key, range }, 'Failed to fetch S3 object stream');
       return null;
+    }
+  }
+
+  async putObject(key: string, body: Buffer, contentType: string, bucket = env.S3_RAW_BUCKET) {
+    await this.s3Client.send(
+      new PutObjectCommand({ Bucket: bucket, Key: key, Body: body, ContentType: contentType })
+    );
+  }
+
+  // removes every object under a prefix (e.g. a video's HLS segments)
+  async deletePrefix(prefix: string, bucket = env.S3_RAW_BUCKET): Promise<void> {
+    try {
+      let token: string | undefined;
+      do {
+        const page = await this.s3Client.send(
+          new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token })
+        );
+        const keys = (page.Contents || []).map((o) => ({ Key: o.Key! }));
+        if (keys.length) {
+          await this.s3Client.send(
+            new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys } })
+          );
+        }
+        token = page.NextContinuationToken;
+      } while (token);
+    } catch (error) {
+      logger.warn({ err: error, prefix }, 'Could not delete S3 prefix');
+    }
+  }
+
+  async deleteObject(key: string, bucket = env.S3_RAW_BUCKET): Promise<void> {
+    try {
+      await this.s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    } catch (error) {
+      logger.warn({ err: error, key }, 'Could not delete S3 object');
     }
   }
 }

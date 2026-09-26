@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import env from '../config/env.config.js';
 import Unauthorized from '../errors/Unauthorized.error.js';
+import { verifyAccessToken } from '@lms/shared';
 
 export interface AuthUser {
   _id?: string;
@@ -30,7 +31,7 @@ function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunc
 
   try {
     // verifying the access token using shared secret
-    const decoded = jwt.verify(accessToken, env.ACCESS_TOKEN_SECRET) as Record<string, unknown>;
+    const decoded = verifyAccessToken(accessToken);
 
     const userId = (decoded.userId || decoded._id || decoded.id) as string;
     if (!userId) {

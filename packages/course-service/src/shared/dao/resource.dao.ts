@@ -21,6 +21,11 @@ class ResourceDao {
     return await this.resourceModel.findById(id);
   }
 
+  // includes the HLS encryption key, which is excluded from every other query
+  async findResourceWithKey(id: string): Promise<IResourceDocument | null> {
+    return await this.resourceModel.findById(id).select('+hlsKey');
+  }
+
   async findResourceByS3Key(s3Key: string): Promise<IResourceDocument | null> {
     return await this.resourceModel.findOne({ s3Key });
   }
@@ -56,6 +61,24 @@ class ResourceDao {
 
   async listResourcesByCourseId(courseId: string): Promise<IResourceDocument[]> {
     return await this.resourceModel.find({ courseId }).sort({ createdAt: -1 });
+  }
+
+  async findResourcesByIds(ids: string[]): Promise<IResourceDocument[]> {
+    return await this.resourceModel.find({ _id: { $in: ids } });
+  }
+
+  async listResources(filter: Record<string, unknown> = {}): Promise<IResourceDocument[]> {
+    return await this.resourceModel
+      .find({ status: { $ne: 'DELETED' }, ...filter })
+      .sort({ createdAt: -1 })
+      .limit(200);
+  }
+
+  async updateResourceById(
+    id: string,
+    patch: Record<string, unknown>
+  ): Promise<IResourceDocument | null> {
+    return await this.resourceModel.findByIdAndUpdate(id, { $set: patch }, { new: true });
   }
 }
 

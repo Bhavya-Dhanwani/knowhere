@@ -1,0 +1,61 @@
+# LiveKit SFU for voice channels. hostNetwork exposes the WebRTC ports on the node:
+# 7880 (signalling, put it behind TLS as wss://), 7881/tcp (ICE over TCP), 3478/udp (TURN)
+# and 50000-60000/udp (media). Redis lets several LiveKit nodes share rooms.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: livekit
+  labels:
+    app: livekit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: livekit
+  template:
+    metadata:
+      labels:
+        app: livekit
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: livekit
+          image: livekit/livekit-server:v1.13
+          env:
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: livekit
+                  key: LIVEKIT_API_KEY
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: livekit
+                  key: LIVEKIT_API_SECRET
+            - name: LIVEKIT_KEYS
+              value: '$(LIVEKIT_API_KEY): $(LIVEKIT_API_SECRET)'
+            - name: LIVEKIT_CONFIG
+              value: |
+                port: 7880
+                rtc:
+                  tcp_port: 7881
+                  port_range_start: 50000
+                  port_range_end: 60000
+                  use_external_ip: true
+                turn:
+                  enabled: true
+                  udp_port: 3478
+                redis:
+                  address: redis-service:6379
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 7880

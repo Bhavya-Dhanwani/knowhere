@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { useDispatch } from 'react-redux';
 import { authApi } from '../api/authApi';
 import { setCredentials } from '../state/authSlice';
+import { homePathFor, roleOf } from '../../../shared/lib/roles';
 import { SignupCredentials } from '../../../shared/types';
 
 export function useSignup() {
@@ -12,19 +13,10 @@ export function useSignup() {
 
   return useMutation({
     mutationFn: (credentials: SignupCredentials) => authApi.signup(credentials),
-    onSuccess: (data, variables) => {
-      const selectedRole = variables.role || data.user.roles?.[0] || 'student';
-      const userWithRole = {
-        ...data.user,
-        roles: data.user.roles?.length ? data.user.roles : [selectedRole]
-      };
-      dispatch(setCredentials({ accessToken: data.accessToken, user: userWithRole }));
-      queryClient.invalidateQueries({ queryKey: ['currentUser'] });
-      if (selectedRole === 'admin') {
-        navigate('/admin/dashboard');
-      } else {
-        navigate('/dashboard');
-      }
+    onSuccess: (data) => {
+      queryClient.clear();
+      dispatch(setCredentials({ accessToken: data.accessToken, user: data.user }));
+      navigate(homePathFor(roleOf(data.user)), { replace: true });
     }
   });
 }

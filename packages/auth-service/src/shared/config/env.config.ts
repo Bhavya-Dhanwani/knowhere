@@ -2,6 +2,7 @@
 import { config } from 'dotenv';
 import z from 'zod';
 import envConstants from '../constants/env.constants.js';
+import { assertKeysConfigured } from '@lms/shared';
 
 // loading environment variables
 config();
@@ -12,7 +13,6 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default(envConstants.NODE_ENV),
   MONGO_URI: z.string().default(envConstants.MONGO_URI),
   CORS_ORIGIN: z.string().default(envConstants.CORS_ORIGIN),
-  ACCESS_TOKEN_SECRET: z.string().default(envConstants.ACCESS_TOKEN_SECRET),
   REFRESH_TOKEN_SECRET: z.string().default(envConstants.REFRESH_TOKEN_SECRET),
   SMTP_HOST: z.string().default(envConstants.SMTP_HOST),
   SMTP_PORT: z.coerce.number().default(envConstants.SMTP_PORT),
@@ -41,5 +41,8 @@ if (!parsedEnv.success) {
 
 // getting the validated environment variables
 const env = parsedEnv.data;
+
+// access-token keys: dev defaults locally, required in production
+assertKeysConfigured('issuer');
 
 export default env;

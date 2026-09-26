@@ -9,6 +9,7 @@ class SubmoduleDao {
 
   async createSubmodule(data: {
     title: string;
+    creatorId?: string;
     courseId?: string;
     moduleId?: string | null;
     description?: string;
@@ -43,6 +44,29 @@ class SubmoduleDao {
 
   async findSubmodulesByIds(ids: string[]): Promise<ISubmoduleDocument[]> {
     return await this.SubmoduleModel.find({ _id: { $in: ids } });
+  }
+
+  async countByModuleId(moduleId: string): Promise<number> {
+    return await this.SubmoduleModel.countDocuments({ moduleId });
+  }
+
+  async deleteSubmoduleById(id: string) {
+    return await this.SubmoduleModel.findByIdAndDelete(id);
+  }
+
+  async deleteByModuleId(moduleId: string) {
+    return await this.SubmoduleModel.deleteMany({ moduleId });
+  }
+
+  async listSubmodules(filter: Record<string, unknown> = {}): Promise<ISubmoduleDocument[]> {
+    return await this.SubmoduleModel.find(filter).sort({ createdAt: -1 }).limit(200);
+  }
+
+  // submodules whose content points at this resource / question
+  async findSubmodulesUsingRef(refId: string): Promise<ISubmoduleDocument[]> {
+    return await this.SubmoduleModel.find({
+      $or: [{ 'content.resourceId': refId }, { 'content.contentId': refId }]
+    });
   }
 }
 

@@ -38,16 +38,40 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
           env:
-            - name: ACCESS_TOKEN_SECRET
+            - name: ACCESS_TOKEN_PUBLIC_KEY
               valueFrom:
                 secretKeyRef:
-                  name: auth
-                  key: ACCESS_TOKEN_SECRET
+                  name: jwt-keys
+                  key: ACCESS_TOKEN_PUBLIC_KEY
+            - name: SERVICE_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-keys
+                  key: SERVICE_TOKEN_SECRET
             - name: MONGO_URI
               valueFrom:
                 secretKeyRef:
                   name: database
-                  key: AUTH_DB # Fallback / DB cluster URI
+                  key: AUTH_DB # same cluster; MONGO_DB_NAME picks the chat database
+            - name: MONGO_DB_NAME
+              value: 'chatService'
+            - name: USER_SERVICE_URL
+              value: 'http://user-service'
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: livekit
+                  key: LIVEKIT_API_KEY
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: livekit
+                  key: LIVEKIT_API_SECRET
+            - name: LIVEKIT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: livekit
+                  key: LIVEKIT_URL
             - name: REDIS_URL
               value: 'redis://redis-service:6379'
             - name: PORT

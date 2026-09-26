@@ -1,10 +1,8 @@
 import express from 'express';
-import roomRouter from './room/room.router.js';
-import messageRouter from './message/message.router.js';
+import communityRouter from '../community/community.router.js';
 
+// every chat route belongs to a course community
 const router = express.Router();
-
-router.use('/rooms', roomRouter);
-router.use('/', messageRouter);
+router.use('/', communityRouter);
 
 export default router;

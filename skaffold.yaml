@@ -3,6 +3,8 @@ kind: Config
 metadata:
   name: lms-backend
 build:
+  local:
+    push: false
   artifacts:
     - image: auth-service
       context: .

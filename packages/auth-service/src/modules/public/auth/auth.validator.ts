@@ -24,6 +24,22 @@ const signupValidators = [
     .isLength({ min: 6 })
     .withMessage('Password must be at least 6 characters long'),
 
+  // validating the optional role field (admin can never be self-assigned)
+  body('role')
+    .optional()
+    .isIn(['trainee', 'trainer'])
+    .withMessage('Role must be either trainee or trainer'),
+
+  // validating errors
+  validateErrors
+];
+
+const updateUserRoleValidators = [
+  // validating the role field
+  body('role')
+    .isIn(['trainee', 'trainer', 'admin'])
+    .withMessage('Role must be one of trainee, trainer, admin'),
+
   // validating errors
   validateErrors
 ];
@@ -81,6 +97,7 @@ const googleLoginValidators = [
 export {
   signupValidators,
   loginValidators,
+  updateUserRoleValidators,
   forgotPasswordValidators,
   resetPasswordValidators,
   googleLoginValidators

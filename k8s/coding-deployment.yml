@@ -38,16 +38,18 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
           env:
-            - name: ACCESS_TOKEN_SECRET
+            - name: ACCESS_TOKEN_PUBLIC_KEY
               valueFrom:
                 secretKeyRef:
-                  name: auth
-                  key: ACCESS_TOKEN_SECRET
+                  name: jwt-keys
+                  key: ACCESS_TOKEN_PUBLIC_KEY
             - name: MONGO_URI
               valueFrom:
                 secretKeyRef:
                   name: database
                   key: CODING_DB
+            - name: JUDGE_URL
+              value: 'http://judge-service'
             - name: PORT
               value: '5005'
             - name: NODE_ENV

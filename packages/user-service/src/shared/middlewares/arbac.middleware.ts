@@ -60,6 +60,18 @@ export function requireCourseRole(allowedRoles: CourseRole[]) {
         throw new Forbidden('User unauthenticated.');
       }
 
+      // platform admins act as course admins everywhere
+      if (req.user.role === 'admin') {
+        req.courseId = courseId;
+        req.courseMembership = {
+          courseId,
+          userId: req.user.userId,
+          role: 'admin',
+          status: 'active'
+        };
+        return next();
+      }
+
       const membership = await courseMembershipDao.findMembership(courseId, req.user.userId);
 
       if (!membership || membership.status !== 'active') {

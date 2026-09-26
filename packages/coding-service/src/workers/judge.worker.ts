@@ -1,6 +1,8 @@
 import CodingSubmissionDao from '../shared/dao/submission.dao.js';
 import CodingQuestionDao from '../shared/dao/question.dao.js';
 import logger from '../shared/config/logger.config.js';
+import { judgeCode } from '@lms/shared';
+import env from '../shared/config/env.config.js';
 
 class JudgeWorker {
   submissionDao: CodingSubmissionDao;
@@ -11,10 +13,7 @@ class JudgeWorker {
     this.questionDao = new CodingQuestionDao();
   }
 
-  /**
-   * Evaluates submission asynchronously in isolated worker logic.
-   * Simulates sandboxed execution with mock run for supported languages.
-   */
+  // Judges a submission against every test case with the shared sandboxed JS judge.
   async processSubmission(submissionId: string): Promise<void> {
     logger.info(`JudgeWorker started processing submission: ${submissionId}`);
 
@@ -39,33 +38,35 @@ class JudgeWorker {
       }
 
       const totalTestCases = question.testCases.length;
-      // Evaluate mock execution: if code contains "error", simulate RE, else AC
-      let result: 'AC' | 'WA' | 'RE' = 'AC';
-      let passedTestCases = totalTestCases;
-      let scoreAwarded = question.max_score;
+      const language =
+        submission.language.toLowerCase() === 'js'
+          ? 'javascript'
+          : submission.language.toLowerCase();
+      const verdict = await judgeCode(language, submission.code, question.testCases, {
+        runnerUrl: env.JUDGE_URL,
+        caseMs: question.timeLimitMs || 2000
+      });
 
-      if (submission.code.includes('syntax_error')) {
-        result = 'RE';
-        passedTestCases = 0;
-        scoreAwarded = 0;
-      } else if (submission.code.includes('wrong_answer')) {
-        result = 'WA';
-        passedTestCases = Math.floor(totalTestCases / 2);
-        scoreAwarded = Math.floor(question.max_score / 2);
-      }
+      const result: 'AC' | 'WA' | 'TLE' | 'CE' | 'RE' =
+        verdict.passed === totalTestCases
+          ? 'AC'
+          : /timed out|time limit/i.test(verdict.error || '')
+            ? 'TLE'
+            : /^Test \d+:/.test(verdict.error || '')
+              ? 'RE'
+              : /^Wrong answer/.test(verdict.error || '')
+                ? 'WA'
+                : 'CE';
+      const scoreAwarded = totalTestCases
+        ? Math.round((verdict.passed / totalTestCases) * question.max_score)
+        : 0;
 
       await this.submissionDao.updateSubmissionResult(submissionId, {
         status: 'completed',
         result,
         scoreAwarded,
-        passedTestCases,
-        totalTestCases,
-        details: question.testCases.map((tc, idx) => ({
-          testCaseIndex: idx + 1,
-          status: result === 'AC' ? 'AC' : idx === 0 ? 'AC' : result,
-          timeMs: 45,
-          memoryMb: 12
-        }))
+        passedTestCases: verdict.passed,
+        totalTestCases
       });
 
       logger.info(`JudgeWorker finished submission ${submissionId} with result: ${result}`);

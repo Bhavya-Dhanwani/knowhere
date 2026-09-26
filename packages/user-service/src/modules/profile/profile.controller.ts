@@ -64,6 +64,25 @@ class ProfileController {
     }
   };
 
+  // bulk public profiles: GET /profiles?ids=a,b,c (max 200)
+  listProfiles = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const ids = String(req.query.ids || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 200);
+      const profiles = ids.length ? await this.profileDao.findProfilesByUserIds(ids) : [];
+      return Ok(
+        res,
+        'Profiles retrieved successfully',
+        profiles.map((p) => sanitizeUserProfile(p.toObject()))
+      );
+    } catch (error) {
+      next(error);
+    }
+  };
+
   // get public profile by userId
   getProfileById = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {

@@ -1,0 +1,5 @@
+# generated or vendored: never reformat
+graphify-out/
+pnpm-lock.yaml
+packages/auth-service/src/shared/openapi.ts
+**/dist/

@@ -3,6 +3,7 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 export type SubmoduleContentType = 'video' | 'resource' | 'mcq' | 'code-question';
 
 export interface ISubmoduleContentItem {
+  _id?: Types.ObjectId;
   type: SubmoduleContentType;
   resourceId?: Types.ObjectId | null;
   contentId?: Types.ObjectId | null;
@@ -13,7 +14,8 @@ export interface ISubmoduleDocument extends Document {
   _id: Types.ObjectId;
   title: string;
   description: string;
-  courseId: Types.ObjectId;
+  courseId?: Types.ObjectId | null;
+  creatorId?: string;
   moduleId?: Types.ObjectId | null;
   order: number;
   content: ISubmoduleContentItem[];
@@ -43,7 +45,8 @@ const submoduleContentItemSchema = new Schema<ISubmoduleContentItem>(
       default: 1
     }
   },
-  { _id: false }
+  // entries keep an _id: learner progress references them
+  {}
 );
 
 const submoduleSchema = new Schema<ISubmoduleDocument>(
@@ -61,7 +64,12 @@ const submoduleSchema = new Schema<ISubmoduleDocument>(
     courseId: {
       type: Schema.Types.ObjectId,
       ref: 'Course',
-      required: [true, 'Course ID is required'],
+      default: null,
+      index: true
+    },
+    creatorId: {
+      type: String,
+      default: null,
       index: true
     },
     moduleId: {

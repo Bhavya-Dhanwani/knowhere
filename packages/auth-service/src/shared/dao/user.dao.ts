@@ -31,6 +31,25 @@ class UserDao {
     return await this.UserModel.findByIdAndUpdate(id, updateData, { returnDocument: 'after' });
   }
 
+  // function to list users, optionally filtered by a name/email search term
+  async listUsers(search?: string, limit: number = 50) {
+    const filter: Record<string, unknown> = {};
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = new RegExp(escaped, 'i');
+      filter.$or = [{ name: pattern }, { email: pattern }];
+    }
+    return await this.UserModel.find(filter)
+      .select('name email role isVerified')
+      .sort({ _id: -1 })
+      .limit(limit);
+  }
+
+  // function to count users grouped by role
+  async countUsersByRole() {
+    return await this.UserModel.aggregate([{ $group: { _id: '$role', count: { $sum: 1 } } }]);
+  }
+
   // function to delete a user by id
   async deleteUserById(id: string) {
     return await this.UserModel.findByIdAndDelete(id);

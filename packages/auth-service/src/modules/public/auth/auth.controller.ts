@@ -18,6 +18,8 @@ import UserDao from '../../../shared/dao/user.dao.js';
 import SessionDao from '../../../shared/dao/session.dao.js';
 import TokenDao from '../../../shared/dao/token.dao.js';
 import NotFound from '../../../shared/errors/NotFound.error.js';
+import Forbidden from '../../../shared/errors/Forbidden.error.js';
+import sanitizeUser from '../../../shared/sanitizers/user.sanitizer.js';
 import Unauthorized from '../../../shared/errors/Unauthorized.error.js';
 import Created from '../../../shared/responses/Created.response.js';
 import Ok from '../../../shared/responses/Ok.response.js';
@@ -50,13 +52,14 @@ class AuthController {
   // signup a new user
   signup = async (req: SignupRequest, res: Response) => {
     // getting the user from the request body
-    const { name, email, password, token } = req.body;
+    const { name, email, password, token, role } = req.body;
 
     // creating a new user using the user dao
     const user = await this.userDao.createUser({
       name,
       email,
       password,
+      role: role === 'trainer' ? 'trainer' : 'trainee',
       providers: ['local'],
       isVerified: token ? true : false
     });
@@ -340,6 +343,40 @@ class AuthController {
 
     // returning redirect to dashboard
     return res.redirect(`${clientOrigin}/dashboard`);
+  };
+
+  // list platform users (admin only)
+  listUsers = async (req: Request, res: Response) => {
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : undefined;
+    const users = await this.userDao.listUsers(search);
+    const counts = await this.userDao.countUsersByRole();
+
+    const stats: Record<string, number> = { trainee: 0, trainer: 0, admin: 0 };
+    for (const row of counts as Array<{ _id: string | null; count: number }>) {
+      stats[row._id || 'trainee'] = (stats[row._id || 'trainee'] || 0) + row.count;
+    }
+
+    return Ok(res, 'Users fetched successfully', {
+      users: users.map((u) => sanitizeUser(u.toObject() as Record<string, unknown>)),
+      stats
+    });
+  };
+
+  // update a user's platform role (admin only)
+  updateUserRole = async (req: Request & { user?: Record<string, unknown> }, res: Response) => {
+    const userId = String(req.params.userId);
+    const { role } = req.body as { role: string };
+
+    if (String(req.user?.userId) === userId && role !== 'admin') {
+      throw new Forbidden('You cannot remove your own admin role.');
+    }
+
+    const user = await this.userDao.updateUserById(userId, { role });
+    if (!user) {
+      throw new NotFound('User not found');
+    }
+
+    return Ok(res, 'User role updated successfully', sanitizeUser(user.toObject()));
   };
 
   // send password reset email

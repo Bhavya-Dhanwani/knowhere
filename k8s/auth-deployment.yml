@@ -38,11 +38,16 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
           env:
-            - name: ACCESS_TOKEN_SECRET
+            - name: ACCESS_TOKEN_PUBLIC_KEY
               valueFrom:
                 secretKeyRef:
-                  name: auth
-                  key: ACCESS_TOKEN_SECRET
+                  name: jwt-keys
+                  key: ACCESS_TOKEN_PUBLIC_KEY
+            - name: ACCESS_TOKEN_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-keys
+                  key: ACCESS_TOKEN_PRIVATE_KEY
             - name: REFRESH_TOKEN_SECRET
               valueFrom:
                 secretKeyRef:

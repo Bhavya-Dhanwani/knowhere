@@ -2,6 +2,7 @@ import { Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import env from '../shared/config/env.config.js';
 import logger from '../shared/config/logger.config.js';
+import { verifyAccessToken } from '@lms/shared';
 
 export interface SocketUser {
   userId: string;
@@ -27,7 +28,7 @@ export function socketAuthMiddleware(socket: Socket, next: (err?: Error) => void
         ? authHeader.split(' ')[1]
         : (authHeader as string);
 
-    const decoded = jwt.verify(token, env.ACCESS_TOKEN_SECRET) as Record<string, unknown>;
+    const decoded = verifyAccessToken(token);
 
     const userId = (decoded.userId || decoded._id || decoded.id || decoded.sub) as string;
     if (!userId) {

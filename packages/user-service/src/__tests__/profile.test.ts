@@ -4,24 +4,31 @@ import jwt from 'jsonwebtoken';
 import createApp from '../app.js';
 import UserProfileDao from '../shared/dao/userProfile.dao.js';
 import env from '../shared/config/env.config.js';
+import { signAccessToken } from '@lms/shared';
 
 describe('Profile Module Integration & Authorization Tests', () => {
   const app = createApp();
 
-  const traineeToken = jwt.sign(
-    { userId: 'trainee-1', role: 'trainee', email: 'trainee@example.com', name: 'Trainee One' },
-    env.ACCESS_TOKEN_SECRET
-  );
+  const traineeToken = signAccessToken({
+    userId: 'trainee-1',
+    role: 'trainee',
+    email: 'trainee@example.com',
+    name: 'Trainee One'
+  });
 
-  const intruderToken = jwt.sign(
-    { userId: 'trainee-2', role: 'trainee', email: 'intruder@example.com', name: 'Intruder' },
-    env.ACCESS_TOKEN_SECRET
-  );
+  const intruderToken = signAccessToken({
+    userId: 'trainee-2',
+    role: 'trainee',
+    email: 'intruder@example.com',
+    name: 'Intruder'
+  });
 
-  const adminToken = jwt.sign(
-    { userId: 'admin-1', role: 'admin', email: 'admin@example.com', name: 'Admin One' },
-    env.ACCESS_TOKEN_SECRET
-  );
+  const adminToken = signAccessToken({
+    userId: 'admin-1',
+    role: 'admin',
+    email: 'admin@example.com',
+    name: 'Admin One'
+  });
 
   beforeEach(() => {
     jest

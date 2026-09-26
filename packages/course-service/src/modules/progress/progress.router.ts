@@ -16,6 +16,7 @@ const progressController = new ProgressController();
 router.post(
   '/:courseId/content-items/:itemId/complete',
   authMiddleware,
+  requireRole('admin', 'trainer', 'trainee'),
   completeItemValidators,
   progressController.completeItem
 );
@@ -28,6 +29,7 @@ router.post(
 router.get(
   '/:courseId/my-progress',
   authMiddleware,
+  requireRole('admin', 'trainer', 'trainee'),
   getProgressValidators,
   progressController.getMyProgress
 );

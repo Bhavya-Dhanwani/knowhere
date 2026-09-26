@@ -4,19 +4,24 @@ import jwt from 'jsonwebtoken';
 import createApp from '../app.js';
 import CompetencyDao from '../shared/dao/competency.dao.js';
 import env from '../shared/config/env.config.js';
+import { signAccessToken } from '@lms/shared';
 
 describe('Competency Module Integration & Authorization Tests', () => {
   const app = createApp();
 
-  const traineeToken = jwt.sign(
-    { userId: 'trainee-1', role: 'trainee', email: 'trainee@example.com', name: 'Trainee One' },
-    env.ACCESS_TOKEN_SECRET
-  );
+  const traineeToken = signAccessToken({
+    userId: 'trainee-1',
+    role: 'trainee',
+    email: 'trainee@example.com',
+    name: 'Trainee One'
+  });
 
-  const adminToken = jwt.sign(
-    { userId: 'admin-1', role: 'admin', email: 'admin@example.com', name: 'Admin One' },
-    env.ACCESS_TOKEN_SECRET
-  );
+  const adminToken = signAccessToken({
+    userId: 'admin-1',
+    role: 'admin',
+    email: 'admin@example.com',
+    name: 'Admin One'
+  });
 
   beforeEach(() => {
     jest.spyOn(CompetencyDao.prototype, 'findCompetenciesByUserId').mockResolvedValue([

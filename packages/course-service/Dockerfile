@@ -12,6 +12,8 @@ RUN pnpm --filter @lms/course-service deploy --legacy /prod/course-service --pro
 
 # --- runtime stage ---
 FROM node:22-alpine
+# ffmpeg packages uploaded videos into encrypted HLS
+RUN apk add --no-cache ffmpeg
 WORKDIR /app
 COPY --from=build /prod/course-service ./
 EXPOSE 5002

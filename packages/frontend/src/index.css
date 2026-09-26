@@ -5,18 +5,34 @@
 @layer base {
   html {
     min-height: 100%;
-    overflow-y: auto;
     overflow-x: hidden;
     scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
   }
   body {
-    @apply bg-background text-white min-h-screen;
-    overflow-y: auto;
+    @apply bg-canvas text-ink min-h-screen;
     overflow-x: hidden;
+    font-feature-settings: 'ss01', 'cv11';
+  }
+  ::selection {
+    background: rgb(125 102 245 / 0.22);
+  }
+  :focus-visible {
+    outline: 2px solid theme('colors.brand.500');
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  button:focus:not(:focus-visible) {
+    outline: none;
+  }
+  img,
+  video {
+    max-width: 100%;
   }
 }
 
-/* Global Hidden Scrollbar - full scrolling functionality everywhere, scrollbars visually hidden */
+/* Scrollbars stay hidden globally; scroll still works everywhere. */
 html,
 body,
 * {
@@ -31,11 +47,40 @@ body,
   height: 0px !important;
 }
 
+@layer components {
+  /* page gutter: 16px on the smallest phones, grows with the viewport */
+  .page {
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+  .eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-[0.14em] text-zinc-500;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+  .grid-bg {
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.05) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  .grid-bg-light {
+    background-image:
+      linear-gradient(to right, rgb(10 10 15 / 0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(10 10 15 / 0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .noise {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+  }
+}
+
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none !important;
-    width: 0px !important;
-    height: 0px !important;
   }
   .no-scrollbar {
     -ms-overflow-style: none !important;
@@ -44,7 +89,7 @@ body,
 
   .custom-scrollbar {
     scrollbar-width: thin !important;
-    scrollbar-color: #cbd5e1 transparent !important;
+    scrollbar-color: #d4d4d8 transparent !important;
     -ms-overflow-style: auto !important;
   }
   .custom-scrollbar::-webkit-scrollbar {
@@ -56,10 +101,40 @@ body,
     background: transparent !important;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: #cbd5e1 !important;
+    background-color: #d4d4d8 !important;
     border-radius: 9999px !important;
   }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: #94a3b8 !important;
+
+  .mask-fade-x {
+    mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent);
+  }
+  .mask-fade-b {
+    mask-image: linear-gradient(to bottom, #000 60%, transparent);
+  }
+  .mask-radial {
+    mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+  }
+  /* full remaining viewport height below the mobile app bar (0 on desktop) */
+  .h-shell {
+    height: calc(100dvh - var(--shell-top, 0px));
+  }
+  .min-h-shell {
+    min-height: calc(100dvh - var(--shell-top, 0px));
+  }
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

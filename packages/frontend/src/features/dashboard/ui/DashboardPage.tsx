@@ -1,92 +1,176 @@
 import React from 'react';
-import { useNavigate } from 'react-router';
-import { useSelector, useDispatch } from 'react-redux';
-import { Tv, Headphones } from 'lucide-react';
+import { Link, Navigate } from 'react-router';
+import { useSelector } from 'react-redux';
+import {
+  BookOpen,
+  CheckCircle2,
+  Compass,
+  FileCode2,
+  MessagesSquare,
+  Target,
+  Trophy
+} from 'lucide-react';
 import { RootState } from '../../../app/store';
-import { logout } from '../../auth/state/authSlice';
-import { useEnrolledCourses } from '../hooks/useEnrolledCourses';
-import { useNotifications } from '../hooks/useNotifications';
-import { useHeatmapData } from '../hooks/useHeatmapData';
-import { Header } from '../../../shared/ui/Header';
-import { Spinner } from '../../../shared/ui/Spinner';
-import { CourseList } from './CourseList';
-import { NotificationPanel } from './NotificationPanel';
-import { ProgressHeatmap } from './ProgressHeatmap';
+import { roleOf } from '../../../shared/lib/roles';
+import { firstName, greeting } from '../../../shared/lib/format';
+import { PageHeader, StatCard } from '../../../shared/layout/PageHeader';
+import { EmptyState } from '../../../shared/ui/EmptyState';
+import { Skeleton } from '../../../shared/ui/Skeleton';
+import { Button } from '../../../shared/ui/Button';
+import { CountUp } from '../../../shared/ui/fx';
+import { useLearnerOverview } from '../hooks/useLearnerOverview';
+import { ActivityHeatmap } from './ActivityHeatmap';
+import { LearnerCourseCard } from './LearnerCourseCard';
+import { TrainerDashboard } from './TrainerDashboard';
 
+// `/dashboard` is role-aware: admins go to the console, trainers get the teaching view.
 export const DashboardPage: React.FC = () => {
-  const navigate = useNavigate();
-  const dispatch = useDispatch();
-  const user = useSelector((state: RootState) => state.auth.user);
+  const user = useSelector((s: RootState) => s.auth.user);
+  const role = roleOf(user);
+  if (role === 'admin') return <Navigate to="/admin/dashboard" replace />;
+  if (role === 'trainer') return <TrainerDashboard />;
+  return <StudentDashboard />;
+};
 
-  const { data: courses, isLoading: coursesLoading } = useEnrolledCourses();
-  const { data: notifications, isLoading: notifsLoading } = useNotifications();
-  const { data: heatmapData, isLoading: heatmapLoading } = useHeatmapData();
+const quickLinks = [
+  { to: '/chat', label: 'Community chat', desc: 'Ask your cohort', icon: MessagesSquare },
+  { to: '/courses', label: 'Browse courses', desc: 'Find something new', icon: Compass },
+  { to: '/docs', label: 'API reference', desc: 'Build on Knowhere', icon: FileCode2 }
+];
 
-  const handleLogout = () => {
-    dispatch(logout());
-    navigate('/');
-  };
+const StudentDashboard: React.FC = () => {
+  const user = useSelector((s: RootState) => s.auth.user);
+  const { isLoading, error, enrolled, discover, activity, refetch } = useLearnerOverview();
 
-  const handleResumeCourse = (courseId: string) => {
-    navigate(`/course/${courseId}`);
-  };
-
-  const isLoading = coursesLoading || notifsLoading || heatmapLoading;
+  const avg = enrolled.length
+    ? enrolled.reduce((s, c) => s + (c.progress?.percentage || 0), 0) / enrolled.length
+    : 0;
+  const completed = enrolled.reduce((s, c) => s + (c.progress?.completedItemsCount || 0), 0);
+  const points = enrolled.reduce((s, c) => s + (c.progress?.totalScoreEarned || 0), 0);
 
   return (
-    <div className="h-screen bg-[#F8F9FA] text-zinc-900 flex flex-col font-sans select-none overflow-hidden">
-      <Header user={user} onLogout={handleLogout} onNavigateHome={() => navigate('/dashboard')} />
+    <div className="page space-y-6 py-6 sm:space-y-8 sm:py-8">
+      <PageHeader
+        eyebrow={new Date().toLocaleDateString(undefined, {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric'
+        })}
+        title={`${greeting()}, ${firstName(user?.name)}`}
+        description="Here's where you left off. Small steps every day compound."
+        actions={
+          <Link to="/courses">
+            <Button variant="outline" size="md">
+              <BookOpen className="h-4 w-4" /> All courses
+            </Button>
+          </Link>
+        }
+      />
 
-      <main className="flex-1 w-full px-6 lg:px-10 2xl:px-14 py-4 lg:py-5 flex flex-col min-h-0 overflow-hidden">
-        {/* Top Subheader: Classroom & Quick Actions */}
-        <div className="shrink-0 flex items-center justify-between gap-4 mb-4">
-          <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-            Classroom
-          </h1>
+      <div className="grid grid-cols-1 gap-3 xs:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Enrolled courses"
+          icon={<BookOpen />}
+          value={isLoading ? '—' : <CountUp to={enrolled.length} />}
+        />
+        <StatCard
+          label="Average progress"
+          icon={<Target />}
+          value={isLoading ? '—' : <CountUp to={avg} suffix="%" />}
+        />
+        <StatCard
+          label="Items completed"
+          icon={<CheckCircle2 />}
+          value={isLoading ? '—' : <CountUp to={completed} />}
+        />
+        <StatCard
+          label="Points earned"
+          icon={<Trophy />}
+          value={isLoading ? '—' : <CountUp to={points} />}
+        />
+      </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => alert('Welcome to Knowhere! Explore your courses and progress.')}
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors cursor-pointer active:scale-[0.98]"
-            >
-              <Tv className="w-3.5 h-3.5" />
-              <span>Platform Overview</span>
-            </button>
+      {error ? (
+        <EmptyState
+          title="Couldn't load your courses"
+          description={(error as Error).message}
+          action={
+            <Button variant="outline" onClick={refetch}>
+              Try again
+            </Button>
+          }
+        />
+      ) : null}
 
-            <button
-              onClick={() =>
-                alert('Knowhere Support: Reach out via Discord or email support@knowhere.dev')
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <section className="min-w-0 space-y-4 xl:col-span-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold text-zinc-900">Continue learning</h2>
+            {enrolled.length ? (
+              <span className="text-xs text-zinc-500">{enrolled.length} active</span>
+            ) : null}
+          </div>
+
+          {isLoading ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {[0, 1].map((i) => (
+                <Skeleton key={i} className="h-64" />
+              ))}
+            </div>
+          ) : enrolled.length ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {enrolled.map((c, i) => (
+                <LearnerCourseCard key={c.id} course={c} progress={c.progress} index={i} />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={<BookOpen />}
+              title="You're not enrolled yet"
+              description="Once a trainer or admin adds you to a cohort, it will show up here."
+              action={
+                <Link to="/courses">
+                  <Button variant="outline">Explore courses</Button>
+                </Link>
               }
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors cursor-pointer active:scale-[0.98]"
-            >
-              <Headphones className="w-3.5 h-3.5" />
-              <span>Support</span>
-            </button>
-          </div>
-        </div>
+            />
+          )}
 
-        {isLoading ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 py-24">
-            <Spinner size="lg" />
-            <p className="text-sm text-zinc-500">Loading your learning workspace...</p>
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-12 2xl:grid-cols-12 gap-6 lg:gap-8 items-stretch">
-            {/* Main Content Column — Enrolled Courses (Spans full wide section) */}
-            <section className="lg:col-span-8 xl:col-span-8 2xl:col-span-9 flex flex-col min-h-0 h-full">
-              <CourseList courses={courses || []} onResume={handleResumeCourse} />
-            </section>
-
-            {/* Right Sidebar — Notifications & Activity Heatmap */}
-            <aside className="lg:col-span-4 xl:col-span-4 2xl:col-span-3 flex flex-col gap-6 min-h-0 h-full overflow-y-auto custom-scrollbar pr-1 pb-2">
-              <div>
-                <NotificationPanel notifications={notifications || []} />
+          {!isLoading && discover.length ? (
+            <div className="pt-4">
+              <h2 className="mb-4 text-base font-semibold text-zinc-900">Discover</h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {discover.slice(0, 4).map((c, i) => (
+                  <LearnerCourseCard key={c.id} course={c} index={i} cta="Preview" />
+                ))}
               </div>
-              <div>{heatmapData ? <ProgressHeatmap data={heatmapData} /> : null}</div>
-            </aside>
+            </div>
+          ) : null}
+        </section>
+
+        <aside className="min-w-0 space-y-4">
+          <ActivityHeatmap timestamps={activity} />
+          <div className="rounded-2xl bg-white p-2 shadow-card">
+            {quickLinks.map((q) => (
+              <Link
+                key={q.to}
+                to={q.to}
+                className="flex items-center gap-3 rounded-xl p-2.5 transition hover:bg-zinc-50"
+              >
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-zinc-100 text-zinc-600">
+                  <q.icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-zinc-900">
+                    {q.label}
+                  </span>
+                  <span className="block truncate text-xs text-zinc-500">{q.desc}</span>
+                </span>
+              </Link>
+            ))}
           </div>
-        )}
-      </main>
+        </aside>
+      </div>
     </div>
   );
 };

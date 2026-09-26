@@ -62,6 +62,13 @@ spec:
                 port:
                   number: 80
           - pathType: Prefix
+            path: '/api/memberships'
+            backend:
+              service:
+                name: user-service
+                port:
+                  number: 80
+          - pathType: Prefix
             path: '/api/course'
             backend:
               service:
@@ -70,27 +77,6 @@ spec:
                   number: 80
           - pathType: Prefix
             path: '/api/courses'
-            backend:
-              service:
-                name: course-service
-                port:
-                  number: 80
-          - pathType: Prefix
-            path: '/api/modules'
-            backend:
-              service:
-                name: course-service
-                port:
-                  number: 80
-          - pathType: Prefix
-            path: '/api/submodules'
-            backend:
-              service:
-                name: course-service
-                port:
-                  number: 80
-          - pathType: Prefix
-            path: '/api/content-items'
             backend:
               service:
                 name: course-service

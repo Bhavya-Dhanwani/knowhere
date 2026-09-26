@@ -23,6 +23,8 @@ export interface ContentItemDetail extends ContentItemSummary {
   correctOptionId?: string;
   explanation?: string;
   resourceLink?: string;
+  poster?: string;
+  relatedLinks?: Array<{ id: string; title: string; url: string; type?: string }>;
   earnedMarks?: number;
 }
 
@@ -33,6 +35,11 @@ export interface Submodule {
   status: CompletionStatus;
   isNew?: boolean;
   deadline?: string;
+  description?: string;
+  tag?: string;
+  videoUrl?: string;
+  poster?: string;
+  relatedLinks?: Array<{ id: string; title: string; url: string; type?: string }>;
   contentItems: ContentItemSummary[];
 }
 

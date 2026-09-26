@@ -4,18 +4,25 @@ export interface EnrolledCourse {
   thumbnail: string;
   progress: number;
   boughtOn: string;
+  purchasedAt?: string;
   discordUrl?: string;
-  totalModules: number;
-  completedModules: number;
+  discordAvailable?: boolean;
+  category?: string;
+  hours?: string;
+  totalModules?: number;
+  completedModules?: number;
 }
 
 export interface NotificationItem {
   id: string;
   title: string;
-  message: string;
-  createdAt: string;
-  isRead: boolean;
-  type?: 'announcement' | 'assignment' | 'grade' | 'system';
+  message?: string;
+  description?: string;
+  createdAt?: string;
+  time?: string;
+  isRead?: boolean;
+  unread?: boolean;
+  type?: 'lecture' | 'assignment' | 'message' | 'live-class' | 'announcement' | 'grade' | 'system';
 }
 
 export interface HeatmapDay {

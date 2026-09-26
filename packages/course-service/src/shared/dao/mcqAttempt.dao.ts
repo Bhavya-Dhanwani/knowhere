@@ -22,6 +22,11 @@ class McqAttemptDao {
     if (courseId) filter.courseId = courseId;
     return await this.attemptModel.find(filter).sort({ createdAt: -1 });
   }
+
+  // true once the learner has answered this MCQ correctly at least once
+  async hasCorrectAttempt(mcqId: string, userId: string): Promise<boolean> {
+    return Boolean(await this.attemptModel.exists({ mcqId, userId, isCorrect: true }));
+  }
 }
 
 export default McqAttemptDao;

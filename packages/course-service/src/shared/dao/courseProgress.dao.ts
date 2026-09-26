@@ -1,3 +1,4 @@
+import { SubmoduleContentType } from '../models/submodule.model.js';
 // Importing modules
 import { Types } from 'mongoose';
 import CourseProgress, { ICourseProgress } from '../models/courseProgress.model.js';
@@ -17,7 +18,7 @@ class CourseProgressDao {
     courseId: string;
     userId: string;
     contentItemId: string;
-    type: 'video' | 'notes' | 'mcq' | 'coding';
+    type: SubmoduleContentType;
     scoreEarned: number;
     maxScore: number;
   }): Promise<ICourseProgress> {
@@ -77,6 +78,19 @@ class CourseProgressDao {
 
   async listGradesByCourse(courseId: string): Promise<ICourseProgress[]> {
     return await this.CourseProgressModel.find({ courseId }).sort({ totalScoreEarned: -1 });
+  }
+
+  // first course visit creates the record; its createdAt is used as the learner's join date
+  async ensureProgress(courseId: string, userId: string): Promise<ICourseProgress> {
+    return (await this.CourseProgressModel.findOneAndUpdate(
+      { courseId, userId },
+      { $setOnInsert: { totalScoreEarned: 0, completedItems: [] } },
+      { upsert: true, new: true }
+    )) as ICourseProgress;
+  }
+
+  async deleteByCourse(courseId: string) {
+    return await this.CourseProgressModel.deleteMany({ courseId });
   }
 }
 

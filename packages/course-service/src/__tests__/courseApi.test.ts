@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import request from 'supertest';
 import { jest } from '@jest/globals';
 import jwt from 'jsonwebtoken';
@@ -10,6 +11,53 @@ import ResourceDao from '../shared/dao/resource.dao.js';
 import McqDao from '../shared/dao/mcq.dao.js';
 import McqAttemptDao from '../shared/dao/mcqAttempt.dao.js';
 import CodeQuestionDao from '../shared/dao/codeQuestion.dao.js';
+import s3Service from '../services/s3.service.js';
+import CourseProgressDao from '../shared/dao/courseProgress.dao.js';
+import { memberships } from '../services/access.service.js';
+
+const COURSE_ID = '507f1f77bcf86cd799439050';
+
+// a published course whose only module (open since Jan) holds `refId`; trainee-1 is enrolled
+function enrolTraineeWith(
+  refId: string,
+  type: 'mcq' | 'video' | 'resource',
+  releaseAt = '2026-01-01'
+) {
+  jest.spyOn(memberships, 'memberOf').mockResolvedValue({
+    userId: 'trainee-1',
+    role: 'trainee',
+    assignedAt: '2026-01-01T00:00:00Z'
+  });
+  jest.spyOn(CourseDao.prototype, 'findCourseById').mockResolvedValue({
+    _id: COURSE_ID,
+    status: 'published',
+    instructorId: 'someone-else',
+    createdAt: new Date('2026-01-01'),
+    modules: [{ moduleId: 'm1', order: 1, releasePolicy: { releaseAt: new Date(releaseAt) } }]
+  } as unknown as ICourseDocument);
+  jest.spyOn(ModuleDao.prototype, 'findModulesByIds').mockResolvedValue([
+    {
+      _id: 'm1',
+      title: 'M',
+      description: '',
+      durationDays: 7,
+      progressRequirement: 70,
+      submoduleIds: ['s1']
+    }
+  ] as unknown as IModuleDocument[]);
+  jest.spyOn(SubmoduleDao.prototype, 'findSubmodulesByIds').mockResolvedValue([
+    {
+      _id: 's1',
+      title: 'S',
+      description: '',
+      content: [{ _id: 'c1', type, order: 1, [type === 'mcq' ? 'contentId' : 'resourceId']: refId }]
+    }
+  ] as unknown as ISubmoduleDocument[]);
+  jest.spyOn(ResourceDao.prototype, 'findResourcesByIds').mockResolvedValue([]);
+  jest.spyOn(McqDao.prototype, 'findMcqsByIds').mockResolvedValue([]);
+  jest.spyOn(CodeQuestionDao.prototype, 'findQuestionsByIds').mockResolvedValue([]);
+  jest.spyOn(CourseProgressDao.prototype, 'findProgress').mockResolvedValue(null);
+}
 import { ICourseDocument } from '../shared/models/course.model.js';
 import { IResourceDocument } from '../shared/models/resource.model.js';
 import { IMcqDocument } from '../shared/models/mcq.model.js';
@@ -17,19 +65,24 @@ import { ICodingQuestionDocument } from '../shared/models/codeQuestion.model.js'
 import { ISubmoduleDocument } from '../shared/models/submodule.model.js';
 import { IModuleDocument } from '../shared/models/module.model.js';
 import { IMcqAttemptDocument } from '../shared/models/mcqAttempt.model.js';
+import { signAccessToken } from '@lms/shared';
 
 describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
   const app = createApp();
 
-  const trainerToken = jwt.sign(
-    { userId: 'trainer-1', role: 'trainer', email: 'trainer@knowhere.dev', name: 'Trainer One' },
-    env.ACCESS_TOKEN_SECRET
-  );
+  const trainerToken = signAccessToken({
+    userId: 'trainer-1',
+    role: 'trainer',
+    email: 'trainer@knowhere.dev',
+    name: 'Trainer One'
+  });
 
-  const traineeToken = jwt.sign(
-    { userId: 'trainee-1', role: 'trainee', email: 'trainee@knowhere.dev', name: 'Trainee One' },
-    env.ACCESS_TOKEN_SECRET
-  );
+  const traineeToken = signAccessToken({
+    userId: 'trainee-1',
+    role: 'trainee',
+    email: 'trainee@knowhere.dev',
+    name: 'Trainee One'
+  });
 
   afterEach(() => {
     jest.restoreAllMocks();
@@ -160,6 +213,7 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
           ],
           difficulty: 'easy',
           supportedLanguages: ['javascript', 'python'],
+          referenceSolution: { language: 'javascript', code: "function solve(){ return '[0,1]' }" },
           testCaseGeneration: {
             enabled: true,
             requestedCount: 5
@@ -182,6 +236,14 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
       jest.spyOn(SubmoduleDao.prototype, 'createSubmodule').mockResolvedValue({
         _id: 'submod-456'
       } as unknown as ISubmoduleDocument);
+      jest
+        .spyOn(ResourceDao.prototype, 'findResourcesByIds')
+        .mockResolvedValue([
+          { _id: '507f1f77bcf86cd799439001', resourceType: 'video' }
+        ] as unknown as IResourceDocument[]);
+      jest
+        .spyOn(McqDao.prototype, 'findMcqsByIds')
+        .mockResolvedValue([{ _id: '507f1f77bcf86cd799439002' }] as unknown as IMcqDocument[]);
 
       const res = await request(app)
         .post('/api/course/submodule')
@@ -235,6 +297,7 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
         _id: 'course-new-1',
         status: 'draft'
       } as unknown as ICourseDocument);
+      const assign = jest.spyOn(memberships, 'assign').mockResolvedValue(undefined as never);
 
       const res = await request(app)
         .post('/api/course')
@@ -255,6 +318,8 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.courseId).toBe('course-new-1');
       expect(res.body.data.status).toBe('draft');
+      // the creator becomes the course admin, so they can moderate its community
+      expect(assign).toHaveBeenCalledWith('course-new-1', expect.any(String), 'admin');
     });
   });
 
@@ -262,6 +327,7 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
     it('links module to course preserving order and scheduling policy', async () => {
       jest.spyOn(CourseDao.prototype, 'findCourseById').mockResolvedValue({
         _id: 'course-1',
+        instructorId: 'trainer-1',
         modules: []
       } as unknown as ICourseDocument);
 
@@ -308,8 +374,9 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
         explanation: 'Confidential explanation'
       } as unknown as IMcqDocument);
 
+      enrolTraineeWith('507f1f77bcf86cd799439031', 'mcq');
       const res = await request(app)
-        .get('/api/course/mcq/mcq-1')
+        .get('/api/course/mcq/507f1f77bcf86cd799439031?courseId=507f1f77bcf86cd799439050')
         .set('Authorization', `Bearer ${traineeToken}`);
 
       expect(res.status).toBe(200);
@@ -325,6 +392,15 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
   });
 
   describe('9. GET /api/course/video/:id', () => {
+    // no real S3 in tests: stub the object stream with the requested number of bytes
+    beforeEach(() => {
+      jest.spyOn(s3Service, 'getObjectStream').mockImplementation(async (_key, range) => {
+        const [, from, to] = (range || 'bytes=0-1048575').match(/bytes=(\d+)-(\d+)/)!;
+        const size = Number(to) - Number(from) + 1;
+        return { stream: Readable.from([Buffer.alloc(size)]), contentLength: size };
+      });
+    });
+
     it('supports HTTP byte-range request returning 206 Partial Content', async () => {
       jest.spyOn(ResourceDao.prototype, 'findResourceById').mockResolvedValue({
         _id: 'vid-1',
@@ -336,8 +412,9 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
         status: 'READY'
       } as unknown as IResourceDocument);
 
+      enrolTraineeWith('507f1f77bcf86cd799439032', 'video');
       const res = await request(app)
-        .get('/api/course/video/vid-1')
+        .get('/api/course/video/507f1f77bcf86cd799439032?courseId=507f1f77bcf86cd799439050')
         .set('Authorization', `Bearer ${traineeToken}`)
         .set('Range', 'bytes=0-1023');
 
@@ -356,8 +433,9 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
         status: 'READY'
       } as unknown as IResourceDocument);
 
+      enrolTraineeWith('507f1f77bcf86cd799439032', 'video');
       const res = await request(app)
-        .get('/api/course/video/vid-1')
+        .get('/api/course/video/507f1f77bcf86cd799439032?courseId=507f1f77bcf86cd799439050')
         .set('Authorization', `Bearer ${traineeToken}`)
         .set('Range', 'bytes=2000000-3000000');
 
@@ -377,8 +455,9 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
         status: 'READY'
       } as unknown as IResourceDocument);
 
+      enrolTraineeWith('507f1f77bcf86cd799439033', 'resource');
       const res = await request(app)
-        .get('/api/course/resource/doc-1')
+        .get('/api/course/resource/507f1f77bcf86cd799439033?courseId=507f1f77bcf86cd799439050')
         .set('Authorization', `Bearer ${traineeToken}`);
 
       expect(res.status).toBe(200);
@@ -408,11 +487,13 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
         .spyOn(McqAttemptDao.prototype, 'recordAttempt')
         .mockResolvedValue({} as unknown as IMcqAttemptDocument);
 
+      enrolTraineeWith('mcq-1', 'mcq');
       const res = await request(app)
         .post('/api/course/chk-mcq')
         .set('Authorization', `Bearer ${traineeToken}`)
         .send({
           mcqId: 'mcq-1',
+          courseId: COURSE_ID,
           selectedOptionId: 'option_1'
         });
 
@@ -439,11 +520,13 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
         .spyOn(McqAttemptDao.prototype, 'recordAttempt')
         .mockResolvedValue({} as unknown as IMcqAttemptDocument);
 
+      enrolTraineeWith('mcq-1', 'mcq');
       const res = await request(app)
         .post('/api/course/chk-mcq')
         .set('Authorization', `Bearer ${traineeToken}`)
         .send({
           mcqId: 'mcq-1',
+          courseId: COURSE_ID,
           selectedOptionId: 'option_0'
         });
 
@@ -452,6 +535,160 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
       expect(res.body.data.isCorrect).toBe(false);
       expect(res.body.data.correctOptionIndex).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toContain('Secret answer');
+    });
+  });
+
+  describe('Bottom-up authoring guarantees', () => {
+    it('uploads a resource without a course (resources come before courses)', async () => {
+      jest.spyOn(ResourceDao.prototype, 'createResource').mockResolvedValue({
+        _id: '507f1f77bcf86cd799439041'
+      } as unknown as IResourceDocument);
+
+      const res = await request(app)
+        .post('/api/course/upload-resource')
+        .set('Authorization', `Bearer ${trainerToken}`)
+        .send({
+          fileName: 'notes.pdf',
+          mimeType: 'application/pdf',
+          fileSize: 2048,
+          resourceType: 'pdf'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.uploadUrl).toBeDefined();
+      expect(res.body.data.status).toBe('PENDING_UPLOAD');
+    });
+
+    it('rejects a submodule that references content that does not exist', async () => {
+      jest.spyOn(McqDao.prototype, 'findMcqsByIds').mockResolvedValue([]);
+      const create = jest.spyOn(SubmoduleDao.prototype, 'createSubmodule');
+
+      const res = await request(app)
+        .post('/api/course/submodule')
+        .set('Authorization', `Bearer ${trainerToken}`)
+        .send({
+          title: 'Quiz time',
+          content: [{ type: 'mcq', contentId: '507f1f77bcf86cd799439099' }]
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('507f1f77bcf86cd799439099');
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('refuses AI test generation without a reference solution', async () => {
+      const create = jest.spyOn(CodeQuestionDao.prototype, 'createQuestion');
+      const res = await request(app)
+        .post('/api/course/code-question')
+        .set('Authorization', `Bearer ${trainerToken}`)
+        .send({
+          title: 'Sum',
+          description: 'Add numbers',
+          constraints: [],
+          inputFormat: 'a b',
+          outputFormat: 'a+b',
+          examples: [{ input: '1 2', output: '3' }],
+          supportedLanguages: ['javascript'],
+          testCaseGeneration: { enabled: true }
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.message || res.body.error?.message).toMatch(/reference solution/i);
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a reference solution that fails the public examples', async () => {
+      const create = jest.spyOn(CodeQuestionDao.prototype, 'createQuestion').mockResolvedValue({
+        _id: 'code-q-3'
+      } as unknown as ICodingQuestionDocument);
+      const res = await request(app)
+        .post('/api/course/code-question')
+        .set('Authorization', `Bearer ${trainerToken}`)
+        .send({
+          title: 'Sum',
+          description: 'Add numbers',
+          constraints: [],
+          inputFormat: 'a b',
+          outputFormat: 'a+b',
+          examples: [{ input: '1 2', output: '3' }],
+          supportedLanguages: ['javascript'],
+          referenceSolution: { language: 'javascript', code: "function solve(){ return '42' }" },
+          testCaseGeneration: { enabled: true }
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.data.testCaseGenerationStatus).toBe('FAILED');
+      expect(res.body.data.generationError).toMatch(/fails the public examples/);
+      expect((create.mock.calls[0][0] as { testCases: unknown[] }).testCases).toEqual([]);
+    });
+
+    it('never stores fabricated test cases when AI generation is unavailable', async () => {
+      const create = jest.spyOn(CodeQuestionDao.prototype, 'createQuestion').mockResolvedValue({
+        _id: 'code-q-2'
+      } as unknown as ICodingQuestionDocument);
+
+      const res = await request(app)
+        .post('/api/course/code-question')
+        .set('Authorization', `Bearer ${trainerToken}`)
+        .send({
+          title: 'Sum',
+          description: 'Add numbers',
+          constraints: [],
+          inputFormat: 'a b',
+          outputFormat: 'a+b',
+          examples: [{ input: '1 2', output: '3' }],
+          testCases: [{ input: '2 2', expectedOutput: '4' }],
+          supportedLanguages: ['javascript'],
+          referenceSolution: {
+            language: 'javascript',
+            code: "function solve(i){ const [a, b] = i.split(' ').map(Number); return String(a + b) }"
+          },
+          testCaseGeneration: { enabled: true }
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.testCaseGenerationStatus).toBe('FAILED');
+      const saved = create.mock.calls[0][0] as { testCases: { input: string }[] };
+      expect(saved.testCases).toEqual([{ input: '2 2', expectedOutput: '4', isHidden: true }]);
+    });
+
+    it('serves videos only through the streaming route', async () => {
+      jest.spyOn(ResourceDao.prototype, 'findResourceById').mockResolvedValue({
+        _id: '507f1f77bcf86cd799439042',
+        resourceType: 'video',
+        status: 'READY'
+      } as unknown as IResourceDocument);
+
+      enrolTraineeWith('507f1f77bcf86cd799439042', 'video');
+      const res = await request(app)
+        .get('/api/course/resource/507f1f77bcf86cd799439042?courseId=507f1f77bcf86cd799439050')
+        .set('Authorization', `Bearer ${traineeToken}`);
+
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('Enrollment and module access', () => {
+    it('refuses course content without a courseId for learners', async () => {
+      const res = await request(app)
+        .get('/api/course/mcq/507f1f77bcf86cd799439031')
+        .set('Authorization', `Bearer ${traineeToken}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('refuses learners who are not enrolled', async () => {
+      enrolTraineeWith('507f1f77bcf86cd799439031', 'mcq');
+      jest.spyOn(memberships, 'memberOf').mockResolvedValue(null);
+      const res = await request(app)
+        .get('/api/course/mcq/507f1f77bcf86cd799439031?courseId=507f1f77bcf86cd799439050')
+        .set('Authorization', `Bearer ${traineeToken}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('refuses content in a module that has not opened yet', async () => {
+      enrolTraineeWith('507f1f77bcf86cd799439031', 'mcq', '2099-01-01');
+      const res = await request(app)
+        .get('/api/course/mcq/507f1f77bcf86cd799439031?courseId=507f1f77bcf86cd799439050')
+        .set('Authorization', `Bearer ${traineeToken}`);
+      expect(res.status).toBe(403);
     });
   });
 });

@@ -1,6 +1,7 @@
 import { config } from 'dotenv';
 import z from 'zod';
 import envConstants from '../constants/env.constants.js';
+import { assertKeysConfigured } from '@lms/shared';
 
 config();
 
@@ -9,7 +10,6 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default(envConstants.NODE_ENV),
   MONGO_URI: z.string().default(envConstants.MONGO_URI),
   CORS_ORIGIN: z.string().default(envConstants.CORS_ORIGIN),
-  ACCESS_TOKEN_SECRET: z.string().default(envConstants.ACCESS_TOKEN_SECRET),
   AWS_REGION: z.string().default(envConstants.AWS_REGION),
   AWS_ACCESS_KEY_ID: z.string().default(envConstants.AWS_ACCESS_KEY_ID),
   AWS_SECRET_ACCESS_KEY: z.string().default(envConstants.AWS_SECRET_ACCESS_KEY),
@@ -26,5 +26,8 @@ if (!parsedEnv.success) {
 }
 
 const env = parsedEnv.data;
+
+// access-token keys: dev defaults locally, required in production
+assertKeysConfigured('verifier');
 
 export default env;

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ModalShell } from '../../../shared/ui/ModalShell';
 import {
   X,
   Send,
@@ -136,10 +137,10 @@ Clean production-grade service conforming to all specifications.
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl my-8 overflow-hidden">
+    <ModalShell onClose={onClose} size="2xl" dark>
+      <div className="flex min-h-0 flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
+        <div className="flex items-center justify-between px-4 py-4 sm:px-6 border-b border-slate-800 bg-slate-900/50">
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-white">Project Submission</h2>
@@ -157,7 +158,7 @@ Clean production-grade service conforming to all specifications.
         </div>
 
         {/* Informative Scope Banner */}
-        <div className="px-6 py-3 bg-slate-950/70 border-b border-slate-800/80 text-xs text-slate-300 flex items-center gap-2">
+        <div className="px-4 py-3 sm:px-6 bg-slate-950/70 border-b border-slate-800/80 text-xs text-slate-300 flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-slate-200">Dynamic Pipeline:</span>
@@ -177,7 +178,7 @@ Clean production-grade service conforming to all specifications.
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 max-h-[75vh] overflow-y-auto">
           {error && (
             <div className="p-3 bg-red-950/50 border border-red-800 text-red-300 rounded-xl text-xs flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {error}
@@ -185,7 +186,7 @@ Clean production-grade service conforming to all specifications.
           )}
 
           {/* Team Info */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">
                 Team Name
@@ -215,7 +216,7 @@ Clean production-grade service conforming to all specifications.
           </div>
 
           {/* Repository & Branch (Always required) */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-slate-300 uppercase mb-1 flex items-center gap-1.5">
                 <GitBranch className="w-3.5 h-3.5 text-indigo-400" /> Repository URL
@@ -332,8 +333,8 @@ Clean production-grade service conforming to all specifications.
             </div>
           </div>
 
-          {/* Optional: Prompt-Injection Testing Toggle */}
-          <div className="space-y-2">
+          {/* prompt-injection test harness: dev builds only */}
+          <div className={import.meta.env.DEV ? 'space-y-2' : 'hidden'}>
             <div className="flex items-center justify-between">
               <button
                 type="button"
@@ -397,6 +398,6 @@ Clean production-grade service conforming to all specifications.
           </div>
         </form>
       </div>
-    </div>
+    </ModalShell>
   );
 };

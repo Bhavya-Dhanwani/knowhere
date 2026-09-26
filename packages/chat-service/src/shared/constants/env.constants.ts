@@ -3,8 +3,7 @@ const envConstants = {
   NODE_ENV: 'development' as const,
   MONGO_URI: 'mongodb://localhost:27017/chatService',
   REDIS_URL: 'redis://localhost:6379',
-  CORS_ORIGIN: '*',
-  ACCESS_TOKEN_SECRET: 'super_secret_access_jwt_key_auth_service'
+  CORS_ORIGIN: '*'
 };
 
 export default envConstants;

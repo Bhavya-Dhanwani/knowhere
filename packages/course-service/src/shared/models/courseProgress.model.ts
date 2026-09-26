@@ -1,9 +1,10 @@
+import { SubmoduleContentType } from './submodule.model.js';
 // Importing modules
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface ICompletedItem {
   contentItemId: mongoose.Types.ObjectId;
-  type: 'video' | 'notes' | 'mcq' | 'coding';
+  type: SubmoduleContentType;
   scoreEarned: number;
   maxScore: number;
   completedAt: Date;
@@ -26,7 +27,7 @@ const completedItemSchema = new Schema<ICompletedItem>(
     },
     type: {
       type: String,
-      enum: ['video', 'notes', 'mcq', 'coding'],
+      enum: ['video', 'resource', 'mcq', 'code-question'],
       required: true
     },
     scoreEarned: {

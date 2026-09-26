@@ -12,8 +12,10 @@
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
-    "seed": "node packages/auth-service/scripts/seed-all-dbs.mjs",
-    "prepare": "husky"
+    "seed": "pnpm --filter @lms/course-service exec tsx scripts/seed.ts",
+    "prepare": "husky",
+    "docs:api": "pnpm --filter @lms/auth-service exec tsx ../../scripts/gen-openapi.mts",
+    "keys": "node scripts/gen-keys.mjs"
   },
   "devDependencies": {
     "@secretlint/secretlint-rule-preset-recommend": "^9.0.0",

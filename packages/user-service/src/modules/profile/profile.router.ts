@@ -3,6 +3,7 @@ import express from 'express';
 import ProfileController from './profile.controller.js';
 import { updateProfileValidators } from './profile.validator.js';
 import authMiddleware from '../../shared/middlewares/auth.middleware.js';
+import { serviceOrUserAuth } from '@lms/shared';
 
 // making the router
 const router = express.Router();
@@ -16,6 +17,13 @@ const profileController = new ProfileController();
     @access Private
 */
 router.get('/me', authMiddleware, profileController.me);
+
+/*
+    @route GET /api/profiles?ids=a,b,c
+    @desc Bulk profile lookup (names/avatars for member lists and chat)
+    @access Private
+*/
+router.get('/', serviceOrUserAuth('profiles:read'), profileController.listProfiles);
 
 /*
     @route PUT /api/users/profile/me

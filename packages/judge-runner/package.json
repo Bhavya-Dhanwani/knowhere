@@ -1,0 +1,11 @@
+{
+  "name": "@lms/judge-runner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sandboxed Python / C++ / Java runner (bubblewrap per run). Needs Linux + bwrap; run it via Docker.",
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node check.mjs"
+  }
+}

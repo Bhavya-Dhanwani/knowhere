@@ -20,6 +20,8 @@ resources:
   - project-review-service.yml
   - chat-deployment.yml
   - chat-service.yml
+  - livekit-deployment.yml
+  - judge-deployment.yml
   - frontend-deployment.yml
   - frontend-service.yml
   - redis-deployment.yml

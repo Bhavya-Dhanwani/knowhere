@@ -1,6 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export type RoomType = 'course' | 'public' | 'private_group' | 'direct';
+// course communities: text chat, moderator-only announcements, and voice rooms
+export type ChannelKind = 'text' | 'announcement' | 'voice';
 
 export interface IRoomMember {
   userId: string;
@@ -16,6 +18,10 @@ export interface IChatRoom extends Document {
   description: string;
   type: RoomType;
   courseId?: string;
+  kind: ChannelKind;
+  // private channels are visible only to `members` (and course moderators)
+  visibility: 'public' | 'private';
+  position: number;
   icon?: string;
   creatorId: string;
   members: IRoomMember[];
@@ -73,6 +79,20 @@ const ChatRoomSchema = new Schema<IChatRoom>(
       type: String,
       index: true,
       default: null
+    },
+    kind: {
+      type: String,
+      enum: ['text', 'announcement', 'voice'],
+      default: 'text'
+    },
+    visibility: {
+      type: String,
+      enum: ['public', 'private'],
+      default: 'public'
+    },
+    position: {
+      type: Number,
+      default: 0
     },
     icon: {
       type: String,

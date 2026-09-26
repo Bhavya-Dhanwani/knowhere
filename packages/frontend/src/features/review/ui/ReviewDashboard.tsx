@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router';
-import { useSelector, useDispatch } from 'react-redux';
 import {
-  Shield,
   Plus,
   Trophy,
   AlertTriangle,
@@ -14,13 +11,11 @@ import {
   Check,
   Play,
   RefreshCw,
-  Sparkles,
   CheckCircle2,
   ShieldAlert,
   ArrowRight,
   FileText,
   History,
-  LayoutDashboard,
   Trash2,
   Clock,
   Edit3,
@@ -36,11 +31,13 @@ import {
   HelpCircle,
   Download
 } from 'lucide-react';
-import { RootState } from '../../../app/store';
-import { logout } from '../../auth/state/authSlice';
-import { Header } from '../../../shared/ui/Header';
 import { ReviewEvent, ReviewSubmission, EventRanking } from '../types';
 import { reviewApi } from '../api/reviewApi';
+import { PageHeader } from '../../../shared/layout/PageHeader';
+import { Button } from '../../../shared/ui/Button';
+import { Badge } from '../../../shared/ui/Badge';
+import { Tabs } from '../../../shared/ui/Tabs';
+import { EmptyState } from '../../../shared/ui/EmptyState';
 import { CreateEventModal } from './CreateEventModal';
 import { EditEventModal } from './EditEventModal';
 import { AdaptiveSubmissionModal } from './AdaptiveSubmissionModal';
@@ -49,10 +46,6 @@ import { SubmissionDetailModal } from './SubmissionDetailModal';
 import { NotionExportModal } from './NotionExportModal';
 
 export const ReviewDashboard: React.FC = () => {
-  const navigate = useNavigate();
-  const dispatch = useDispatch();
-  const user = useSelector((state: RootState) => state.auth.user);
-
   const [events, setEvents] = useState<ReviewEvent[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [submissions, setSubmissions] = useState<ReviewSubmission[]>([]);
@@ -99,11 +92,6 @@ export const ReviewDashboard: React.FC = () => {
   } | null>(null);
   const [isNotionModalOpen, setIsNotionModalOpen] = useState(false);
   const [csvExporting, setCsvExporting] = useState(false);
-
-  const handleLogout = () => {
-    dispatch(logout());
-    navigate('/');
-  };
 
   const toggleExpanded = (submissionId: string) => {
     setExpandedSubmissions((prev) => ({
@@ -300,325 +288,227 @@ export const ReviewDashboard: React.FC = () => {
     (s) => s.status === 'EVALUATED' || s.status === 'FLAGGED_FOR_REVIEW'
   ).length;
 
+  const reportTabs = [
+    { id: 'RANKING', label: 'Rankings', icon: <Trophy className="h-3.5 w-3.5" /> },
+    { id: 'MATRIX', label: 'Compare', icon: <Grid className="h-3.5 w-3.5" /> },
+    { id: 'SCORECARDS', label: 'Scorecards', icon: <FileText className="h-3.5 w-3.5" /> },
+    { id: 'REPLAY', label: 'Traces', icon: <History className="h-3.5 w-3.5" /> }
+  ];
+  const evalPct = submissions.length ? (evaluatedCount / submissions.length) * 100 : 0;
+
   return (
-    <div className="min-h-screen bg-[#F8F9FA] text-zinc-900 font-sans flex flex-col selection:bg-blue-100 selection:text-blue-900">
-      {/* Top Navbar Matching DashboardPage */}
-      <Header user={user} onLogout={handleLogout} onNavigateHome={() => navigate('/dashboard')} />
+    <div className="min-h-shell">
+      <main className="page space-y-6 py-6 sm:py-8">
+        <PageHeader
+          eyebrow="Project reviews"
+          title="Evaluation pipeline"
+          description="AI-assisted code review with tool-backed evidence and Bradley–Terry relative ranking."
+          actions={
+            <Button onClick={() => setIsCreateEventOpen(true)}>
+              <Plus className="h-4 w-4" /> New event
+            </Button>
+          }
+        />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 lg:px-10 py-6 space-y-6">
-        {/* Top Header: Title & Action Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm text-white shrink-0">
-              <Shield className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-                Evaluation Pipeline
-              </h1>
-              <p className="text-xs text-zinc-500 mt-0.5">
-                Automated Multi-Stage Code Review • Concrete Tool Audits • Bradley-Terry Relative
-                Ranking
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={() => navigate('/admin/dashboard')}
-              className="px-3.5 py-2 rounded-lg bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-            >
-              <LayoutDashboard className="w-3.5 h-3.5 text-zinc-500" />
-              <span>Admin Console</span>
-            </button>
-
-            <button
-              onClick={() => setIsCreateEventOpen(true)}
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors cursor-pointer active:scale-[0.98]"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Create Event</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Step 1: Active Event Selector & Overview Card */}
-        <div className="bg-white border border-zinc-200 rounded-xl p-6 shadow-sm space-y-5">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div>
-              <span className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold block mb-2">
-                1. Select or Switch Event
-              </span>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                {events.length === 0 && !loading && (
-                  <p className="text-sm text-zinc-500">
-                    No evaluation events found. Click &quot;Create Event&quot; above to get started.
-                  </p>
-                )}
-                {events.map((evt) => (
-                  <button
-                    key={evt._id}
-                    onClick={() => setSelectedEventId(evt._id)}
-                    className={`px-4 py-2 rounded-lg text-xs font-semibold border transition-all flex items-center gap-2 cursor-pointer ${
-                      evt._id === selectedEventId
-                        ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-sm'
-                        : 'bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
-                    }`}
-                  >
-                    <span>{evt.name}</span>
+        {/* event picker */}
+        {events.length === 0 && !loading ? (
+          <EmptyState
+            icon={<Trophy />}
+            title="No review events yet"
+            description="Create an event with a rubric, share the submission link, then run the pipeline."
+            action={
+              <Button onClick={() => setIsCreateEventOpen(true)}>
+                <Plus className="h-4 w-4" /> Create first event
+              </Button>
+            }
+          />
+        ) : (
+          <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+            {events.map((evt) => {
+              const active = evt._id === selectedEventId;
+              return (
+                <button
+                  key={evt._id}
+                  onClick={() => setSelectedEventId(evt._id)}
+                  className={`flex min-w-[200px] max-w-[280px] shrink-0 flex-col items-start gap-2 rounded-2xl p-3.5 text-left transition sm:min-w-0 ${
+                    active
+                      ? 'bg-ink text-white shadow-lift'
+                      : 'bg-white text-zinc-800 shadow-card hover:shadow-lift'
+                  }`}
+                >
+                  <span className="w-full truncate text-sm font-medium">{evt.name}</span>
+                  <span className="flex items-center gap-2">
                     {getScopeBadge(evt.projectType)}
-                  </button>
+                    <span className={`text-[11px] ${active ? 'text-zinc-400' : 'text-zinc-500'}`}>
+                      {evt.criteria.length} criteria
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {selectedEvent ? (
+          <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {/* overview */}
+            <div className="min-w-0 space-y-4 rounded-2xl bg-white p-4 shadow-card sm:p-5 lg:col-span-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="break-words text-lg font-semibold tracking-tight text-zinc-900">
+                    {selectedEvent.name}
+                  </h2>
+                  <p className="mt-1 line-clamp-3 text-sm text-zinc-500">
+                    {selectedEvent.problemStatement}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setIsEditEventOpen(true)}>
+                    <Edit3 className="h-3.5 w-3.5" /> Edit
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setIsSubmitModalOpen(true)}>
+                    <Plus className="h-3.5 w-3.5" /> Add submission
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {selectedEvent.criteria.map((c) => (
+                  <span
+                    key={c.id}
+                    className="rounded-lg bg-zinc-50 px-2 py-1 text-[11px] text-zinc-600 ring-1 ring-inset ring-zinc-200/70"
+                  >
+                    {c.name}{' '}
+                    <span className="tabular-nums text-zinc-400">
+                      {Math.round(c.weight * 100)}%
+                    </span>
+                  </span>
                 ))}
+              </div>
+
+              {/* share link */}
+              <div className="rounded-xl bg-zinc-50 p-3 ring-1 ring-inset ring-zinc-200/70">
+                <p className="mb-2 text-xs font-medium text-zinc-600">
+                  Submission link for participants
+                </p>
+                <div className="flex flex-col gap-2 xs:flex-row">
+                  <code className="min-w-0 flex-1 select-all truncate rounded-lg bg-white px-3 py-2 font-mono text-xs text-zinc-700 ring-1 ring-inset ring-zinc-200">
+                    {submissionUrl}
+                  </code>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant={copiedLink ? 'secondary' : 'primary'}
+                      onClick={handleCopyLink}
+                      className="h-9 flex-1 xs:flex-none"
+                    >
+                      {copiedLink ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                      {copiedLink ? 'Copied' : 'Copy'}
+                    </Button>
+                    <a
+                      href={submissionUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Open submission form"
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-zinc-600 ring-1 ring-inset ring-zinc-200 hover:bg-zinc-50"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Quick Actions for Selected Event */}
-            {selectedEvent && (
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <button
-                  onClick={() => setIsEditEventOpen(true)}
-                  className="px-3.5 py-2 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Edit3 className="w-3.5 h-3.5 text-blue-600" /> Edit Event
-                </button>
-                <button
-                  onClick={() => setIsSubmitModalOpen(true)}
-                  className="px-3.5 py-2 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5 text-emerald-600" /> Fast Submit
-                </button>
-                <button
-                  onClick={handleExportEventCsv}
-                  disabled={csvExporting || submissions.length === 0}
-                  className="px-3.5 py-2 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  title="Export full rankings, issues, improvements, and 9-dimension scores to CSV"
-                >
-                  <Download
-                    className={`w-3.5 h-3.5 text-blue-600 ${csvExporting ? 'animate-bounce' : ''}`}
-                  />
-                  <span>{csvExporting ? 'Exporting...' : 'Export CSV'}</span>
-                </button>
-                <button
-                  onClick={() => setIsNotionModalOpen(true)}
-                  disabled={submissions.length === 0}
-                  className="px-3.5 py-2 bg-zinc-900 hover:bg-black text-white rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  title="Export complete executive report to Notion (Markdown / Direct Sync)"
-                >
-                  <span className="font-serif font-black text-xs">N</span>
-                  <span>Notion Final</span>
-                </button>
-                <button
+            {/* pipeline */}
+            <div className="flex min-w-0 flex-col rounded-2xl bg-ink p-4 text-white shadow-lift sm:p-5">
+              <p className="text-xs uppercase tracking-[0.14em] text-zinc-400">Pipeline</p>
+              <p className="mt-2 text-3xl font-semibold tabular-nums">
+                {evaluatedCount}
+                <span className="text-lg text-zinc-500">/{submissions.length}</span>
+              </p>
+              <p className="text-sm text-zinc-400">submissions evaluated</p>
+              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-brand-400 to-fuchsia-400 transition-[width] duration-700"
+                  style={{ width: `${evalPct}%` }}
+                />
+              </div>
+              {ranking ? (
+                <p className="mt-3 flex items-center gap-1.5 text-xs text-emerald-400">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Rankings computed
+                </p>
+              ) : null}
+              <div className="mt-auto pt-5">
+                <Button
                   onClick={handleRunPipeline}
                   disabled={pipelineRunning || submissions.length === 0}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-2 cursor-pointer active:scale-[0.98]"
+                  className="w-full bg-white text-zinc-900 hover:bg-zinc-100"
                 >
                   {pipelineRunning ? (
                     <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
-                      <span>
-                        Running Pipeline ({pipelineProgress?.current || 0}/
-                        {pipelineProgress?.total || submissions.length})...
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span className="truncate">
+                        {pipelineProgress?.current || 0}/
+                        {pipelineProgress?.total || submissions.length} ·{' '}
+                        {pipelineProgress?.teamName}
                       </span>
                     </>
                   ) : (
                     <>
-                      <Play className="w-3.5 h-3.5 fill-current text-white" />
-                      <span>Run Pipeline on All Submissions</span>
+                      <Play className="h-4 w-4 fill-current" /> Run on all submissions
                     </>
                   )}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Submission Form URL Banner (Step 2) */}
-          {selectedEvent && (
-            <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-zinc-800 uppercase tracking-wider">
-                      2. Candidate Submission Portal
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-medium">
-                      Adaptive ({selectedEvent.projectType})
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-500 mt-0.5">
-                    Direct submission link for participants. Automatically adapts to{' '}
-                    {selectedEvent.projectType.toLowerCase()} criteria.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="px-3 py-1.5 bg-white border border-zinc-200 rounded-lg text-xs font-mono text-zinc-700 max-w-sm truncate select-all shadow-sm">
-                    {submissionUrl}
-                  </div>
-                  <button
-                    onClick={handleCopyLink}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm ${
-                      copiedLink
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white'
-                    }`}
-                  >
-                    {copiedLink ? (
-                      <Check className="w-3.5 h-3.5" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                    {copiedLink ? 'Copied!' : 'Copy Link'}
-                  </button>
-                  <a
-                    href={submissionUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="p-1.5 bg-white hover:bg-zinc-100 text-zinc-600 rounded-lg border border-zinc-200 transition-colors shadow-sm"
-                    title="Open submission form in new tab"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </a>
-                </div>
+                </Button>
               </div>
             </div>
-          )}
+          </section>
+        ) : null}
 
-          {/* Event Details Grid */}
-          {selectedEvent && (
-            <div className="pt-2 border-t border-zinc-100 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-              <div>
-                <span className="text-zinc-500 font-medium block mb-0.5">Problem Statement:</span>
-                <p className="text-zinc-800 line-clamp-2">{selectedEvent.problemStatement}</p>
-              </div>
-              <div>
-                <span className="text-zinc-500 font-medium block mb-0.5">
-                  Rubric Criteria ({selectedEvent.criteria.length} Criteria):
-                </span>
-                <div className="flex flex-wrap gap-1">
-                  {selectedEvent.criteria.map((c) => (
-                    <span
-                      key={c.id}
-                      className="px-2 py-0.5 bg-zinc-100 rounded border border-zinc-200 text-zinc-700 font-mono text-[10px]"
-                    >
-                      {c.name} ({Math.round(c.weight * 100)}%)
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <span className="text-zinc-500 font-medium block mb-0.5">Pipeline Status:</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-zinc-800 font-semibold">
-                    {evaluatedCount} of {submissions.length} Evaluated
-                  </span>
-                  {ranking && (
-                    <span className="text-[10px] px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full font-semibold">
-                      Rankings Computed
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Step 3: Final Reports & Relative Ranking */}
+        {/* results */}
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-200 pb-3">
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-bold text-zinc-900 flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-blue-600" />
-                3. Evaluation Results & Reports
-              </h2>
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-zinc-100 text-zinc-600 font-semibold border border-zinc-200">
-                {submissions.length} Submissions
-              </span>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-zinc-900">Results</h2>
+              <Badge variant="gray">{submissions.length} submissions</Badge>
             </div>
-
-            {/* Right: Sub-tab Switcher + Universal Action Bar */}
-            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
-              {/* Sub-tab Switcher */}
-              <div className="flex items-center bg-zinc-100 p-1 rounded-xl border border-zinc-200 text-xs">
-                <button
-                  onClick={() => setActiveReportTab('RANKING')}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                    activeReportTab === 'RANKING'
-                      ? 'bg-white text-zinc-900 shadow-sm'
-                      : 'text-zinc-600 hover:text-zinc-900'
-                  }`}
-                >
-                  <Trophy className="w-3.5 h-3.5 text-amber-500" />
-                  Relative Rankings
-                </button>
-                <button
-                  onClick={() => setActiveReportTab('MATRIX')}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                    activeReportTab === 'MATRIX'
-                      ? 'bg-white text-zinc-900 shadow-sm'
-                      : 'text-zinc-600 hover:text-zinc-900'
-                  }`}
-                >
-                  <Grid className="w-3.5 h-3.5 text-indigo-600" />
-                  Comparison Matrix (§22)
-                </button>
-                <button
-                  onClick={() => setActiveReportTab('SCORECARDS')}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                    activeReportTab === 'SCORECARDS'
-                      ? 'bg-white text-zinc-900 shadow-sm'
-                      : 'text-zinc-600 hover:text-zinc-900'
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5 text-blue-600" />
-                  Project Scorecards
-                </button>
-                <button
-                  onClick={() => setActiveReportTab('REPLAY')}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                    activeReportTab === 'REPLAY'
-                      ? 'bg-white text-zinc-900 shadow-sm'
-                      : 'text-zinc-600 hover:text-zinc-900'
-                  }`}
-                >
-                  <History className="w-3.5 h-3.5 text-emerald-600" />
-                  Execution Traces
-                </button>
-              </div>
-
-              {/* Universal Action Toolbar: Download CSV, Notion Final, Recalibrate */}
-              <div className="flex items-center gap-2">
-                <button
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Tabs
+                variant="pill"
+                tabs={reportTabs}
+                activeTab={activeReportTab}
+                onChange={(id) => setActiveReportTab(id as typeof activeReportTab)}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={handleExportEventCsv}
                   disabled={csvExporting || submissions.length === 0}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.98]"
-                  title="Export full leaderboard, positive points, issues, improvements & 9-dimension scores to CSV"
+                  isLoading={csvExporting}
                 >
-                  <Download
-                    className={`w-3.5 h-3.5 text-white ${csvExporting ? 'animate-bounce' : ''}`}
-                  />
-                  <span>{csvExporting ? 'Exporting...' : 'Download CSV'}</span>
-                </button>
-                <button
+                  {!csvExporting ? <Download className="h-3.5 w-3.5" /> : null} CSV
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => setIsNotionModalOpen(true)}
                   disabled={submissions.length === 0}
-                  className="px-3.5 py-1.5 bg-zinc-900 hover:bg-black text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 active:scale-[0.98]"
-                  title="Export complete executive report to Notion"
                 >
-                  <span className="font-serif font-black text-xs">N</span>
-                  <span>Notion Final</span>
-                </button>
-                <button
+                  <span className="font-serif text-xs font-bold">N</span> Notion
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={handleComputeRankingOnly}
                   disabled={rankingLoading || submissions.length === 0}
-                  className="px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  title="Recalibrate relative rankings and 9-dimension composites"
                 >
-                  <RefreshCw
-                    className={`w-3.5 h-3.5 ${rankingLoading ? 'animate-spin text-blue-600' : ''}`}
-                  />
-                  <span>{rankingLoading ? 'Recalibrating...' : 'Recalibrate'}</span>
-                </button>
+                  <RefreshCw className={`h-3.5 w-3.5 ${rankingLoading ? 'animate-spin' : ''}`} />{' '}
+                  Recalibrate
+                </Button>
               </div>
             </div>
           </div>
@@ -627,7 +517,7 @@ export const ReviewDashboard: React.FC = () => {
           {activeReportTab === 'RANKING' && (
             <div className="space-y-4">
               {!ranking ? (
-                <div className="bg-white border border-zinc-200 rounded-xl p-12 text-center space-y-3 shadow-sm">
+                <div className="bg-white rounded-2xl shadow-card p-4 sm:p-6 sm:p-12 text-center space-y-3">
                   <Trophy className="w-12 h-12 text-zinc-300 mx-auto" />
                   <h3 className="text-base font-bold text-zinc-900">No Ranking Computed Yet</h3>
                   <p className="text-xs text-zinc-500 max-w-md mx-auto">
@@ -649,12 +539,12 @@ export const ReviewDashboard: React.FC = () => {
               ) : (
                 <div className="space-y-4">
                   {/* Leaderboard Card Container */}
-                  <div className="bg-white border border-zinc-200 rounded-xl shadow-sm overflow-hidden p-6 space-y-4">
+                  <div className="bg-white rounded-2xl shadow-card overflow-hidden p-4 sm:p-6 space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 pb-4">
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Trophy className="w-5 h-5 text-amber-500" />
-                          <h3 className="text-base font-bold text-zinc-900">
+                          <h3 className="text-base font-semibold text-zinc-900">
                             Bradley-Terry Calibrated Leaderboard
                           </h3>
                           <span className="text-[10px] px-2.5 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-full font-semibold">
@@ -665,38 +555,6 @@ export const ReviewDashboard: React.FC = () => {
                           Projects ranked by calibrated latent skill parameter &lambda; from
                           automated head-to-head simulations.
                         </p>
-                      </div>
-
-                      <div className="flex items-center gap-2 flex-wrap self-start sm:self-center">
-                        <button
-                          onClick={handleExportEventCsv}
-                          disabled={csvExporting}
-                          className="px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                          title="Export full leaderboard, + points, issues & improvements to CSV"
-                        >
-                          <Download
-                            className={`w-3.5 h-3.5 text-blue-600 ${csvExporting ? 'animate-bounce' : ''}`}
-                          />
-                          <span>{csvExporting ? 'Exporting...' : 'Export CSV'}</span>
-                        </button>
-                        <button
-                          onClick={() => setIsNotionModalOpen(true)}
-                          className="px-3 py-1.5 bg-zinc-900 hover:bg-black text-white rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
-                          title="Export complete executive report to Notion"
-                        >
-                          <span className="font-serif font-black text-xs">N</span>
-                          <span>Notion Final</span>
-                        </button>
-                        <button
-                          onClick={handleComputeRankingOnly}
-                          disabled={rankingLoading}
-                          className="px-3 py-1.5 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg text-xs font-semibold border border-zinc-200 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <RefreshCw
-                            className={`w-3.5 h-3.5 ${rankingLoading ? 'animate-spin' : ''}`}
-                          />
-                          Recalibrate
-                        </button>
                       </div>
                     </div>
 
@@ -755,7 +613,7 @@ export const ReviewDashboard: React.FC = () => {
                                     </span>
                                   </td>
                                   <td className="py-3.5 px-4 text-blue-600 font-black text-sm">
-                                    {entry.latentSkillScore}
+                                    {Number(entry.latentSkillScore).toFixed(2)}
                                   </td>
                                   <td className="py-3.5 px-4 text-zinc-700 font-medium">
                                     {(entry.winRate * 100).toFixed(1)}%
@@ -820,7 +678,7 @@ export const ReviewDashboard: React.FC = () => {
                                         {/* §18 "Why Am I #X?" Transparent Explanation Card */}
                                         {why && (
                                           <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm space-y-3">
-                                            <div className="flex items-center justify-between gap-2 flex-wrap border-b border-zinc-100 pb-2.5">
+                                            <div className="flex flex-wrap items-center justify-between gap-2 flex-wrap border-b border-zinc-100 pb-2.5">
                                               <div className="flex items-center gap-2">
                                                 <HelpCircle className="w-4 h-4 text-amber-500" />
                                                 <span className="text-xs font-bold text-zinc-900 uppercase tracking-wide">
@@ -1037,7 +895,7 @@ export const ReviewDashboard: React.FC = () => {
                                         )}
                                         {/* Rank Reason & Cohort Placement */}
                                         <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm space-y-2">
-                                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                                          <div className="flex flex-wrap items-center justify-between gap-2 flex-wrap">
                                             <div className="flex items-center gap-2">
                                               <Award className="w-4 h-4 text-blue-600" />
                                               <span className="text-xs font-bold text-zinc-900 uppercase tracking-wide">
@@ -1232,7 +1090,7 @@ export const ReviewDashboard: React.FC = () => {
                 )}
 
               {/* 9-Dimension Comparison Matrix Table */}
-              <div className="bg-white border border-zinc-200 rounded-xl shadow-sm overflow-hidden p-6 space-y-4">
+              <div className="bg-white rounded-2xl shadow-card overflow-hidden p-4 sm:p-6 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 pb-4">
                   <div>
                     <div className="flex items-center gap-2">
@@ -1413,7 +1271,7 @@ export const ReviewDashboard: React.FC = () => {
           {activeReportTab === 'SCORECARDS' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {submissions.length === 0 ? (
-                <div className="col-span-2 bg-white border border-zinc-200 rounded-xl p-12 text-center text-zinc-500 shadow-sm">
+                <div className="col-span-2 bg-white rounded-2xl shadow-card p-4 sm:p-6 sm:p-12 text-center text-zinc-500 shadow-sm">
                   No submissions yet. Share the submission link above to collect candidate projects.
                 </div>
               ) : (
@@ -1540,7 +1398,7 @@ export const ReviewDashboard: React.FC = () => {
 
           {/* VIEW C: Replayable Links & Verifiable Audit Trail */}
           {activeReportTab === 'REPLAY' && (
-            <div className="bg-white border border-zinc-200 rounded-xl p-6 shadow-sm space-y-4">
+            <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-6 shadow-sm space-y-4">
               <div className="border-b border-zinc-100 pb-4">
                 <div className="flex items-center gap-2">
                   <History className="w-5 h-5 text-emerald-600" />

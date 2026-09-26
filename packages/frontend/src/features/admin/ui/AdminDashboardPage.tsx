@@ -1,693 +1,619 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router';
-import { useSelector, useDispatch } from 'react-redux';
+import React, { useDeferredValue, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router';
+import { useSelector } from 'react-redux';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Shield,
-  Plus,
-  Users,
-  Layers,
-  Award,
-  Activity,
-  Search,
+  Archive,
   BookOpen,
-  Server,
-  Sparkles,
-  X,
-  ArrowRight,
-  Check,
-  Image as ImageIcon
+  Eye,
+  GraduationCap,
+  MoreHorizontal,
+  PenLine,
+  Plus,
+  Presentation,
+  Search,
+  Shield,
+  Users
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { RootState } from '../../../app/store';
-import { logout } from '../../auth/state/authSlice';
-import { Header } from '../../../shared/ui/Header';
-import { Spinner } from '../../../shared/ui/Spinner';
-import { adminApi, AdminCourseSummary, AdminActivityAlert } from '../api/adminApi';
-import { AdminCourseCard } from './AdminCourseCard';
+import { BackendRole, Course, CourseStatus, PlatformUser, lmsApi } from '../../../shared/api/lms';
+import { PageHeader, StatCard } from '../../../shared/layout/PageHeader';
+import { Button } from '../../../shared/ui/Button';
+import { Badge } from '../../../shared/ui/Badge';
+import { Avatar } from '../../../shared/ui/Avatar';
+import { Input } from '../../../shared/ui/Input';
+import { Dropdown } from '../../../shared/ui/Dropdown';
+import { Tabs } from '../../../shared/ui/Tabs';
+import { EmptyState } from '../../../shared/ui/EmptyState';
+import { Skeleton } from '../../../shared/ui/Skeleton';
+import { CourseCover } from '../../../shared/ui/CourseCover';
+import { CountUp } from '../../../shared/ui/fx';
+import { timeAgo } from '../../../shared/lib/format';
+import { cn } from '../../../shared/lib/cn';
+import { CreateCourseModal } from './CreateCourseModal';
+import { CourseMembersModal } from './CourseMembersModal';
 
-const THUMBNAIL_PRESETS = [
-  {
-    id: 'dsa',
-    label: 'Algorithms & DSA',
-    url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80'
-  },
-  {
-    id: 'systems',
-    label: 'Systems & Cloud',
-    url: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&auto=format&fit=crop&q=80'
-  },
-  {
-    id: 'web',
-    label: 'Full-Stack Web',
-    url: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=600&auto=format&fit=crop&q=80'
-  },
-  {
-    id: 'ai',
-    label: 'AI & Data Science',
-    url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80'
-  },
-  {
-    id: 'arch',
-    label: 'Architecture',
-    url: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&auto=format&fit=crop&q=80'
-  }
-];
+type Section = 'overview' | 'courses' | 'people';
+
+const sectionFromPath = (p: string): Section =>
+  p.startsWith('/admin/courses')
+    ? 'courses'
+    : p.startsWith('/admin/people')
+      ? 'people'
+      : 'overview';
+
+const statusVariant: Record<CourseStatus, 'green' | 'gray' | 'amber'> = {
+  published: 'green',
+  draft: 'gray',
+  archived: 'amber'
+};
+
+const roleMeta: Record<BackendRole, { label: string; icon: typeof Users; color: string }> = {
+  trainee: { label: 'Students', icon: GraduationCap, color: 'bg-brand-500' },
+  trainer: { label: 'Trainers', icon: Presentation, color: 'bg-sky-500' },
+  admin: { label: 'Admins', icon: Shield, color: 'bg-emerald-500' }
+};
 
 export const AdminDashboardPage: React.FC = () => {
+  const { pathname } = useLocation();
   const navigate = useNavigate();
-  const dispatch = useDispatch();
-  const user = useSelector((state: RootState) => state.auth.user);
+  const section = sectionFromPath(pathname);
+  const [creating, setCreating] = useState(false);
 
-  const [courses, setCourses] = useState<AdminCourseSummary[]>([]);
-  const [alerts, setAlerts] = useState<AdminActivityAlert[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
-
-  // Create Course Modal state
-  const [isCreateCourseOpen, setIsCreateCourseOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newCode, setNewCode] = useState('');
-  const [newCategory, setNewCategory] = useState('Computer Science');
-  const [newInstructor, setNewInstructor] = useState('Lead Instructor');
-  const [newDescription, setNewDescription] = useState('');
-  const [newStatus, setNewStatus] = useState<'published' | 'draft'>('published');
-  const [selectedThumbnail, setSelectedThumbnail] = useState(
-    'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=600&auto=format&fit=crop&q=80'
-  );
-  const [customThumbnailUrl, setCustomThumbnailUrl] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleLogout = () => {
-    dispatch(logout());
-    navigate('/');
-  };
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      const [coursesData, alertsData] = await Promise.all([
-        adminApi.listCourses(),
-        adminApi.listAlerts()
-      ]);
-      setCourses(coursesData);
-      setAlerts(alertsData);
-    } catch (err) {
-      console.error('Failed to load admin dashboard data', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const handleCreateCourse = async (e: React.FormEvent, navigateToCurriculum = false) => {
-    e.preventDefault();
-    if (!newTitle.trim() || !newCode.trim()) return;
-
-    try {
-      setIsSubmitting(true);
-      const thumbnailToUse = customThumbnailUrl.trim() || selectedThumbnail;
-      const created = await adminApi.createCourse({
-        title: newTitle.trim(),
-        code: newCode.trim().toUpperCase(),
-        category: newCategory,
-        instructorName: newInstructor.trim(),
-        description: newDescription.trim(),
-        thumbnail: thumbnailToUse,
-        status: newStatus
-      });
-      setCourses((prev) => [created, ...prev]);
-      setIsCreateCourseOpen(false);
-      setNewTitle('');
-      setNewCode('');
-      setNewDescription('');
-      setCustomThumbnailUrl('');
-
-      if (navigateToCurriculum) {
-        navigate(`/admin/course/${created.id}`);
-      }
-    } catch (err) {
-      console.error('Failed to create course', err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const filteredCourses = courses.filter((c) => {
-    const matchesSearch =
-      c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.instructorName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
-
-  const totalStudents = courses.reduce((acc, c) => acc + c.totalStudents, 0);
-  const totalModules = courses.reduce((acc, c) => acc + c.totalModules, 0);
-  const avgClassProgress =
-    courses.length > 0
-      ? (courses.reduce((acc, c) => acc + c.averageProgress, 0) / courses.length).toFixed(1)
-      : '0.0';
+  const courses = useQuery({ queryKey: ['courses'], queryFn: lmsApi.listCourses });
+  const users = useQuery({ queryKey: ['users', ''], queryFn: () => lmsApi.listUsers() });
 
   return (
-    <div className="h-screen bg-[#F8F9FA] text-zinc-900 flex flex-col font-sans select-none overflow-hidden">
-      {/* Light Top Navbar Matching DashboardPage */}
-      <Header
-        user={user}
-        onLogout={handleLogout}
-        onNavigateHome={() => navigate('/admin/dashboard')}
+    <div className="page space-y-6 py-6 sm:py-8">
+      <PageHeader
+        eyebrow="Admin console"
+        title={section === 'people' ? 'People' : section === 'courses' ? 'Courses' : 'Overview'}
+        description={
+          section === 'people'
+            ? 'Everyone on the platform and their global role.'
+            : section === 'courses'
+              ? 'Create courses, publish them and manage who is enrolled.'
+              : 'Live health of your learning platform.'
+        }
+        actions={
+          <Button onClick={() => setCreating(true)}>
+            <Plus className="h-4 w-4" /> New course
+          </Button>
+        }
       />
 
-      <main className="flex-1 w-full px-6 lg:px-10 2xl:px-14 py-4 lg:py-5 flex flex-col min-h-0 overflow-hidden">
-        {/* Top Subheader: Admin Portal & Quick Actions */}
-        <div className="shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm text-white shrink-0">
-              <Shield className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
-                  Administration Console
-                </h1>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
-                  Admin
-                </span>
+      <Tabs
+        tabs={[
+          { id: 'overview', label: 'Overview' },
+          {
+            id: 'courses',
+            label: 'Courses',
+            badge: courses.data ? <Count n={courses.data.length} /> : null
+          },
+          {
+            id: 'people',
+            label: 'People',
+            badge: users.data ? <Count n={users.data.users.length} /> : null
+          }
+        ]}
+        activeTab={section}
+        onChange={(id) => navigate(id === 'overview' ? '/admin/dashboard' : `/admin/${id}`)}
+      />
+
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={section}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.2 }}
+        >
+          {section === 'overview' ? (
+            <Overview
+              courses={courses.data}
+              users={users.data}
+              loading={courses.isLoading || users.isLoading}
+            />
+          ) : section === 'courses' ? (
+            <CoursesSection
+              courses={courses.data}
+              loading={courses.isLoading}
+              error={courses.error}
+            />
+          ) : (
+            <PeopleSection />
+          )}
+        </motion.div>
+      </AnimatePresence>
+
+      <CreateCourseModal
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={() => navigate('/admin/courses')}
+      />
+    </div>
+  );
+};
+
+const Count: React.FC<{ n: number }> = ({ n }) => (
+  <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] tabular-nums text-zinc-500">
+    {n}
+  </span>
+);
+
+/* ---------------------------------------------------------------- overview */
+
+const Overview: React.FC<{
+  courses?: Course[];
+  users?: { users: PlatformUser[]; stats: Record<BackendRole, number> };
+  loading: boolean;
+}> = ({ courses = [], users, loading }) => {
+  const stats = users?.stats || { trainee: 0, trainer: 0, admin: 0 };
+  const totalUsers = stats.trainee + stats.trainer + stats.admin;
+  const published = courses.filter((c) => c.status === 'published').length;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-3 xs:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Total people"
+          icon={<Users />}
+          value={loading ? '—' : <CountUp to={totalUsers} />}
+        />
+        <StatCard
+          label="Students"
+          icon={<GraduationCap />}
+          value={loading ? '—' : <CountUp to={stats.trainee} />}
+        />
+        <StatCard
+          label="Courses"
+          icon={<BookOpen />}
+          value={loading ? '—' : <CountUp to={courses.length} />}
+          hint={`${published} published`}
+        />
+        <StatCard
+          label="Trainers"
+          icon={<Presentation />}
+          value={loading ? '—' : <CountUp to={stats.trainer} />}
+          hint={`${stats.admin} admin${stats.admin === 1 ? '' : 's'}`}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+        <div className="min-w-0 space-y-4 rounded-2xl bg-white p-4 shadow-card sm:p-5 lg:col-span-2">
+          <h3 className="text-sm font-semibold text-zinc-900">Role distribution</h3>
+          {loading ? (
+            <Skeleton className="h-32" />
+          ) : (
+            <>
+              <div className="flex h-2.5 overflow-hidden rounded-full bg-zinc-100">
+                {(Object.keys(roleMeta) as BackendRole[]).map((r) => (
+                  <motion.span
+                    key={r}
+                    className={roleMeta[r].color}
+                    initial={{ width: 0 }}
+                    animate={{ width: totalUsers ? `${(stats[r] / totalUsers) * 100}%` : 0 }}
+                    transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+                  />
+                ))}
               </div>
-              <p className="text-xs text-zinc-500 mt-0.5">
-                Curriculum Design • Role-Based Access Control • Student Cohort Management
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="px-4 py-2 rounded-lg bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors cursor-pointer active:scale-[0.98]"
-            >
-              <BookOpen className="w-3.5 h-3.5 text-zinc-500" />
-              <span>Student View</span>
-            </button>
-
-            <button
-              onClick={() => navigate('/review')}
-              className="px-4 py-2 rounded-lg bg-white hover:bg-zinc-50 text-zinc-700 border border-zinc-200 text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors cursor-pointer active:scale-[0.98]"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-              <span>Evaluation Pipeline</span>
-            </button>
-
-            <button
-              onClick={() => setIsCreateCourseOpen(true)}
-              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-colors cursor-pointer active:scale-[0.98]"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Create Course</span>
-            </button>
-          </div>
+              <ul className="space-y-2.5">
+                {(Object.keys(roleMeta) as BackendRole[]).map((r) => (
+                  <li key={r} className="flex items-center gap-3 text-sm">
+                    <span className={cn('h-2 w-2 rounded-full', roleMeta[r].color)} />
+                    <span className="flex-1 text-zinc-600">{roleMeta[r].label}</span>
+                    <span className="font-medium tabular-nums text-zinc-900">{stats[r]}</span>
+                    <span className="w-10 text-right text-xs tabular-nums text-zinc-400">
+                      {totalUsers ? Math.round((stats[r] / totalUsers) * 100) : 0}%
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <Link
+            to="/admin/people"
+            className="inline-flex text-xs font-medium text-brand-700 hover:text-brand-800"
+          >
+            Manage people →
+          </Link>
         </div>
 
-        {/* High-Level Admin Metrics Strip Matching CourseProgressBar Style */}
-        <div className="shrink-0 bg-white border border-zinc-200/90 rounded-2xl p-4 lg:p-4.5 shadow-xs mb-4 grid grid-cols-2 md:grid-cols-4 gap-4 divide-y md:divide-y-0 md:divide-x divide-zinc-100">
-          <div className="flex items-center gap-3.5 pt-2 md:pt-0">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0">
-              <Layers className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 block">
-                Managed Courses
-              </span>
-              <span className="text-xl font-black text-zinc-900 tracking-tight">
-                {courses.length}
-              </span>
-            </div>
+        <div className="min-w-0 rounded-2xl bg-white shadow-card lg:col-span-3">
+          <div className="flex items-center justify-between gap-2 p-4 pb-2 sm:p-5 sm:pb-2">
+            <h3 className="text-sm font-semibold text-zinc-900">Newest members</h3>
+            <Link
+              to="/admin/people"
+              className="text-xs font-medium text-zinc-500 hover:text-zinc-900"
+            >
+              View all
+            </Link>
           </div>
-
-          <div className="flex items-center gap-3.5 pt-2 md:pt-0 md:pl-4">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 shrink-0">
-              <Users className="w-5 h-5" />
+          {loading ? (
+            <div className="space-y-2 p-4">
+              {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-10" />
+              ))}
             </div>
-            <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 block">
-                Active Trainees
-              </span>
-              <span className="text-xl font-black text-zinc-900 tracking-tight">
-                {totalStudents}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3.5 pt-2 md:pt-0 md:pl-4">
-            <div className="w-10 h-10 rounded-xl bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600 shrink-0">
-              <Award className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 block">
-                Total Modules
-              </span>
-              <span className="text-xl font-black text-zinc-900 tracking-tight">
-                {totalModules}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3.5 pt-2 md:pt-0 md:pl-4">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shrink-0">
-              <Activity className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 block">
-                Avg Class Progress
-              </span>
-              <span className="text-xl font-black text-zinc-900 tracking-tight">
-                {avgClassProgress}%
-              </span>
-            </div>
-          </div>
+          ) : (
+            <ul className="divide-y divide-zinc-100 px-2 pb-2">
+              {(users?.users || []).slice(0, 6).map((u) => (
+                <li key={u.id} className="flex items-center gap-3 px-2 py-2.5">
+                  <Avatar name={u.name} size="sm" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-zinc-900">{u.name}</span>
+                    <span className="block truncate text-xs text-zinc-500">{u.email}</span>
+                  </span>
+                  <RoleBadge role={u.role} />
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
+      </div>
 
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-zinc-900">Recent courses</h3>
+          <Link
+            to="/admin/courses"
+            className="text-xs font-medium text-zinc-500 hover:text-zinc-900"
+          >
+            View all
+          </Link>
+        </div>
         {loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 py-24">
-            <Spinner size="lg" />
-            <p className="text-sm text-zinc-500">Loading administrative console...</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-40" />
+            ))}
+          </div>
+        ) : courses.length ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {courses.slice(0, 3).map((c) => (
+              <Link
+                key={c.id}
+                to={`/admin/course/${c.id}`}
+                className="group overflow-hidden rounded-2xl bg-white shadow-card transition hover:-translate-y-0.5 hover:shadow-lift"
+              >
+                <CourseCover seed={c.id} title={c.title} className="aspect-[16/6]" />
+                <div className="flex items-center gap-2 p-4">
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+                    {c.title}
+                  </p>
+                  <Badge size="sm" variant={statusVariant[c.status]} dot>
+                    {c.status}
+                  </Badge>
+                </div>
+              </Link>
+            ))}
           </div>
         ) : (
-          <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 xl:grid-cols-12 2xl:grid-cols-12 gap-6 lg:gap-8 items-stretch">
-            {/* Main Content Column (8/9 cols) — Managed Courses */}
-            <section className="lg:col-span-8 xl:col-span-8 2xl:col-span-9 flex flex-col min-h-0 h-full">
-              {/* Search & Filter Bar */}
-              <div className="shrink-0 bg-white border border-zinc-200/90 rounded-2xl p-3.5 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3 mb-3.5">
-                <div className="relative w-full sm:w-72">
-                  <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search courses, codes, faculty..."
-                    className="w-full pl-9 pr-3 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+          <EmptyState
+            icon={<BookOpen />}
+            title="No courses yet"
+            description="Create the first course to get your cohort started."
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
+const RoleBadge: React.FC<{ role: BackendRole }> = ({ role }) => (
+  <Badge size="sm" variant={role === 'admin' ? 'green' : role === 'trainer' ? 'blue' : 'gray'}>
+    {role === 'trainee' ? 'student' : role}
+  </Badge>
+);
+
+/* ----------------------------------------------------------------- courses */
+
+const CoursesSection: React.FC<{ courses?: Course[]; loading: boolean; error: unknown }> = ({
+  courses = [],
+  loading,
+  error
+}) => {
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState<'all' | CourseStatus>('all');
+  const [query, setQuery] = useState('');
+  const [membersOf, setMembersOf] = useState<Course | null>(null);
+
+  const setStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: CourseStatus }) =>
+      lmsApi.updateCourse(id, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['courses'] })
+  });
+
+  const visible = courses
+    .filter((c) => filter === 'all' || c.status === filter)
+    .filter((c) => c.title.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search courses"
+          icon={<Search className="h-4 w-4" />}
+          containerClassName="sm:max-w-xs"
+        />
+        <Tabs
+          variant="pill"
+          tabs={[
+            { id: 'all', label: 'All' },
+            { id: 'published', label: 'Published' },
+            { id: 'draft', label: 'Drafts' },
+            { id: 'archived', label: 'Archived' }
+          ]}
+          activeTab={filter}
+          onChange={(id) => setFilter(id as typeof filter)}
+          className="sm:ml-auto"
+        />
+      </div>
+
+      {error ? (
+        <EmptyState title="Couldn't load courses" description={(error as Error).message} />
+      ) : loading ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} className="h-56" />
+          ))}
+        </div>
+      ) : visible.length ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {visible.map((c, i) => (
+            <motion.article
+              key={c.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(i, 8) * 0.04 }}
+              className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-card"
+            >
+              <CourseCover seed={c.id} title={c.title} className="aspect-[16/6]" />
+              <div className="flex flex-1 flex-col p-4">
+                <div className="flex items-start gap-2">
+                  <h3 className="line-clamp-2 min-w-0 flex-1 text-[15px] font-semibold leading-snug text-zinc-900">
+                    {c.title}
+                  </h3>
+                  <Badge size="sm" variant={statusVariant[c.status]} dot>
+                    {c.status}
+                  </Badge>
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-500">
+                  {c.description || 'No description yet.'}
+                </p>
+                <p className="mt-3 text-xs text-zinc-400">
+                  {c.moduleCount} module{c.moduleCount === 1 ? '' : 's'} · created{' '}
+                  {timeAgo(c.createdAt)}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2 border-t border-zinc-100 pt-3">
+                  <Button size="sm" variant="outline" onClick={() => setMembersOf(c)}>
+                    <Users className="h-3.5 w-3.5" /> Members
+                  </Button>
+                  <Link to={`/admin/course/${c.id}`}>
+                    <Button size="sm" variant="outline">
+                      <PenLine className="h-3.5 w-3.5" /> Edit
+                    </Button>
+                  </Link>
+                  <StatusMenu
+                    status={c.status}
+                    busy={setStatus.isPending && setStatus.variables?.id === c.id}
+                    onChange={(status) => setStatus.mutate({ id: c.id, status })}
                   />
                 </div>
+              </div>
+            </motion.article>
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          icon={<BookOpen />}
+          title="Nothing here"
+          description="No courses match this filter."
+        />
+      )}
 
-                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                  <span className="text-xs text-zinc-400 font-medium">Status:</span>
-                  <div className="flex items-center bg-zinc-100 p-1 rounded-xl gap-1 text-xs font-semibold">
+      {setStatus.error ? (
+        <p className="text-sm text-red-600">{(setStatus.error as Error).message}</p>
+      ) : null}
+      <CourseMembersModal course={membersOf} onClose={() => setMembersOf(null)} />
+    </div>
+  );
+};
+
+const StatusMenu: React.FC<{
+  status: CourseStatus;
+  busy: boolean;
+  onChange: (s: CourseStatus) => void;
+}> = ({ status, busy, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const options: { s: CourseStatus; label: string; icon: typeof Eye }[] = [
+    { s: 'published', label: 'Publish', icon: Eye },
+    { s: 'draft', label: 'Move to drafts', icon: PenLine },
+    { s: 'archived', label: 'Archive', icon: Archive }
+  ];
+
+  return (
+    <div className="relative ml-auto">
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => setOpen((o) => !o)}
+        isLoading={busy}
+        aria-label="Change status"
+      >
+        {!busy ? <MoreHorizontal className="h-4 w-4" /> : null}
+      </Button>
+      <AnimatePresence>
+        {open ? (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+            <motion.ul
+              initial={{ opacity: 0, scale: 0.96, y: 4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              className="absolute bottom-full right-0 z-20 mb-1 w-44 origin-bottom-right rounded-xl bg-white p-1 shadow-lift"
+            >
+              {options
+                .filter((o) => o.s !== status)
+                .map((o) => (
+                  <li key={o.s}>
                     <button
-                      onClick={() => setStatusFilter('all')}
-                      className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                        statusFilter === 'all'
-                          ? 'bg-white text-zinc-900 shadow-xs'
-                          : 'text-zinc-600 hover:text-zinc-900'
-                      }`}
+                      onClick={() => {
+                        setOpen(false);
+                        onChange(o.s);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
                     >
-                      All ({courses.length})
+                      <o.icon className="h-4 w-4 text-zinc-400" /> {o.label}
                     </button>
-                    <button
-                      onClick={() => setStatusFilter('published')}
-                      className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
-                        statusFilter === 'published'
-                          ? 'bg-white text-zinc-900 shadow-xs'
-                          : 'text-zinc-600 hover:text-zinc-900'
-                      }`}
-                    >
-                      Published
-                    </button>
+                  </li>
+                ))}
+            </motion.ul>
+          </>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ people */
+
+const PeopleSection: React.FC = () => {
+  const me = useSelector((s: RootState) => s.auth.user);
+  const qc = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | BackendRole>('all');
+  const deferred = useDeferredValue(search.trim());
+
+  const users = useQuery({
+    queryKey: ['users', deferred],
+    queryFn: () => lmsApi.listUsers(deferred),
+    placeholderData: (prev) => prev
+  });
+
+  const updateRole = useMutation({
+    mutationFn: ({ id, role }: { id: string; role: BackendRole }) =>
+      lmsApi.updateUserRole(id, role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] })
+  });
+
+  const list = useMemo(
+    () => (users.data?.users || []).filter((u) => roleFilter === 'all' || u.role === roleFilter),
+    [users.data, roleFilter]
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name or email"
+          icon={<Search className="h-4 w-4" />}
+          containerClassName="sm:max-w-xs"
+        />
+        <Tabs
+          variant="pill"
+          tabs={[
+            { id: 'all', label: 'Everyone' },
+            { id: 'trainee', label: 'Students' },
+            { id: 'trainer', label: 'Trainers' },
+            { id: 'admin', label: 'Admins' }
+          ]}
+          activeTab={roleFilter}
+          onChange={(id) => setRoleFilter(id as typeof roleFilter)}
+          className="sm:ml-auto"
+        />
+      </div>
+
+      {updateRole.error ? (
+        <p className="text-sm text-red-600">{(updateRole.error as Error).message}</p>
+      ) : null}
+      <p className="text-xs text-zinc-500">
+        Role changes apply the next time that person signs in or their session refreshes.
+      </p>
+
+      {users.error ? (
+        <EmptyState title="Couldn't load people" description={(users.error as Error).message} />
+      ) : users.isLoading ? (
+        <div className="space-y-2">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-14" />
+          ))}
+        </div>
+      ) : list.length ? (
+        <div className="overflow-hidden rounded-2xl bg-white shadow-card">
+          <div className="hidden grid-cols-[minmax(0,2fr)_minmax(0,2fr)_140px_90px] gap-4 border-b border-zinc-100 px-5 py-3 text-xs font-medium text-zinc-500 md:grid">
+            <span>Name</span>
+            <span>Email</span>
+            <span>Role</span>
+            <span className="text-right">Status</span>
+          </div>
+          <ul className="divide-y divide-zinc-100">
+            {list.map((u) => (
+              <li
+                key={u.id}
+                className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-3 py-3 sm:px-5 md:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_140px_90px] md:gap-4"
+              >
+                <div className="contents md:flex md:min-w-0 md:items-center md:gap-3">
+                  <Avatar name={u.name} size="sm" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-zinc-900">
+                      {u.name}{' '}
+                      {u.id === me?.id ? (
+                        <span className="text-xs font-normal text-zinc-400">(you)</span>
+                      ) : null}
+                    </p>
+                    <p className="truncate text-xs text-zinc-500 md:hidden">{u.email}</p>
                   </div>
                 </div>
-              </div>
-
-              {/* Course Cards List (Scrollable Area) */}
-              <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar pr-2 space-y-4 pb-2">
-                {filteredCourses.length > 0 ? (
-                  filteredCourses.map((c) => (
-                    <AdminCourseCard
-                      key={c.id}
-                      course={c}
-                      onManage={(id) => navigate(`/admin/course/${id}`)}
-                      onPreviewStudent={(id) => navigate(`/course/${id}`)}
-                    />
-                  ))
-                ) : (
-                  <div className="bg-white border border-zinc-200/90 rounded-2xl p-12 text-center shadow-xs">
-                    <Layers className="w-10 h-10 text-zinc-300 mx-auto mb-3" />
-                    <h3 className="text-base font-bold text-zinc-900">
-                      No courses match your criteria
-                    </h3>
-                    <p className="text-xs text-zinc-500 mt-1">
-                      Try clearing your search query or create a new course using the action button
-                      above.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            {/* Right Sidebar (4/3 cols) — Administrative Alerts & System Health */}
-            <aside className="lg:col-span-4 xl:col-span-4 2xl:col-span-3 flex flex-col gap-6 min-h-0 h-full overflow-y-auto custom-scrollbar pr-1 pb-2">
-              {/* Activity Feed Matching NotificationPanel */}
-              <div className="bg-white border border-zinc-200/90 rounded-2xl p-5 shadow-xs flex flex-col min-h-0">
-                <div className="shrink-0 flex items-center justify-between mb-3">
-                  <h3 className="text-base sm:text-lg font-bold text-zinc-900 tracking-tight">
-                    Admin Notifications
-                  </h3>
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
-                    Live
+                <p className="hidden truncate text-sm text-zinc-600 md:block">{u.email}</p>
+                <div className="col-span-2 flex items-center gap-2 md:col-span-1">
+                  <Dropdown
+                    value={u.role}
+                    disabled={
+                      u.id === me?.id || (updateRole.isPending && updateRole.variables?.id === u.id)
+                    }
+                    onChange={(role) => updateRole.mutate({ id: u.id, role: role as BackendRole })}
+                    options={[
+                      { value: 'trainee', label: 'Student' },
+                      { value: 'trainer', label: 'Trainer' },
+                      { value: 'admin', label: 'Admin' }
+                    ]}
+                    containerClassName="w-full md:w-[140px]"
+                  />
+                  <span className="md:hidden">
+                    <VerifiedBadge ok={u.isVerified} />
                   </span>
                 </div>
-
-                <div className="space-y-2.5">
-                  {alerts.map((a) => (
-                    <div
-                      key={a.id}
-                      className="p-3 rounded-xl border bg-zinc-50 border-zinc-200/60 text-left hover:border-zinc-300 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-xs font-semibold text-zinc-900 leading-snug">
-                          {a.title}
-                        </p>
-                        <span className="text-[10px] text-zinc-400 shrink-0 whitespace-nowrap">
-                          {a.timestamp}
-                        </span>
-                      </div>
-                      <p className="text-xs text-zinc-500 mt-1 leading-relaxed line-clamp-2">
-                        {a.message}
-                      </p>
-                    </div>
-                  ))}
+                <div className="hidden justify-end md:flex">
+                  <VerifiedBadge ok={u.isVerified} />
                 </div>
-              </div>
-
-              {/* Service Status Island */}
-              <div className="bg-white border border-zinc-200/90 rounded-2xl p-5 shadow-xs flex flex-col">
-                <h3 className="text-base font-bold text-zinc-900 tracking-tight mb-3 flex items-center gap-2">
-                  <Server className="w-4 h-4 text-blue-600" />
-                  <span>Platform Microservices</span>
-                </h3>
-
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-50 border border-zinc-100">
-                    <span className="font-semibold text-zinc-700">Course Service</span>
-                    <span className="flex items-center gap-1.5 text-emerald-700 font-bold text-[11px]">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Operational
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-50 border border-zinc-100">
-                    <span className="font-semibold text-zinc-700">User & ARBAC Service</span>
-                    <span className="flex items-center gap-1.5 text-emerald-700 font-bold text-[11px]">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Operational
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-50 border border-zinc-100">
-                    <span className="font-semibold text-zinc-700">Project Review Engine</span>
-                    <span className="flex items-center gap-1.5 text-emerald-700 font-bold text-[11px]">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Operational
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-zinc-50 border border-zinc-100">
-                    <span className="font-semibold text-zinc-700">MCQ & Coding Runners</span>
-                    <span className="flex items-center gap-1.5 text-emerald-700 font-bold text-[11px]">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      Operational
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </aside>
-          </div>
-        )}
-      </main>
-
-      {/* Create Course Modal */}
-      {isCreateCourseOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200 font-sans">
-          <div className="bg-white border border-zinc-200 rounded-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden shadow-2xl">
-            {/* Modal Header */}
-            <div className="px-6 py-4.5 border-b border-zinc-100 flex items-center justify-between shrink-0 bg-white">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-xs">
-                  <Plus className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-base font-bold text-zinc-900 leading-tight">
-                    Create New LMS Course
-                  </h2>
-                  <p className="text-[11px] text-zinc-500 mt-0.5">
-                    Configure syllabus metadata, visual branding, and curriculum workspace
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsCreateCourseOpen(false)}
-                className="w-8 h-8 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <form
-              onSubmit={(e) => handleCreateCourse(e, true)}
-              className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-6 space-y-4.5 text-left"
-            >
-              {/* Title & Code */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-                    Course Title *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="e.g. Distributed Systems & Cloud Infrastructure"
-                    className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-                    Course Code *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newCode}
-                    onChange={(e) => setNewCode(e.target.value)}
-                    placeholder="e.g. CS-401"
-                    className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 uppercase"
-                  />
-                </div>
-              </div>
-
-              {/* Category & Instructor */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <div>
-                  <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-                    Category
-                  </label>
-                  <select
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 cursor-pointer"
-                  >
-                    <option value="Computer Science">Computer Science</option>
-                    <option value="Full-Stack Development">Full-Stack Development</option>
-                    <option value="Systems Engineering">Systems Engineering</option>
-                    <option value="Machine Learning">Machine Learning</option>
-                    <option value="DevOps & Cloud">DevOps & Cloud</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-                    Instructor Name
-                  </label>
-                  <input
-                    type="text"
-                    value={newInstructor}
-                    onChange={(e) => setNewInstructor(e.target.value)}
-                    placeholder="Lead Instructor"
-                    className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                </div>
-              </div>
-
-              {/* Course Status Selection */}
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-                  Initial Publication Status
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setNewStatus('published')}
-                    className={`p-3 rounded-xl border text-left flex items-start justify-between cursor-pointer transition-all ${
-                      newStatus === 'published'
-                        ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500'
-                        : 'border-zinc-200 bg-zinc-50/60 hover:bg-zinc-50'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                        <span className="text-xs font-bold text-zinc-900">Published</span>
-                      </div>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">
-                        Live and accessible to enrolled student cohorts
-                      </p>
-                    </div>
-                    {newStatus === 'published' && (
-                      <Check className="w-4 h-4 text-blue-600 shrink-0" />
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setNewStatus('draft')}
-                    className={`p-3 rounded-xl border text-left flex items-start justify-between cursor-pointer transition-all ${
-                      newStatus === 'draft'
-                        ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-500'
-                        : 'border-zinc-200 bg-zinc-50/60 hover:bg-zinc-50'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-amber-500" />
-                        <span className="text-xs font-bold text-zinc-900">Draft</span>
-                      </div>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">
-                        Authoring mode; hidden from trainees
-                      </p>
-                    </div>
-                    {newStatus === 'draft' && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Course Thumbnail Selector */}
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
-                  <ImageIcon className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>Course Thumbnail / Cover Image</span>
-                </label>
-
-                {/* Preset Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 mb-2.5">
-                  {THUMBNAIL_PRESETS.map((preset) => {
-                    const isSelected = selectedThumbnail === preset.url && !customThumbnailUrl;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedThumbnail(preset.url);
-                          setCustomThumbnailUrl('');
-                        }}
-                        className={`relative rounded-xl overflow-hidden border transition-all cursor-pointer aspect-video flex flex-col group ${
-                          isSelected
-                            ? 'border-blue-600 ring-2 ring-blue-500/40 shadow-xs'
-                            : 'border-zinc-200 hover:border-zinc-300 opacity-80 hover:opacity-100'
-                        }`}
-                      >
-                        <img
-                          src={preset.url}
-                          alt={preset.label}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent flex items-end p-1.5">
-                          <span className="text-[10px] font-semibold text-white truncate w-full text-left">
-                            {preset.label}
-                          </span>
-                        </div>
-                        {isSelected && (
-                          <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center">
-                            <Check className="w-2.5 h-2.5" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Custom Image URL fallback */}
-                <div className="flex items-center gap-2">
-                  <input
-                    type="url"
-                    value={customThumbnailUrl}
-                    onChange={(e) => setCustomThumbnailUrl(e.target.value)}
-                    placeholder="Or enter custom image URL (e.g. Unsplash, CDN...)"
-                    className="flex-1 px-3.5 py-2 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                  {customThumbnailUrl && (
-                    <div className="w-12 h-8 rounded-lg overflow-hidden border border-zinc-200 shrink-0 bg-zinc-100">
-                      <img
-                        src={customThumbnailUrl}
-                        alt="Preview"
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = selectedThumbnail;
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-                  Course Description & Highlights
-                </label>
-                <textarea
-                  rows={3}
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder="Overview of curriculum syllabus, learning objectives, and practical assignments..."
-                  className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 leading-relaxed"
-                />
-              </div>
-
-              {/* Modal Footer with dual submit options */}
-              <div className="pt-4 border-t border-zinc-100 flex items-center justify-between gap-3 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateCourseOpen(false)}
-                  className="px-4 py-2 bg-white hover:bg-zinc-50 text-zinc-700 text-xs font-semibold rounded-lg border border-zinc-200 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={isSubmitting || !newTitle.trim() || !newCode.trim()}
-                    onClick={(e) => handleCreateCourse(e, false)}
-                    className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-semibold rounded-lg transition-colors cursor-pointer active:scale-[0.98] disabled:opacity-50"
-                  >
-                    Save Course
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting || !newTitle.trim() || !newCode.trim()}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer active:scale-[0.98] disabled:opacity-50"
-                  >
-                    <span>{isSubmitting ? 'Creating...' : 'Create & Build Curriculum'}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
+              </li>
+            ))}
+          </ul>
         </div>
+      ) : (
+        <EmptyState
+          icon={<Users />}
+          title="No people found"
+          description="Try a different search or filter."
+        />
       )}
     </div>
   );
 };
+
+const VerifiedBadge: React.FC<{ ok: boolean }> = ({ ok }) =>
+  ok ? (
+    <Badge size="sm" variant="green" dot>
+      verified
+    </Badge>
+  ) : (
+    <Badge size="sm" variant="amber" dot>
+      pending
+    </Badge>
+  );

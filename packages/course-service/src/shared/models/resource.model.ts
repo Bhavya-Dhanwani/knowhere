@@ -13,7 +13,7 @@ export interface IResourceDocument extends Document {
   mimeType: string;
   fileSizeBytes: number;
   resourceType: EducationalResourceType;
-  courseId: Types.ObjectId;
+  courseId?: Types.ObjectId | null;
   submoduleId?: Types.ObjectId | null;
   ownerId: string;
   s3Key: string;
@@ -22,6 +22,8 @@ export interface IResourceDocument extends Document {
   status: ResourceUploadStatus;
   drmStatus?: VideoDrmStatus;
   drmManifestUrl?: string | null;
+  hlsKey?: string | null;
+  hlsIv?: string | null;
   failureReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -52,7 +54,7 @@ const resourceSchema = new Schema<IResourceDocument>(
     courseId: {
       type: Schema.Types.ObjectId,
       ref: 'Course',
-      required: [true, 'Course ID is required'],
+      default: null,
       index: true
     },
     submoduleId: {
@@ -94,6 +96,9 @@ const resourceSchema = new Schema<IResourceDocument>(
       type: String,
       default: null
     },
+    // AES-128 key/IV of the encrypted HLS rendition; served only by the key endpoint
+    hlsKey: { type: String, default: null, select: false },
+    hlsIv: { type: String, default: null },
     failureReason: {
       type: String,
       default: null

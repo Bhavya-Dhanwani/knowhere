@@ -5,7 +5,7 @@ import logger from './logger.config.js';
 async function connectDB(): Promise<void> {
   try {
     mongoose.set('strictQuery', false);
-    await mongoose.connect(env.MONGO_URI);
+    await mongoose.connect(env.MONGO_URI, { dbName: env.MONGO_DB_NAME });
     logger.info('Connected to MongoDB database (chatService)');
   } catch (error) {
     logger.error({ err: error }, 'Failed to connect to MongoDB');

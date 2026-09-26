@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import env from '../config/env.config.js';
 import Unauthorized from '../errors/Unauthorized.error.js';
+import { verifyAccessToken } from '@lms/shared';
 
 // Function to check if the user is authenticated or not
 function authMiddleware(
@@ -20,7 +21,7 @@ function authMiddleware(
 
   try {
     // verifying the access token
-    const decoded = jwt.verify(accessToken, env.ACCESS_TOKEN_SECRET);
+    const decoded = verifyAccessToken(accessToken);
 
     // if the access token is valid, attach the decoded user to the request object
     req.user = decoded as Record<string, unknown>;

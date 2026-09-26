@@ -1,164 +1,151 @@
 import request from 'supertest';
 import { jest } from '@jest/globals';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import createApp from '../app.js';
-import ChatRoomDao from '../shared/dao/room.dao.js';
-import ChatMessageDao from '../shared/dao/message.dao.js';
 import env from '../shared/config/env.config.js';
+import ChatRoom, { IChatRoom } from '../shared/models/room.model.js';
+import * as svc from '../community/community.service.js';
+import { signAccessToken } from '@lms/shared';
 
-describe('Chat Service Unit & Integration Tests', () => {
+const COURSE = '507f1f77bcf86cd799439050';
+const ROOM = '507f1f77bcf86cd799439060';
+
+const token = (userId: string, role: string) =>
+  signAccessToken({ userId, role, email: `${userId}@example.com`, name: userId });
+
+const member = (userId: string, role: 'admin' | 'trainer' | 'trainee') =>
+  jest
+    .spyOn(svc.memberships, 'memberOf')
+    .mockImplementation(async (_c, id) =>
+      id === userId ? ({ userId, role, assignedAt: new Date().toISOString() } as never) : null
+    );
+
+const room = (over: Partial<IChatRoom> = {}) =>
+  ({
+    _id: new mongoose.Types.ObjectId(ROOM),
+    courseId: COURSE,
+    name: 'general',
+    kind: 'text',
+    visibility: 'public',
+    members: [],
+    isArchived: false,
+    ...over
+  }) as unknown as IChatRoom;
+
+describe('course community rules', () => {
   const app = createApp();
 
-  const userToken = jwt.sign(
-    { userId: 'user-123', role: 'trainee', email: 'trainee@example.com', name: 'Alex' },
-    env.ACCESS_TOKEN_SECRET
-  );
+  afterEach(() => jest.restoreAllMocks());
 
-  const trainerToken = jwt.sign(
-    { userId: 'trainer-456', role: 'trainer', email: 'trainer@example.com', name: 'Sarah' },
-    env.ACCESS_TOKEN_SECRET
-  );
-
-  afterEach(() => {
-    jest.restoreAllMocks();
+  it('GET /health is public', async () => {
+    const res = await request(app).get('/health');
+    expect(res.status).toBe(200);
   });
 
-  describe('GET /health', () => {
-    it('returns status ok', async () => {
-      const res = await request(app).get('/health');
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe('ok');
-    });
+  it('rejects unauthenticated community requests', async () => {
+    const res = await request(app).get(`/api/chat/communities/${COURSE}`);
+    expect(res.status).toBe(401);
   });
 
-  describe('POST /api/chat/rooms', () => {
-    it('rejects unauthenticated requests with 401', async () => {
-      const res = await request(app).post('/api/chat/rooms').send({ name: 'general' });
-      expect(res.status).toBe(401);
-    });
-
-    it('creates a new chat room successfully', async () => {
-      const mockRoom = {
-        _id: 'room-1',
-        name: 'General Chat',
-        slug: 'general-chat-ab12',
-        description: 'Open discussion channel',
-        type: 'public',
-        creatorId: 'user-123',
-        members: [{ userId: 'user-123', role: 'owner' }],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-
-      jest.spyOn(ChatRoomDao.prototype, 'createRoom').mockResolvedValue(mockRoom as any);
-
-      const res = await request(app)
-        .post('/api/chat/rooms')
-        .set('Authorization', `Bearer ${userToken}`)
-        .send({
-          name: 'General Chat',
-          description: 'Open discussion channel',
-          type: 'public'
-        });
-
-      expect(res.status).toBe(201);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.name).toBe('General Chat');
-    });
+  it('blocks users who are not enrolled in the course', async () => {
+    jest.spyOn(svc.memberships, 'memberOf').mockResolvedValue(null);
+    const res = await request(app)
+      .get(`/api/chat/communities/${COURSE}`)
+      .set('Authorization', `Bearer ${token('stranger', 'trainee')}`);
+    expect(res.status).toBe(403);
   });
 
-  describe('GET /api/chat/rooms', () => {
-    it('lists accessible chat rooms', async () => {
-      const mockRooms = [
-        { _id: 'room-1', name: 'General', type: 'public', members: [] },
-        { _id: 'room-2', name: 'Study Group', type: 'private_group', members: [] }
-      ];
-
-      jest.spyOn(ChatRoomDao.prototype, 'findRooms').mockResolvedValue(mockRooms as any);
-
-      const res = await request(app)
-        .get('/api/chat/rooms')
-        .set('Authorization', `Bearer ${userToken}`);
-
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.length).toBe(2);
-    });
+  it('derives moderator rights from the course role', async () => {
+    member('alex', 'trainee');
+    expect((await svc.communityAccess({ userId: 'alex', role: 'trainee' }, COURSE)).moderator).toBe(
+      false
+    );
+    member('sarah', 'trainer');
+    expect(
+      (await svc.communityAccess({ userId: 'sarah', role: 'trainer' }, COURSE)).moderator
+    ).toBe(true);
+    // platform admins moderate every community without a membership
+    expect((await svc.communityAccess({ userId: 'root', role: 'admin' }, COURSE)).moderator).toBe(
+      true
+    );
   });
 
-  describe('POST /api/chat/rooms/:roomId/messages', () => {
-    it('sends a new message in a room', async () => {
-      const mockRoom = { _id: 'room-1', isArchived: false };
-      const mockMessage = {
-        _id: 'msg-1',
-        roomId: 'room-1',
-        sender: { userId: 'user-123', name: 'Alex', role: 'trainee' },
-        content: 'Hello everyone!',
-        attachments: [],
-        reactions: [],
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-
-      jest.spyOn(ChatRoomDao.prototype, 'findRoomById').mockResolvedValue(mockRoom as any);
-      jest.spyOn(ChatRoomDao.prototype, 'updateLastMessage').mockResolvedValue(undefined as any);
-      jest.spyOn(ChatMessageDao.prototype, 'createMessage').mockResolvedValue(mockMessage as any);
-
-      const res = await request(app)
-        .post('/api/chat/rooms/room-1/messages')
-        .set('Authorization', `Bearer ${userToken}`)
-        .send({ content: 'Hello everyone!' });
-
-      expect(res.status).toBe(201);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.content).toBe('Hello everyone!');
-    });
+  it('hides private channels from non-members', async () => {
+    const priv = room({ visibility: 'private', members: [{ userId: 'sarah' }] as never });
+    const student = { courseId: COURSE, role: 'trainee' as const, moderator: false };
+    expect(svc.canSeeChannel(priv, { userId: 'alex' }, student)).toBe(false);
+    expect(svc.canSeeChannel(priv, { userId: 'sarah' }, student)).toBe(true);
+    expect(svc.canSeeChannel(priv, { userId: 'mod' }, { ...student, moderator: true })).toBe(true);
+    expect(svc.canSeeChannel(room(), { userId: 'alex' }, student)).toBe(true);
   });
 
-  describe('GET /api/chat/rooms/:roomId/messages', () => {
-    it('retrieves messages for a room', async () => {
-      const mockRoom = { _id: 'room-1', isArchived: false };
-      const mockMessages = [
-        { _id: 'msg-1', roomId: 'room-1', content: 'Message 1' },
-        { _id: 'msg-2', roomId: 'room-1', content: 'Message 2' }
-      ];
+  it('returns 403 for a private channel the user is not in', async () => {
+    member('alex', 'trainee');
+    jest
+      .spyOn(ChatRoom, 'findById')
+      .mockResolvedValue(room({ visibility: 'private', members: [] }) as never);
+    const res = await request(app)
+      .get(`/api/chat/channels/${ROOM}/messages`)
+      .set('Authorization', `Bearer ${token('alex', 'trainee')}`);
+    expect(res.status).toBe(403);
+  });
 
-      jest.spyOn(ChatRoomDao.prototype, 'findRoomById').mockResolvedValue(mockRoom as any);
-      jest
-        .spyOn(ChatMessageDao.prototype, 'getRoomMessages')
-        .mockResolvedValue(mockMessages as any);
+  it('only lets moderators post announcements', async () => {
+    member('alex', 'trainee');
+    jest.spyOn(ChatRoom, 'findById').mockResolvedValue(room({ kind: 'announcement' }) as never);
+    await expect(
+      svc.postMessage({ userId: 'alex', role: 'trainee' }, { roomId: ROOM, content: 'hi all' })
+    ).rejects.toThrow(/Only instructors/);
+  });
 
-      const res = await request(app)
-        .get('/api/chat/rooms/room-1/messages')
-        .set('Authorization', `Bearer ${userToken}`);
+  it('refuses text in voice channels and empty messages', async () => {
+    member('alex', 'trainee');
+    jest.spyOn(ChatRoom, 'findById').mockResolvedValue(room({ kind: 'voice' }) as never);
+    await expect(
+      svc.postMessage({ userId: 'alex', role: 'trainee' }, { roomId: ROOM, content: 'hello' })
+    ).rejects.toThrow(/Voice channels/);
+    await expect(
+      svc.postMessage({ userId: 'alex', role: 'trainee' }, { roomId: ROOM, content: '   ' })
+    ).rejects.toThrow(/empty/);
+  });
 
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.length).toBe(2);
+  it('only moderators may create channels', async () => {
+    member('alex', 'trainee');
+    const res = await request(app)
+      .post(`/api/chat/communities/${COURSE}/channels`)
+      .set('Authorization', `Bearer ${token('alex', 'trainee')}`)
+      .send({ name: 'secret', kind: 'text', visibility: 'private' });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('voice tokens', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('issues a LiveKit grant scoped to that one voice channel', async () => {
+    member('alex', 'trainee');
+    jest.spyOn(ChatRoom, 'findById').mockResolvedValue(room({ kind: 'voice' }) as never);
+    Object.assign(env, { LIVEKIT_API_KEY: 'key', LIVEKIT_API_SECRET: 'secret' });
+    const { token } = await svc.voiceToken({ userId: 'alex', name: 'Alex' }, ROOM);
+    const claims = jwt.verify(token, 'secret') as {
+      iss: string;
+      sub: string;
+      video: { room: string; roomJoin: boolean };
+    };
+    expect(claims).toMatchObject({
+      iss: 'key',
+      sub: 'alex',
+      video: { room: `voice-${ROOM}`, roomJoin: true }
     });
   });
 
-  describe('POST /api/chat/messages/:messageId/react', () => {
-    it('adds or toggles an emoji reaction', async () => {
-      const mockUpdatedMessage = {
-        _id: 'msg-1',
-        roomId: 'room-1',
-        content: 'Awesome update!',
-        reactions: [{ emoji: '🚀', users: ['user-123'], count: 1 }]
-      };
-
-      jest
-        .spyOn(ChatMessageDao.prototype, 'toggleReaction')
-        .mockResolvedValue(mockUpdatedMessage as any);
-
-      const res = await request(app)
-        .post('/api/chat/messages/msg-1/react')
-        .set('Authorization', `Bearer ${userToken}`)
-        .send({ emoji: '🚀' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.reactions[0].emoji).toBe('🚀');
-    });
+  it('refuses text channels and non-members', async () => {
+    member('alex', 'trainee');
+    jest.spyOn(ChatRoom, 'findById').mockResolvedValue(room({ kind: 'text' }) as never);
+    await expect(svc.voiceToken({ userId: 'alex' }, ROOM)).rejects.toThrow(/Not a voice channel/);
+    jest.spyOn(svc.memberships, 'memberOf').mockResolvedValue(null);
+    jest.spyOn(ChatRoom, 'findById').mockResolvedValue(room({ kind: 'voice' }) as never);
+    await expect(svc.voiceToken({ userId: 'stranger' }, ROOM)).rejects.toThrow(/Join this course/);
   });
 });

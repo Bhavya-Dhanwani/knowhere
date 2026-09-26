@@ -2,10 +2,11 @@
 import jwt from 'jsonwebtoken';
 import env from '../config/env.config.js';
 import { EXPIRY } from '../constants/tokens.constants.js';
+import { signAccessToken } from '@lms/shared';
 
 // function to generate access token
 function generateAccessToken(payload: Record<string, unknown> | object) {
-  return jwt.sign(payload, env.ACCESS_TOKEN_SECRET, { expiresIn: EXPIRY.ACCESS_TOKEN });
+  return signAccessToken(payload, EXPIRY.ACCESS_TOKEN);
 }
 
 // function to generate refresh token

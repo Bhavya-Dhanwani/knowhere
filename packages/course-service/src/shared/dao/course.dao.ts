@@ -64,6 +64,35 @@ class CourseDao {
   async listCourses(filter: Record<string, unknown> = {}): Promise<ICourseDocument[]> {
     return await this.CourseModel.find(filter).sort({ createdAt: -1 });
   }
+
+  async deleteCourseById(id: string) {
+    return await this.CourseModel.findByIdAndDelete(id);
+  }
+
+  async findCoursesUsingModule(moduleId: string): Promise<ICourseDocument[]> {
+    return await this.CourseModel.find({ 'modules.moduleId': moduleId });
+  }
+
+  // drop one module from a course and renumber the rest
+  async removeModuleFromCourse(courseId: string, moduleId: string) {
+    const course = await this.CourseModel.findById(courseId);
+    if (!course) return null;
+    course.modules = course.modules
+      .filter((m) => m.moduleId.toString() !== moduleId)
+      .sort((a, b) => a.order - b.order)
+      .map((m, i) => Object.assign(m, { order: i + 1 }));
+    return await course.save();
+  }
+
+  // set module order to match `moduleIds` exactly
+  async reorderModules(courseId: string, moduleIds: string[]) {
+    const course = await this.CourseModel.findById(courseId);
+    if (!course) return null;
+    const pos = new Map(moduleIds.map((id, i) => [id, i + 1]));
+    course.modules.forEach((m) => (m.order = pos.get(m.moduleId.toString()) ?? m.order));
+    course.modules.sort((a, b) => a.order - b.order);
+    return await course.save();
+  }
 }
 
 export default CourseDao;

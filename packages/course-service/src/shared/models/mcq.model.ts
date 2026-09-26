@@ -18,6 +18,7 @@ export interface IMcqDocument extends Document {
   explanationResourceIds: Types.ObjectId[];
   tags: string[];
   difficulty: McqDifficulty;
+  points: number;
   creatorId: string;
   courseId?: Types.ObjectId | null;
   createdAt: Date;
@@ -91,6 +92,8 @@ const mcqSchema = new Schema<IMcqDocument>(
       enum: ['easy', 'medium', 'hard'],
       default: 'easy'
     },
+    // marks for answering correctly
+    points: { type: Number, default: 10, min: 0, max: 1000 },
     creatorId: {
       type: String,
       required: [true, 'Creator user ID is required'],

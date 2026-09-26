@@ -25,6 +25,9 @@ export interface ICodingQuestionDocument extends Document {
   outputFormat: string;
   examples: IExampleCase[];
   difficulty: CodingDifficulty;
+  points: number;
+  // trainer's accepted solution; generated test cases take their expected output from it
+  referenceSolution?: { language: string; code: string } | null;
   supportedLanguages: string[];
   testCases: ICodingTestCase[];
   testCaseGenerationStatus: TestCaseGenerationStatus;
@@ -92,10 +95,16 @@ const codingQuestionSchema = new Schema<ICodingQuestionDocument>(
       enum: ['easy', 'medium', 'hard'],
       default: 'easy'
     },
+    // marks for passing every hidden test (partial passes earn a share)
+    points: { type: Number, default: 10, min: 0, max: 1000 },
+    referenceSolution: {
+      type: { language: String, code: String },
+      default: null
+    },
     supportedLanguages: {
       type: [String],
       required: [true, 'Supported languages are required'],
-      default: ['javascript', 'python', 'cpp', 'c']
+      default: ['javascript', 'python', 'cpp', 'java']
     },
     testCases: {
       type: [testCaseSchema],

@@ -33,3 +33,8 @@ export const updateCourseValidators = [
 
   validateErrors
 ];
+
+export const courseIdValidators = [
+  param('id').isMongoId().withMessage('Invalid course ID format'),
+  validateErrors
+];

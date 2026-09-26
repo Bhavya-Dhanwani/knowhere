@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ModalShell } from '../../../shared/ui/ModalShell';
 import { X, Save, GitBranch, Globe, FileCode, AlertCircle, FileText } from 'lucide-react';
 import { ReviewEvent, ReviewSubmission } from '../types';
 import { reviewApi } from '../api/reviewApi';
@@ -96,10 +97,10 @@ export const EditSubmissionModal: React.FC<EditSubmissionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white border border-zinc-200 rounded-2xl w-full max-w-lg shadow-2xl my-8 overflow-hidden text-zinc-900 font-sans">
+    <ModalShell onClose={onClose} size="lg">
+      <div className="flex min-h-0 flex-col overflow-hidden text-zinc-900 font-sans">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 bg-white">
+        <div className="flex items-center justify-between px-4 py-4 sm:px-6 border-b border-zinc-200 bg-white">
           <div>
             <h2 className="text-lg font-bold text-zinc-900 flex items-center gap-2">
               <GitBranch className="w-5 h-5 text-blue-600" /> Edit Submission
@@ -118,7 +119,7 @@ export const EditSubmissionModal: React.FC<EditSubmissionModalProps> = ({
 
         <form
           onSubmit={handleSubmit}
-          className="p-6 space-y-4 max-h-[80vh] overflow-y-auto bg-white"
+          className="p-4 sm:p-6 space-y-4 max-h-[80vh] overflow-y-auto bg-white"
         >
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex items-center gap-2">
@@ -127,7 +128,7 @@ export const EditSubmissionModal: React.FC<EditSubmissionModalProps> = ({
           )}
 
           {/* Team Info */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-zinc-700 uppercase mb-1">
                 Team Name
@@ -155,7 +156,7 @@ export const EditSubmissionModal: React.FC<EditSubmissionModalProps> = ({
           </div>
 
           {/* Repository & Branch */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-zinc-700 uppercase mb-1 flex items-center gap-1.5">
                 <GitBranch className="w-3.5 h-3.5 text-blue-600" /> Repository URL
@@ -257,6 +258,6 @@ export const EditSubmissionModal: React.FC<EditSubmissionModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </ModalShell>
   );
 };

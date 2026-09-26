@@ -6,9 +6,11 @@ import {
   loginValidators,
   forgotPasswordValidators,
   resetPasswordValidators,
-  googleLoginValidators
+  googleLoginValidators,
+  updateUserRoleValidators
 } from './auth.validator.js';
 import authMiddleware from '../../../shared/middlewares/auth.middleware.js';
+import adminMiddleware from '../../../shared/middlewares/admin.middleware.js';
 import refreshMiddleware from '../../../shared/middlewares/refresh.middleware.js';
 
 // making the router
@@ -81,6 +83,26 @@ router.post('/forgot-password', forgotPasswordValidators, authController.forgotP
     @access Public
 */
 router.post('/reset-password', resetPasswordValidators, authController.resetPassword);
+
+/*
+    @route GET /api/auth/users
+    @desc List / search platform users
+    @access Admin
+*/
+router.get('/users', authMiddleware, adminMiddleware, authController.listUsers);
+
+/*
+    @route PATCH /api/auth/users/:userId/role
+    @desc Change a user's platform role
+    @access Admin
+*/
+router.patch(
+  '/users/:userId/role',
+  authMiddleware,
+  adminMiddleware,
+  updateUserRoleValidators,
+  authController.updateUserRole
+);
 
 // exporting the router
 export default router;

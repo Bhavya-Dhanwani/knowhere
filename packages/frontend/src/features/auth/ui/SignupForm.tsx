@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router';
-import { BookOpen, Users, Shield, ArrowRight } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { ArrowRight, GraduationCap, Mail, Presentation, User as UserIcon } from 'lucide-react';
+import { motion } from 'motion/react';
+import { Button } from '../../../shared/ui/Button';
+import { Input } from '../../../shared/ui/Input';
+import { cn } from '../../../shared/lib/cn';
 import { SignupCredentials } from '../../../shared/types';
+import { FormError, GoogleButton, OrDivider, PasswordInput } from './AuthControls';
 
 export interface SignupFormProps {
   onSubmit: (credentials: SignupCredentials) => void;
@@ -9,130 +13,162 @@ export interface SignupFormProps {
   errorMessage?: string | null;
 }
 
+const ROLES = [
+  { id: 'student' as const, label: 'Student', hint: 'Learn & practice', icon: GraduationCap },
+  { id: 'trainer' as const, label: 'Trainer', hint: 'Teach a cohort', icon: Presentation }
+];
+
+function passwordScore(pw: string) {
+  let s = 0;
+  if (pw.length >= 6) s++;
+  if (pw.length >= 10) s++;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) s++;
+  if (/\d/.test(pw) || /[^A-Za-z0-9]/.test(pw)) s++;
+  return s;
+}
+
+const strengthLabel = ['Too short', 'Weak', 'Okay', 'Good', 'Strong'];
+const strengthColor = [
+  'bg-zinc-200',
+  'bg-red-500',
+  'bg-amber-500',
+  'bg-lime-500',
+  'bg-emerald-500'
+];
+
 export const SignupForm: React.FC<SignupFormProps> = ({ onSubmit, isLoading, errorMessage }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'student' | 'trainer' | 'admin'>('student');
+  const [role, setRole] = useState<'student' | 'trainer'>('student');
+  const [touched, setTouched] = useState(false);
+
+  const score = useMemo(() => passwordScore(password), [password]);
+  const nameError = touched && name.trim().length < 3 ? 'Use at least 3 characters.' : null;
+  const pwError = touched && password.length < 6 ? 'Use at least 6 characters.' : null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !email || !password) return;
+    setTouched(true);
+    if (name.trim().length < 3 || !email || password.length < 6) return;
     onSubmit({ name, email, password, role });
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 text-left font-sans">
-      {errorMessage ? (
-        <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
-          {errorMessage}
-        </div>
-      ) : null}
+    <div>
+      <GoogleButton label="Sign up with Google" />
+      <OrDivider />
 
-      <div>
-        <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-          Full Name
-        </label>
-        <input
-          type="text"
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <FormError message={errorMessage} />
+
+        <fieldset>
+          <legend className="mb-1.5 text-[13px] font-medium text-zinc-700">
+            I&apos;m joining as
+          </legend>
+          <div className="grid grid-cols-1 gap-2 xs:grid-cols-2">
+            {ROLES.map((r) => {
+              const active = role === r.id;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => setRole(r.id)}
+                  aria-pressed={active}
+                  className={cn(
+                    'relative flex min-w-0 items-center gap-3 rounded-xl px-3 py-2.5 text-left ring-1 ring-inset transition',
+                    active ? 'ring-2 ring-brand-500' : 'ring-zinc-200 hover:ring-zinc-300'
+                  )}
+                >
+                  {active ? (
+                    <motion.span
+                      layoutId="role-bg"
+                      className="absolute inset-0 rounded-xl bg-brand-50/70"
+                      transition={{ type: 'spring', stiffness: 500, damping: 36 }}
+                    />
+                  ) : null}
+                  <span
+                    className={cn(
+                      'relative grid h-8 w-8 shrink-0 place-items-center rounded-lg',
+                      active ? 'bg-brand-600 text-white' : 'bg-zinc-100 text-zinc-500'
+                    )}
+                  >
+                    <r.icon className="h-4 w-4" />
+                  </span>
+                  <span className="relative min-w-0">
+                    <span className="block truncate text-sm font-medium text-zinc-900">
+                      {r.label}
+                    </span>
+                    <span className="block truncate text-xs text-zinc-500">{r.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
+        <Input
+          label="Full name"
+          autoComplete="name"
           required
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Alex Rivera"
-          className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+          placeholder="Ada Lovelace"
+          icon={<UserIcon className="h-4 w-4" />}
+          error={nameError}
+          className="h-11"
         />
-      </div>
 
-      <div>
-        <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-          Email Address
-        </label>
-        <input
+        <Input
+          label="Email"
           type="email"
+          autoComplete="email"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="name@example.com"
-          className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+          placeholder="you@company.com"
+          icon={<Mail className="h-4 w-4" />}
+          className="h-11"
         />
-      </div>
 
-      <div>
-        <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-          Password
-        </label>
-        <input
-          type="password"
-          required
-          minLength={6}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="••••••••"
-          className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-        />
-      </div>
-
-      <div>
-        <label className="block text-xs font-bold text-zinc-700 uppercase tracking-wider mb-1.5">
-          I am joining as
-        </label>
-        <div className="grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            onClick={() => setRole('student')}
-            className={`py-2 px-2 text-xs rounded-xl border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
-              role === 'student'
-                ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs font-bold'
-                : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100 font-medium'
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5 text-blue-600" />
-            <span className="text-[11px]">Student</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setRole('trainer')}
-            className={`py-2 px-2 text-xs rounded-xl border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
-              role === 'trainer'
-                ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs font-bold'
-                : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100 font-medium'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5 text-indigo-600" />
-            <span className="text-[11px]">Trainer</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setRole('admin')}
-            className={`py-2 px-2 text-xs rounded-xl border flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
-              role === 'admin'
-                ? 'bg-blue-50 border-blue-500 text-blue-800 shadow-xs font-bold'
-                : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-zinc-100 font-medium'
-            }`}
-          >
-            <Shield className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="text-[11px]">Admin</span>
-          </button>
+        <div>
+          <PasswordInput
+            label="Password"
+            autoComplete="new-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="At least 6 characters"
+            error={pwError}
+            className="h-11"
+          />
+          {password ? (
+            <div className="mt-2 flex items-center gap-3">
+              <div className="grid flex-1 grid-cols-4 gap-1">
+                {[1, 2, 3, 4].map((i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      'h-1 rounded-full transition-colors duration-300',
+                      i <= score ? strengthColor[score] : 'bg-zinc-200'
+                    )}
+                  />
+                ))}
+              </div>
+              <span className="w-16 text-right text-xs text-zinc-500">{strengthLabel[score]}</span>
+            </div>
+          ) : null}
         </div>
-      </div>
 
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] mt-2"
-      >
-        <span>{isLoading ? 'Creating Account...' : 'Create Account'}</span>
-        <ArrowRight className="w-3.5 h-3.5" />
-      </button>
+        <Button type="submit" size="lg" className="w-full" isLoading={isLoading}>
+          {isLoading ? 'Creating account' : 'Create account'}
+          {!isLoading ? <ArrowRight className="h-4 w-4" /> : null}
+        </Button>
 
-      <p className="text-center text-xs text-zinc-500 mt-5">
-        Already have an account?{' '}
-        <Link to="/login" className="text-blue-600 hover:text-blue-700 font-bold hover:underline">
-          Sign in
-        </Link>
-      </p>
-    </form>
+        <p className="text-center text-xs leading-relaxed text-zinc-400">
+          Admin access is granted by an existing admin from the admin console.
+        </p>
+      </form>
+    </div>
   );
 };
