@@ -15,7 +15,20 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional().default(envConstants.OPENAI_API_KEY),
   ANTHROPIC_API_KEY: z.string().optional().default(envConstants.ANTHROPIC_API_KEY),
   MISTRAL_API_KEYS: z.string().optional().default(envConstants.MISTRAL_API_KEYS),
-  MISTRAL_MODEL: z.string().optional().default(envConstants.MISTRAL_MODEL)
+  MISTRAL_MODEL: z.string().optional().default(envConstants.MISTRAL_MODEL),
+  // how many submissions a batch evaluates at once (each clones a repo + calls the LLM)
+  REVIEW_CONCURRENCY: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .default(envConstants.REVIEW_CONCURRENCY),
+  // Chromium binary for live-site audits; empty = use the locally installed Chrome
+  CHROMIUM_PATH: z.string().optional().default(envConstants.CHROMIUM_PATH),
+  // read-only GitHub token: 5000 req/h instead of 60, so big batches don't hit the rate limit
+  GITHUB_TOKEN: z.string().optional().default(envConstants.GITHUB_TOKEN),
+  // judge-runner base URL: builds + tests each submission in its offline sandbox; empty = skip
+  JUDGE_URL: z.string().optional().default(envConstants.JUDGE_URL)
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

@@ -524,7 +524,7 @@ const ProfileCard: React.FC<{ member: Member | null; onClose: () => void }> = ({
           exit={{ opacity: 0 }}
           className="relative w-full max-w-xs overflow-hidden rounded-3xl bg-white shadow-2xl"
         >
-          <div className="h-16 bg-gradient-to-r from-brand-500 to-fuchsia-500" />
+          <div className="h-16 bg-gradient-to-r from-zinc-900 to-zinc-500" />
           <div className="-mt-8 p-5 pt-0">
             <Avatar name={member.name} size="xl" className="ring-4 ring-white" />
             <p className="mt-2 text-lg font-semibold text-zinc-900">{member.name}</p>

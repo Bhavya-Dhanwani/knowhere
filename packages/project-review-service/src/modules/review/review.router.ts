@@ -1,5 +1,5 @@
 import express from 'express';
-import ReviewController from './review.controller.js';
+import ReviewController, { isStaff } from './review.controller.js';
 import {
   createEventValidators,
   updateEventValidators,
@@ -12,6 +12,9 @@ import {
 import validate from '../../shared/middlewares/validate.middleware.js';
 import authMiddleware from '../../shared/middlewares/auth.middleware.js';
 import requireRole from '../../shared/middlewares/role.middleware.js';
+import { AuthenticatedRequest } from '../../shared/middlewares/auth.middleware.js';
+import { ReviewSubmission } from '../../models/Submission.model.js';
+import { Forbidden } from '../../shared/errors/index.js';
 
 const router = express.Router();
 
@@ -19,6 +22,19 @@ const router = express.Router();
 router.use(authMiddleware);
 const staff = requireRole('trainer');
 const controller = new ReviewController();
+
+// students may only read/edit their own submission; staff see everything
+const ownerOrStaff = async (
+  req: AuthenticatedRequest,
+  _res: express.Response,
+  next: express.NextFunction
+) => {
+  if (isStaff(req)) return next();
+  const sub = await ReviewSubmission.findById(req.params.id).select('author.userId').lean();
+  if (sub && sub.author.userId !== req.user?.userId)
+    throw new Forbidden('You can only access your own submission');
+  next(); // missing submission: the controller answers 404
+};
 
 /*
   ==================== EVENTS ====================
@@ -59,10 +75,25 @@ router.get(
 );
 
 // GET /api/review/submissions/:id - Get submission details
-router.get('/submissions/:id', submissionIdValidators, validate, controller.getSubmission);
+// GET /api/review/my-submissions - the signed-in student's own submissions and published results
+router.get('/my-submissions', controller.listMySubmissions);
+
+router.get(
+  '/submissions/:id',
+  submissionIdValidators,
+  validate,
+  ownerOrStaff,
+  controller.getSubmission
+);
 
 // PUT /api/review/submissions/:id - Update submission details
-router.put('/submissions/:id', updateSubmissionValidators, validate, controller.updateSubmission);
+router.put(
+  '/submissions/:id',
+  updateSubmissionValidators,
+  validate,
+  ownerOrStaff,
+  controller.updateSubmission
+);
 
 // DELETE /api/review/submissions/:id - Delete a submission
 router.delete(
@@ -86,12 +117,21 @@ router.post(
   controller.evaluateSubmission
 );
 
+// POST /api/review/events/:id/evaluate-all - Evaluate all submissions in parallel (background), then rank once
+router.post(
+  '/events/:id/evaluate-all',
+  staff,
+  eventIdValidators,
+  validate,
+  controller.evaluateEvent
+);
+
 // GET /api/review/submissions/:id/status - Check evaluation status
 router.get(
   '/submissions/:id/status',
-
   submissionIdValidators,
   validate,
+  ownerOrStaff,
   controller.getEvaluationStatus
 );
 
@@ -115,9 +155,9 @@ router.get(
 // GET /api/review/submissions/:id/report - Full evaluation report (scores, evidence, audit)
 router.get(
   '/submissions/:id/report',
-
   submissionIdValidators,
   validate,
+  ownerOrStaff,
   controller.getEvaluationReport
 );
 

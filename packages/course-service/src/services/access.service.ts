@@ -65,15 +65,27 @@ export async function openCourse(user: AuthUser, courseId: string): Promise<Lear
   }
 
   const outline = await loadCourseOutline(course);
-  const progress = await progressDao.findProgress(courseId, user.userId);
   const joinedAt = member?.assignedAt ? new Date(member.assignedAt) : course.createdAt;
+  const schedule = await scheduleFor(courseId, outline, user.userId, joinedAt);
+
+  return { course, outline, schedule, manager, joinedAt };
+}
+
+// a learner's own module windows: they start when the learner joined, not when the course did
+export async function scheduleFor(
+  courseId: string,
+  outline: OutlineModule[],
+  userId: string,
+  joinedAt: Date
+): Promise<ScheduledModule[]> {
+  const progress = await progressDao.findProgress(courseId, userId);
   const completedAt = new Map(
     (progress?.completedItems || []).map((c) => [
       c.contentItemId.toString(),
       new Date(c.completedAt)
     ])
   );
-  const schedule = computeSchedule(
+  return computeSchedule(
     outline.map((m) => ({
       moduleId: m._id,
       releaseAt: m.releaseAt,
@@ -84,8 +96,6 @@ export async function openCourse(user: AuthUser, courseId: string): Promise<Lear
     joinedAt,
     completedAt
   );
-
-  return { course, outline, schedule, manager, joinedAt };
 }
 
 // Throws unless the user may open `refId` (an item's resource/question, or an MCQ attachment)

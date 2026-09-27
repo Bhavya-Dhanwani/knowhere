@@ -22,6 +22,8 @@ const envSchema = z.object({
   CLOUDFRONT_DOMAIN: z.string().default(envConstants.CLOUDFRONT_DOMAIN),
   // set for S3-compatible stores (MinIO, LocalStack); unset uses AWS
   S3_ENDPOINT: z.string().optional(),
+  // where browsers reach the store, when that differs from S3_ENDPOINT (e.g. through the web origin)
+  S3_PUBLIC_ENDPOINT: z.string().optional(),
   USER_SERVICE_URL: z.string().default('http://localhost:5001'),
   FFMPEG_PATH: z.string().default('ffmpeg'),
   // sandboxed runner for Python / C++ / Java submissions (packages/judge-runner)

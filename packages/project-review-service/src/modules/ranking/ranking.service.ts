@@ -1,11 +1,14 @@
 import { Types } from 'mongoose';
 import { PairwiseEngine } from './pairwise.engine.js';
 import { RankingBoundaryDetector } from './boundary-detector.js';
+import { HeadToHeadAgent, buildDossier } from './head-to-head.agent.js';
+import { findSimilar } from './similarity.js';
+import { runPool } from '../workflows/workflow.runner.js';
+import env from '../../shared/config/env.config.js';
 import { SubmissionEvaluationPairInput } from './types.js';
 import {
   ENGINEERING_DIMENSIONS,
   DIMENSION_DISPLAY_NAMES,
-  DEFAULT_DIMENSION_WEIGHTS,
   EngineeringDimension
 } from '../scoring/types.js';
 import { ReviewEvaluation } from '../../models/Evaluation.model.js';
@@ -40,7 +43,10 @@ export class RankingService {
     const subMap = new Map<string, any>((submissions || []).map((s: any) => [s._id.toString(), s]));
 
     const { Evidence } = await import('../../models/Evidence.model.js');
-    const evdQuery: any = Evidence.find({ submissionId: { $in: subIds } });
+    const evdFind: any = Evidence.find({ submissionId: { $in: subIds } });
+    // screenshots are ~0.5MB each and ranking never needs them
+    const evdQuery: any =
+      typeof evdFind?.select === 'function' ? evdFind.select('-frontendEval.screenshots') : evdFind;
     const evidences: any[] =
       typeof evdQuery?.lean === 'function' ? await evdQuery.lean() : await evdQuery;
     const evidenceMap = new Map<string, any>(
@@ -81,30 +87,11 @@ export class RankingService {
         (r: any) => r.status === 'FULFILLED'
       ).length;
 
-      // Compute canonical dimension-weighted score
-      let dimWeightedScore = 0;
-      let hasDimScores = false;
-      if (ev.dimensionScores && Object.keys(ev.dimensionScores).length > 0) {
-        for (const dim of ENGINEERING_DIMENSIONS) {
-          const ds = ev.dimensionScores[dim]?.finalScore ?? ev.dimensionScores[dim]?.score;
-          if (typeof ds === 'number') {
-            dimWeightedScore += ds * DEFAULT_DIMENSION_WEIGHTS[dim];
-            hasDimScores = true;
-          }
-        }
-      }
-      const canonicalScore = hasDimScores
-        ? parseFloat(dimWeightedScore.toFixed(1))
-        : ev.overallScore;
-
-      if (hasDimScores && Math.abs(ev.overallScore - canonicalScore) > 0.3) {
-        ReviewEvaluation.findByIdAndUpdate(ev._id, { overallScore: canonicalScore }).exec();
-      }
-
       return {
         submissionId: ev.submissionId as Types.ObjectId,
         teamName: sub?.teamName || 'Unknown Team',
-        overallScore: canonicalScore,
+        // stored score is authoritative: the organiser's weighted rubric, or a judge override
+        overallScore: ev.overallScore,
         criterionScores,
         criterionDetails,
         dimensionScores: ev.dimensionScores || {},
@@ -182,6 +169,28 @@ export class RankingService {
       };
     });
 
+    // 7b. Evidence-cited LLM verdict for every adjacent pair: "why is #2 not #1"
+    const evalMap = new Map<string, any>(
+      evaluations.map((e: any) => [e.submissionId.toString(), e])
+    );
+    const dossierFor = (entry: (typeof leaderboard)[number]) => {
+      const id = entry.submissionId.toString();
+      return { id, dossier: buildDossier(entry.teamName, evalMap.get(id), evidenceMap.get(id)) };
+    };
+    // pooled: firing every pair at once would trip the Mistral rate limit on big cohorts
+    await runPool(
+      leaderboard.slice(1).map((_, i) => i + 1),
+      env.REVIEW_CONCURRENCY,
+      async (i) => {
+        const verdict = await HeadToHeadAgent.judge(
+          eventDoc || {},
+          dossierFor(leaderboard[i - 1]),
+          dossierFor(leaderboard[i])
+        );
+        if (verdict) (leaderboard[i] as any).headToHead = verdict;
+      }
+    );
+
     // 8. Generate 9-Dimension Comparison Matrix across all evaluated projects
     const comparisonMatrix = ENGINEERING_DIMENSIONS.map((dim) => {
       const scores: Record<string, number> = {};
@@ -201,6 +210,19 @@ export class RankingService {
       };
     });
 
+    // 8b. Copying check across the cohort (same repo, or substantially the same code)
+    const similarityFlags = findSimilar(
+      inputs.map((i) => {
+        const id = i.submissionId.toString();
+        return {
+          id,
+          name: i.teamName,
+          repoUrl: subMap.get(id)?.repositoryUrl,
+          snippets: evidenceMap.get(id)?.discovery?.keyFileSnippets || {}
+        };
+      })
+    );
+
     // 9. Persist to EventRanking in MongoDB
     const rankingDoc = await EventRanking.findOneAndUpdate(
       { eventId },
@@ -212,6 +234,7 @@ export class RankingService {
         leaderboard,
         pairwiseMatrix: matches,
         closeRankingBoundaries,
+        similarityFlags,
         comparisonMatrix,
         generatedAt: new Date()
       },

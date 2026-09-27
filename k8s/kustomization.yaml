@@ -26,4 +26,5 @@ resources:
   - frontend-service.yml
   - redis-deployment.yml
   - redis-service.yml
+  - minio.yml
   - ingress.yml

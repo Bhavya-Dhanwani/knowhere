@@ -1,271 +1,573 @@
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { motion, useScroll, useTransform } from 'motion/react';
-import { ArrowRight, Github, Sparkles } from 'lucide-react';
+import { useSelector } from 'react-redux';
+import { motion } from 'motion/react';
 import {
-  Aurora,
-  BlurText,
-  CountUp,
-  GradientText,
-  Magnet,
-  Marquee,
-  Particles,
-  Reveal,
-  RotatingText,
-  ShinyText,
-  SplitText,
-  TiltCard
-} from '../../../shared/ui/fx';
+  ArrowRight,
+  ArrowUpRight,
+  CalendarClock,
+  Code2,
+  LockKeyhole,
+  Menu,
+  MessagesSquare,
+  Sparkles,
+  Users,
+  X
+} from 'lucide-react';
+import { RootState } from '../../../app/store';
+import { homePathFor, roleOf } from '../../../shared/lib/roles';
 import { Logo } from '../../../shared/ui/Logo';
-import { LandingNav } from './LandingNav';
-import { HeroMockup } from './HeroMockup';
-import { FeatureBento, RoleTabs, SectionHeading, Steps } from './LandingSections';
+import AnimatedContent from '../../../shared/ui/reactbits/AnimatedContent';
+import BlurText from '../../../shared/ui/reactbits/BlurText';
+import CircularText from '../../../shared/ui/reactbits/CircularText';
+import ClickSpark from '../../../shared/ui/reactbits/ClickSpark';
+import CountUp from '../../../shared/ui/reactbits/CountUp';
+import DecryptedText from '../../../shared/ui/reactbits/DecryptedText';
+import DotGrid from '../../../shared/ui/reactbits/DotGrid';
+import LogoLoop from '../../../shared/ui/reactbits/LogoLoop';
+import Magnet from '../../../shared/ui/reactbits/Magnet';
+import RotatingText from '../../../shared/ui/reactbits/RotatingText';
+import ScrollFloat from '../../../shared/ui/reactbits/ScrollFloat';
+import ScrollVelocity from '../../../shared/ui/reactbits/ScrollVelocity';
+import ShinyText from '../../../shared/ui/reactbits/ShinyText';
+import SplitText from '../../../shared/ui/reactbits/SplitText';
+import SpotlightCard from '../../../shared/ui/reactbits/SpotlightCard';
+import StarBorder from '../../../shared/ui/reactbits/StarBorder';
+import Threads from '../../../shared/ui/reactbits/Threads';
+import TrueFocus from '../../../shared/ui/reactbits/TrueFocus';
 
-const stack = [
-  'Kubernetes',
+// Everything below describes what the product actually does; no invented customers or metrics.
+const FEATURES = [
+  {
+    icon: CalendarClock,
+    title: 'Cohorts on a real schedule',
+    body: 'Modules unlock on dates, every learner gets a deadline window, and late joiners catch up on their own clock.',
+    tag: 'SCHEDULING',
+    span: 'md:col-span-2'
+  },
+  {
+    icon: Code2,
+    title: 'Code, judged honestly',
+    body: 'JavaScript, Python, C++ and Java graded on the server against 100 hidden tests, each run in its own sandbox.',
+    tag: 'JUDGE',
+    span: ''
+  },
+  {
+    icon: LockKeyhole,
+    title: 'Video that stays yours',
+    body: 'Uploads become AES-128 encrypted streams. Keys only reach enrolled learners, and every frame carries a watermark.',
+    tag: 'ENCRYPTED',
+    span: ''
+  },
+  {
+    icon: MessagesSquare,
+    title: 'A community per course',
+    body: 'Channels, threads, mentions, files and live voice rooms, open only to the people in the cohort.',
+    tag: 'REALTIME',
+    span: 'md:col-span-2'
+  },
+  {
+    icon: Sparkles,
+    title: 'AI project reviews',
+    body: 'Submissions are analysed, scored against a rubric and ranked, with the evidence behind every point.',
+    tag: 'AI',
+    span: 'md:col-span-2'
+  },
+  {
+    icon: Users,
+    title: 'One app, three roles',
+    body: 'Students learn, trainers author bottom-up from a shared library, admins run enrollment and people.',
+    tag: 'ROLES',
+    span: ''
+  }
+];
+
+const FACTS = [
+  { to: 4, suffix: '', label: 'languages judged in a sandbox' },
+  { to: 100, suffix: '', label: 'hidden tests per coding problem' },
+  { to: 128, suffix: '-bit', label: 'AES encryption on every video' },
+  { to: 280, suffix: 'px', label: 'the smallest screen it fits' }
+];
+
+const STEPS = [
+  {
+    n: '01',
+    title: 'Build the library',
+    body: 'Upload videos and files, write MCQs and coding problems once.'
+  },
+  {
+    n: '02',
+    title: 'Compose the course',
+    body: 'Bundle items into lessons, lessons into modules, then schedule them.'
+  },
+  {
+    n: '03',
+    title: 'Run the cohort',
+    body: 'Enroll people, watch progress, grade, and talk in the community.'
+  }
+];
+
+const STACK = [
+  'React',
+  'Node.js',
   'MongoDB',
   'Redis',
   'Socket.IO',
-  'Mistral AI',
-  'AWS S3',
-  'MediaConvert',
-  'CloudFront',
-  'Express',
-  'React',
-  'TanStack Query',
-  'Skaffold'
+  'LiveKit',
+  'Kubernetes',
+  'ffmpeg',
+  'Mistral',
+  'S3'
 ];
 
-const stats = [
-  { to: 9, suffix: '', label: 'independent microservices' },
-  { to: 4, suffix: '', label: 'content types per lesson' },
-  { to: 3, suffix: '', label: 'role-aware workspaces' },
-  { to: 100, suffix: '%', label: 'open API, documented' }
-];
+function useSignedInHome() {
+  const user = useSelector((s: RootState) => s.auth.user);
+  return user ? homePathFor(roleOf(user)) : null;
+}
 
-export function LandingPage() {
-  const { scrollYProgress } = useScroll();
-  const heroY = useTransform(scrollYProgress, [0, 0.25], [0, -60]);
-  const heroFade = useTransform(scrollYProgress, [0, 0.2], [1, 0.4]);
+const Nav: React.FC = () => {
+  const home = useSignedInHome();
+  const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const on = () => setScrolled(window.scrollY > 12);
+    on();
+    window.addEventListener('scroll', on, { passive: true });
+    return () => window.removeEventListener('scroll', on);
+  }, []);
+  const links = [
+    ['Product', '#product'],
+    ['How it works', '#how'],
+    ['API', '/docs']
+  ];
 
   return (
-    <div className="min-h-screen overflow-x-clip bg-night text-white">
-      <LandingNav />
-
-      {/* ------------------------------------------------------------ hero */}
-      <section className="relative isolate overflow-hidden px-4 pb-16 pt-28 sm:px-6 sm:pb-24 sm:pt-40">
-        <Aurora className="opacity-80" />
-        <Particles />
-        <div className="grid-bg mask-radial absolute inset-0 -z-10" />
-        <div className="noise pointer-events-none absolute inset-0 opacity-[0.035] mix-blend-overlay" />
-
-        <motion.div
-          style={{ y: heroY, opacity: heroFade }}
-          className="relative mx-auto max-w-5xl text-center"
-        >
-          <motion.a
-            href="#features"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="group mx-auto inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] py-1 pl-1 pr-3 text-xs backdrop-blur-md transition hover:border-white/20 sm:text-sm"
-          >
-            <span className="flex shrink-0 items-center gap-1 rounded-full bg-brand-600 px-2 py-0.5 text-[11px] font-medium">
-              <Sparkles className="h-3 w-3" /> New
-            </span>
-            <ShinyText className="truncate">AI-reviewed projects are live</ShinyText>
-            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-zinc-500 transition group-hover:translate-x-0.5 group-hover:text-white" />
-          </motion.a>
-
-          <h1 className="mx-auto mt-7 max-w-4xl text-balance text-[2.1rem] font-medium leading-[1.02] tracking-[-0.035em] xs:text-5xl sm:text-6xl md:text-7xl lg:text-[5.5rem]">
-            <SplitText text="The learning platform" delay={0.15} />{' '}
-            <span className="whitespace-nowrap">
-              <SplitText text="for cohorts" delay={0.55} />
-            </span>
-            <br className="hidden xs:block" />{' '}
-            <span className="font-serif font-normal italic tracking-normal">
-              <span className="text-zinc-500">that </span>
-              <GradientText>
-                <RotatingText words={['ship.', 'build.', 'code.', 'grow.']} />
-              </GradientText>
-            </span>
-          </h1>
-
-          <BlurText
-            text="Courses, coding practice, AI project reviews and real-time community — one calm, fast workspace for students, trainers and admins."
-            delay={0.9}
-            className="mx-auto mt-6 max-w-2xl text-pretty text-[15px] leading-relaxed text-zinc-400 sm:text-lg"
-          />
-
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.3, duration: 0.6 }}
-            className="mt-9 flex flex-col items-stretch justify-center gap-3 xs:flex-row xs:items-center"
-          >
-            <Magnet>
+    <header
+      className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
+        scrolled ? 'border-b border-zinc-200/70 bg-white/75 backdrop-blur-xl' : 'bg-transparent'
+      }`}
+    >
+      <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
+        <Link to="/" aria-label="Knowhere home" className="shrink-0">
+          <Logo size="sm" />
+        </Link>
+        <nav className="ml-6 hidden items-center gap-6 text-sm text-zinc-500 md:flex">
+          {links.map(([label, href]) => (
+            <a key={label} href={href} className="transition hover:text-zinc-900">
+              {label}
+            </a>
+          ))}
+        </nav>
+        <div className="ml-auto hidden items-center gap-2 sm:flex">
+          {home ? (
+            <Link
+              to={home}
+              className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
+            >
+              Open dashboard
+            </Link>
+          ) : (
+            <>
+              <Link
+                to="/login"
+                className="rounded-full px-4 py-2 text-sm text-zinc-600 transition hover:text-zinc-900"
+              >
+                Sign in
+              </Link>
               <Link
                 to="/signup"
-                className="group relative inline-flex h-12 w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-white px-6 text-[15px] font-medium text-zinc-900 shadow-[0_0_0_1px_rgba(255,255,255,0.1),0_10px_40px_-10px_rgba(125,102,245,0.8)] transition hover:bg-zinc-100 xs:w-auto"
+                className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700"
               >
-                Start for free
-                <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                Get started
               </Link>
-            </Magnet>
-            <Link
-              to="/login"
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-6 text-[15px] text-zinc-200 backdrop-blur-md transition hover:border-white/20 hover:bg-white/[0.07]"
-            >
-              Try the live demo
-            </Link>
-          </motion.div>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 60, rotateX: 18 }}
-          animate={{ opacity: 1, y: 0, rotateX: 0 }}
-          transition={{ delay: 0.8, duration: 1.2, ease: [0.22, 1, 0.36, 1] }}
-          style={{ transformPerspective: 1600 }}
-          className="relative mx-auto mt-16 max-w-5xl sm:mt-20"
+            </>
+          )}
+        </div>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="ml-auto grid h-9 w-9 place-items-center rounded-full text-zinc-700 sm:hidden"
+          aria-label={open ? 'Close menu' : 'Open menu'}
         >
-          <div className="absolute -inset-x-10 -top-10 bottom-0 -z-10 bg-[radial-gradient(closest-side,rgba(125,102,245,0.35),transparent)] blur-2xl" />
-          <TiltCard max={5}>
-            <HeroMockup />
-          </TiltCard>
-        </motion.div>
-      </section>
-
-      {/* ----------------------------------------------------------- marquee */}
-      <section className="border-y border-white/5 py-8">
-        <p className="mb-6 text-center text-xs uppercase tracking-[0.18em] text-zinc-500">
-          Built on a production-grade stack
-        </p>
-        <Marquee duration={45}>
-          {stack.map((s) => (
-            <span
-              key={s}
-              className="mx-3 whitespace-nowrap rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-zinc-400 sm:mx-4"
+          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </button>
+      </div>
+      {open ? (
+        <div className="border-t border-zinc-100 bg-white px-4 pb-4 pt-2 sm:hidden">
+          {links.map(([label, href]) => (
+            <a
+              key={label}
+              href={href}
+              onClick={() => setOpen(false)}
+              className="block py-2.5 text-sm text-zinc-700"
             >
-              {s}
-            </span>
+              {label}
+            </a>
           ))}
-        </Marquee>
-      </section>
-
-      {/* ------------------------------------------------------------- stats */}
-      <section className="px-4 py-16 sm:px-6 sm:py-20">
-        <div className="mx-auto grid max-w-5xl grid-cols-1 gap-px overflow-hidden rounded-3xl border border-white/10 bg-white/10 xs:grid-cols-2 md:grid-cols-4">
-          {stats.map((s, i) => (
-            <Reveal key={s.label} delay={i * 0.08} className="bg-night p-6 sm:p-8">
-              <p className="text-4xl font-medium tracking-tight text-white sm:text-5xl">
-                <CountUp to={s.to} suffix={s.suffix} />
-              </p>
-              <p className="mt-2 text-sm text-zinc-500">{s.label}</p>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* ---------------------------------------------------------- features */}
-      <section id="features" className="scroll-mt-24 px-4 py-16 sm:px-6 sm:py-24">
-        <div className="mx-auto max-w-6xl">
-          <SectionHeading
-            eyebrow="Features"
-            title={
-              <>
-                Everything a cohort needs.{' '}
-                <span className="font-serif italic text-zinc-400">Nothing it doesn&apos;t.</span>
-              </>
-            }
-            body="Knowhere replaces the patchwork of video hosts, quiz tools, judges, chat apps and spreadsheets with one coherent product."
-          />
-          <FeatureBento />
-        </div>
-      </section>
-
-      {/* ------------------------------------------------------------- roles */}
-      <section id="roles" className="scroll-mt-24 px-4 py-16 sm:px-6 sm:py-24">
-        <SectionHeading
-          eyebrow="For every role"
-          title="Three workspaces. One platform."
-          body="Everyone signs in to the same app and lands in a workspace designed for what they actually do."
-        />
-        <RoleTabs />
-      </section>
-
-      {/* -------------------------------------------------------------- how */}
-      <section id="how" className="scroll-mt-24 px-4 py-16 sm:px-6 sm:py-24">
-        <div className="mx-auto max-w-5xl">
-          <SectionHeading eyebrow="How it works" title="From syllabus to shipped project" />
-          <Steps />
-        </div>
-      </section>
-
-      {/* -------------------------------------------------------------- cta */}
-      <section className="px-4 pb-20 pt-8 sm:px-6 sm:pb-28">
-        <Reveal className="relative mx-auto max-w-5xl overflow-hidden rounded-[2rem] border border-white/10 px-5 py-16 text-center sm:px-12 sm:py-24">
-          <Aurora />
-          <div className="grid-bg mask-radial absolute inset-0" />
-          <div className="relative">
-            <h2 className="mx-auto max-w-2xl text-balance text-3xl font-medium tracking-tight xs:text-4xl sm:text-6xl">
-              Your next cohort starts{' '}
-              <span className="font-serif italic text-brand-300">here.</span>
-            </h2>
-            <p className="mx-auto mt-4 max-w-md text-sm text-zinc-400 sm:text-base">
-              Create an account in seconds. No credit card, no setup call.
-            </p>
-            <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
-              <Magnet className="block sm:inline-block">
-                <Link
-                  to="/signup"
-                  className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white px-6 text-[15px] font-medium text-zinc-900 transition hover:bg-zinc-100 whitespace-nowrap sm:w-auto"
-                >
-                  Get started <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Magnet>
+          <div className="mt-2 grid grid-cols-1 gap-2 xs:grid-cols-2">
+            <Link
+              to={home || '/login'}
+              className="rounded-full border border-zinc-200 px-4 py-2.5 text-center text-sm"
+            >
+              {home ? 'Dashboard' : 'Sign in'}
+            </Link>
+            {!home ? (
               <Link
-                to="/docs"
-                className="inline-flex h-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-6 text-[15px] text-zinc-200 transition hover:bg-white/[0.08]"
+                to="/signup"
+                className="rounded-full bg-zinc-900 px-4 py-2.5 text-center text-sm font-medium text-white"
               >
-                Read the API docs
+                Get started
               </Link>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </header>
+  );
+};
+
+export function LandingPage() {
+  const home = useSignedInHome();
+
+  return (
+    <ClickSpark sparkColor="#0a0a0a" sparkRadius={22} sparkCount={9}>
+      <div className="min-h-screen overflow-x-clip bg-white text-zinc-900 selection:bg-zinc-200">
+        <Nav />
+
+        {/* ---------------------------------------------------------------- hero */}
+        <section className="relative isolate flex min-h-[100svh] items-center overflow-hidden px-4 pb-16 pt-28 sm:px-6">
+          <div className="absolute inset-0 -z-10 [mask-image:radial-gradient(ellipse_at_center,black_35%,transparent_75%)]">
+            <DotGrid
+              dotSize={3}
+              gap={22}
+              baseColor="#e4e4e7"
+              activeColor="#0a0a0a"
+              proximity={130}
+              shockRadius={220}
+              shockStrength={4}
+              resistance={750}
+              returnDuration={1.4}
+            />
+          </div>
+
+          <div className="mx-auto w-full max-w-6xl">
+            <motion.a
+              href="#product"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="inline-flex max-w-full items-center gap-2 rounded-full border border-zinc-200 bg-white/80 py-1 pl-1 pr-3 text-xs text-zinc-600 backdrop-blur"
+            >
+              <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-white">
+                New
+              </span>
+              <ShinyText
+                text="Voice rooms and a 4-language code judge"
+                speed={3}
+                className="truncate"
+              />
+            </motion.a>
+
+            <h1 className="mt-7 max-w-5xl text-[clamp(2.4rem,9vw,7.5rem)] font-semibold leading-[0.95] tracking-[-0.045em]">
+              <SplitText
+                text="The classroom"
+                tag="span"
+                className="block"
+                splitType="chars"
+                delay={35}
+                duration={0.9}
+                from={{ opacity: 0, y: 60 }}
+                to={{ opacity: 1, y: 0 }}
+                textAlign="left"
+              />
+              <span className="flex flex-wrap items-baseline gap-x-[0.25em]">
+                <SplitText
+                  text="that"
+                  tag="span"
+                  splitType="chars"
+                  delay={35}
+                  duration={0.9}
+                  from={{ opacity: 0, y: 60 }}
+                  to={{ opacity: 1, y: 0 }}
+                />
+                <RotatingText
+                  texts={['ships.', 'grades.', 'listens.', 'scales.']}
+                  mainClassName="overflow-hidden font-serif italic font-normal tracking-normal text-zinc-900"
+                  staggerFrom="last"
+                  initial={{ y: '100%' }}
+                  animate={{ y: 0 }}
+                  exit={{ y: '-120%' }}
+                  staggerDuration={0.025}
+                  splitLevelClassName="overflow-hidden pb-[0.12em]"
+                  transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+                  rotationInterval={2200}
+                />
+              </span>
+            </h1>
+
+            <div className="mt-8 flex flex-col gap-10 md:flex-row md:items-end md:justify-between">
+              <BlurText
+                text="Courses on a real schedule, code graded in a sandbox, encrypted video and a live community for every cohort, in one calm workspace."
+                delay={40}
+                animateBy="words"
+                direction="bottom"
+                className="max-w-xl text-pretty text-base leading-relaxed text-zinc-500 sm:text-lg"
+              />
+              <div className="flex shrink-0 flex-wrap items-center gap-3">
+                <Magnet padding={60} magnetStrength={4}>
+                  <Link
+                    to={home || '/signup'}
+                    className="group inline-flex h-12 items-center gap-2 rounded-full bg-zinc-900 px-6 text-sm font-medium text-white transition hover:bg-zinc-700"
+                  >
+                    {home ? 'Open your dashboard' : 'Start for free'}
+                    <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                  </Link>
+                </Magnet>
+                <a
+                  href="#product"
+                  className="inline-flex h-12 items-center px-3 text-sm text-zinc-600 transition hover:text-zinc-900"
+                >
+                  See the product
+                </a>
+              </div>
             </div>
           </div>
-        </Reveal>
-      </section>
 
-      {/* ----------------------------------------------------------- footer */}
-      <footer className="border-t border-white/5 px-4 py-10 sm:px-6">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-2">
-            <Logo theme="dark" size="sm" />
-            <p className="text-xs text-zinc-500">
-              © {new Date().getFullYear()} Knowhere. Learn by building.
-            </p>
+          <div className="pointer-events-none absolute bottom-8 right-6 hidden text-zinc-400 lg:block">
+            <CircularText
+              text="LEARN • BUILD • SHIP • REPEAT • "
+              spinDuration={24}
+              onHover="speedUp"
+              className="!h-[130px] !w-[130px] text-zinc-500"
+            />
           </div>
-          <nav className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-zinc-500">
-            <a href="#features" className="hover:text-white">
-              Features
-            </a>
-            <a href="#roles" className="hover:text-white">
-              For teams
-            </a>
-            <Link to="/docs" className="hover:text-white">
-              API
-            </Link>
-            <Link to="/login" className="hover:text-white">
-              Sign in
-            </Link>
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 hover:text-white"
-            >
-              <Github className="h-4 w-4" /> GitHub
-            </a>
-          </nav>
-        </div>
-      </footer>
-    </div>
+        </section>
+
+        {/* ----------------------------------------------------------- stack loop */}
+        <section className="border-y border-zinc-100 py-8">
+          <p className="mb-5 text-center font-mono text-[11px] uppercase tracking-[0.2em] text-zinc-400">
+            Built on
+          </p>
+          <LogoLoop
+            logos={STACK.map((name) => ({
+              node: (
+                <span className="text-lg font-medium tracking-tight text-zinc-400 transition hover:text-zinc-900">
+                  {name}
+                </span>
+              ),
+              title: name
+            }))}
+            speed={60}
+            direction="left"
+            logoHeight={28}
+            gap={56}
+            pauseOnHover
+            scaleOnHover
+            fadeOut
+            fadeOutColor="#ffffff"
+            ariaLabel="Technologies Knowhere is built on"
+          />
+        </section>
+
+        {/* ------------------------------------------------------------ features */}
+        <section id="product" className="mx-auto max-w-6xl px-4 py-24 sm:px-6 sm:py-32">
+          <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-brand-600">
+            The product
+          </p>
+          <ScrollFloat
+            containerClassName="!my-3"
+            textClassName="!text-[clamp(2rem,6vw,4.5rem)] !font-semibold !leading-[1] !tracking-[-0.04em] text-zinc-900"
+            animationDuration={1}
+            ease="back.inOut(2)"
+            scrollStart="center bottom+=50%"
+            scrollEnd="bottom bottom-=40%"
+            stagger={0.02}
+          >
+            Everything a cohort needs.
+          </ScrollFloat>
+          <p className="max-w-lg text-zinc-500">
+            No patchwork of video hosts, quiz tools, judges and chat apps. One product, built for
+            how bootcamps actually run.
+          </p>
+
+          <div className="mt-14 grid grid-cols-1 gap-3 md:grid-cols-3">
+            {FEATURES.map((f, i) => (
+              <AnimatedContent
+                key={f.title}
+                distance={50}
+                delay={i * 0.06}
+                duration={0.8}
+                className={f.span}
+              >
+                <SpotlightCard
+                  className="group h-full !rounded-3xl !border-zinc-200 !bg-zinc-50/70 !p-7"
+                  spotlightColor="rgba(0, 0, 0, 0.06)"
+                >
+                  <div className="flex items-start justify-between">
+                    <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white text-zinc-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] ring-1 ring-zinc-200">
+                      <f.icon className="h-5 w-5" />
+                    </span>
+                    <DecryptedText
+                      text={f.tag}
+                      animateOn="hover"
+                      speed={40}
+                      className="font-mono text-[11px] tracking-[0.18em] text-zinc-400"
+                      encryptedClassName="font-mono text-[11px] tracking-[0.18em] text-brand-500"
+                    />
+                  </div>
+                  <h3 className="mt-10 text-xl font-semibold tracking-tight text-zinc-900">
+                    {f.title}
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-zinc-500">{f.body}</p>
+                </SpotlightCard>
+              </AnimatedContent>
+            ))}
+          </div>
+        </section>
+
+        {/* ----------------------------------------------------------- velocity */}
+        <section className="overflow-hidden border-y border-zinc-100 py-10 text-zinc-900">
+          <ScrollVelocity
+            texts={[
+              'Courses — Quizzes — Code — Video — Voice — ',
+              'Learn — Build — Ship — Review — Repeat — '
+            ]}
+            velocity={60}
+            className="px-4 text-[clamp(2rem,7vw,5.5rem)] font-semibold tracking-[-0.04em] text-zinc-900 [&:nth-child(2)]:text-zinc-300"
+          />
+        </section>
+
+        {/* -------------------------------------------------------------- facts */}
+        <section className="mx-auto max-w-6xl px-4 py-24 sm:px-6">
+          <div className="grid grid-cols-1 gap-px overflow-hidden rounded-3xl border border-zinc-200 bg-zinc-200 xs:grid-cols-2 lg:grid-cols-4">
+            {FACTS.map((f) => (
+              <div key={f.label} className="bg-white p-7 sm:p-8">
+                <p className="text-5xl font-semibold tabular-nums tracking-[-0.04em] text-zinc-900 sm:text-6xl">
+                  <CountUp to={f.to} duration={1.6} />
+                  <span className="text-zinc-300">{f.suffix}</span>
+                </p>
+                <p className="mt-3 text-sm text-zinc-500">{f.label}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* -------------------------------------------------------------- steps */}
+        <section id="how" className="mx-auto max-w-6xl px-4 pb-24 sm:px-6 sm:pb-32">
+          <div className="mb-14 flex justify-center text-[clamp(1.6rem,5vw,3.25rem)] font-semibold tracking-[-0.03em]">
+            <TrueFocus
+              sentence="Build Compose Run"
+              manualMode={false}
+              blurAmount={4}
+              borderColor="#0a0a0a"
+              glowColor="rgba(0,0,0,0.25)"
+              animationDuration={0.6}
+              pauseBetweenAnimations={1.2}
+            />
+          </div>
+          <ol className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {STEPS.map((s, i) => (
+              <AnimatedContent key={s.n} distance={40} delay={i * 0.12} duration={0.8}>
+                <li className="h-full rounded-3xl border border-zinc-200 p-7">
+                  <span className="font-mono text-sm text-brand-600">{s.n}</span>
+                  <h3 className="mt-8 text-2xl font-semibold tracking-tight">{s.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-zinc-500">{s.body}</p>
+                </li>
+              </AnimatedContent>
+            ))}
+          </ol>
+        </section>
+
+        {/* ---------------------------------------------------------------- cta */}
+        <section className="px-4 pb-24 sm:px-6">
+          <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-zinc-50 ring-1 ring-zinc-200">
+            <div className="pointer-events-auto absolute inset-x-0 bottom-0 h-1/2 opacity-60 [mask-image:linear-gradient(to_top,black_40%,transparent)]">
+              <Threads
+                color={[0.1, 0.1, 0.1]}
+                amplitude={1.1}
+                distance={0.15}
+                enableMouseInteraction
+              />
+            </div>
+            <div className="relative flex flex-col items-center px-6 py-20 text-center sm:py-28">
+              <h2 className="max-w-3xl text-balance text-[clamp(2rem,6vw,4rem)] font-semibold leading-[1] tracking-[-0.04em]">
+                Run your next cohort <span className="font-serif font-normal italic">on</span>{' '}
+                Knowhere.
+              </h2>
+              <p className="mt-5 max-w-md text-zinc-500">
+                Create an account, build a course from the library, and invite your first learners.
+              </p>
+              <StarBorder
+                as={Link}
+                to={home || '/signup'}
+                color="#0a0a0a"
+                speed="5s"
+                className="mt-9"
+                backgroundColor="#0a0a0f"
+                textColor="#ffffff"
+              >
+                <span className="inline-flex items-center gap-2 text-sm font-medium">
+                  {home ? 'Open your dashboard' : 'Get started, it’s free'}{' '}
+                  <ArrowUpRight className="h-4 w-4" />
+                </span>
+              </StarBorder>
+            </div>
+          </div>
+        </section>
+
+        {/* ------------------------------------------------------------- footer */}
+        <footer className="border-t border-zinc-100 px-4 pt-16 sm:px-6">
+          <div className="mx-auto flex max-w-6xl flex-col gap-10 md:flex-row md:justify-between">
+            <div>
+              <Logo size="sm" />
+              <p className="mt-3 max-w-xs text-sm text-zinc-500">
+                Learning, practice and community for cohorts that ship.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-10 text-sm">
+              <div className="space-y-2.5">
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-zinc-400">
+                  Product
+                </p>
+                <a href="#product" className="block text-zinc-600 hover:text-zinc-900">
+                  Features
+                </a>
+                <a href="#how" className="block text-zinc-600 hover:text-zinc-900">
+                  How it works
+                </a>
+                <a href="/docs" className="block text-zinc-600 hover:text-zinc-900">
+                  API reference
+                </a>
+              </div>
+              <div className="space-y-2.5">
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-zinc-400">
+                  Account
+                </p>
+                <Link to="/login" className="block text-zinc-600 hover:text-zinc-900">
+                  Sign in
+                </Link>
+                <Link to="/signup" className="block text-zinc-600 hover:text-zinc-900">
+                  Create account
+                </Link>
+              </div>
+            </div>
+          </div>
+          <div className="mx-auto mt-16 max-w-6xl select-none overflow-hidden">
+            <DecryptedText
+              text="knowhere"
+              animateOn="view"
+              sequential
+              revealDirection="start"
+              speed={45}
+              parentClassName="block text-[clamp(4rem,19vw,16rem)] font-semibold leading-[0.8] tracking-[-0.06em] text-zinc-900"
+              className="text-zinc-900"
+              encryptedClassName="text-zinc-300"
+            />
+          </div>
+          <p className="mx-auto max-w-6xl py-6 text-xs text-zinc-400">
+            © {new Date().getFullYear()} Knowhere
+          </p>
+        </footer>
+      </div>
+    </ClickSpark>
   );
 }

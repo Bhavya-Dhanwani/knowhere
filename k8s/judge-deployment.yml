@@ -35,6 +35,18 @@ spec:
           env:
             - name: JUDGE_CONCURRENCY
               value: '2'
+            # whole-project build+test runs (heavy: compilers, JVM) one at a time per pod
+            - name: PROJECT_CONCURRENCY
+              value: '1'
+            # dependency fetch (npm/pip/maven/go) goes only through the allowlisting proxy below
+            - name: REGISTRY_PROXY
+              value: 'http://registry-proxy:3128'
+            # npm/pip download cache, fetch phase only (content-addressed, safe to share)
+            - name: JUDGE_CACHE_DIR
+              value: /var/cache/judge
+          volumeMounts:
+            - name: package-cache
+              mountPath: /var/cache/judge
           resources:
             requests:
               cpu: '250m'
@@ -54,6 +66,10 @@ spec:
           ports:
             - containerPort: 5010
               name: http
+      volumes:
+        - name: package-cache
+          emptyDir:
+            sizeLimit: 5Gi
 ---
 kind: Service
 apiVersion: v1
@@ -68,7 +84,8 @@ spec:
       port: 80
       targetPort: 5010
 ---
-# only the course and coding services may call the judge, and the judge may call nobody
+# only the course, coding and project-review services may call the judge; the judge may reach
+# cluster DNS and the registry proxy, nothing else (student code itself never has any network)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -84,7 +101,113 @@ spec:
             matchExpressions:
               - key: app
                 operator: In
-                values: [course, coding]
+                values: [course, coding, project-review]
       ports:
         - port: 5010
-  egress: []
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - podSelector:
+            matchLabels:
+              app: registry-proxy
+      ports:
+        - port: 3128
+---
+# Allowlisting HTTPS proxy for package registries (npm, PyPI, Maven Central, Go proxy): the only
+# path from the judge's dependency-fetch phase to the internet. Same image, different command.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: registry-proxy
+  template:
+    metadata:
+      labels:
+        app: registry-proxy
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - image: judge-runner
+          name: registry-proxy
+          command: ['node', 'proxy.mjs']
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: PROXY_PORT
+              value: '3128'
+          resources:
+            requests: { cpu: '50m', memory: '64Mi' }
+            limits: { cpu: '500m', memory: '256Mi' }
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3128
+          ports:
+            - containerPort: 3128
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: registry-proxy
+spec:
+  selector:
+    app: registry-proxy
+  ports:
+    - port: 3128
+      targetPort: 3128
+---
+# the proxy accepts only the judge, and may only reach public addresses on 443
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: registry-proxy-isolation
+spec:
+  podSelector:
+    matchLabels:
+      app: registry-proxy
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: judge
+      ports:
+        - port: 3128
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+      ports:
+        - port: 443

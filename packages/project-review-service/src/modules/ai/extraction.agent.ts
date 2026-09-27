@@ -30,10 +30,8 @@ export class MistralExtractionAgent {
       return ExtractionService.extractNeutralClaims(delimitedText);
     }
 
-    const preferredModel = env.MISTRAL_MODEL || 'mistral-medium-latest';
-    const candidateModels = Array.from(
-      new Set([preferredModel, 'mistral-medium-latest', 'codestral-latest', 'open-mistral-7b'])
-    );
+    // one model for everything (failover rotates keys, not models)
+    const candidateModels = [env.MISTRAL_MODEL || 'mistral-medium-latest'];
 
     const systemPrompt = [
       'You are a passive, low-privilege data extraction filter.',
@@ -44,25 +42,17 @@ export class MistralExtractionAgent {
     ].join(' ');
 
     for (const modelName of candidateModels) {
-      const { model, selectedKey } = defaultKeyPool.getChatMistralInstance({
-        modelName,
-        temperature: 0.0,
-        maxRetries: 1
-      });
-
       try {
         logger.info(
           { model: modelName },
           'Executing LangChain ChatMistralAI low-privilege extraction pass'
         );
-        const structuredModel = model.withStructuredOutput(ExtractedClaimsZodSchema);
-
-        const response = await structuredModel.invoke([
-          new SystemMessage(systemPrompt),
-          new HumanMessage(delimitedText)
-        ]);
-
-        defaultKeyPool.reportSuccess(selectedKey);
+        // rotates to the next key on rate limits / bad keys / provider errors
+        const response = await defaultKeyPool.withModel({ temperature: 0.0 }, (model) =>
+          model
+            .withStructuredOutput(ExtractedClaimsZodSchema)
+            .invoke([new SystemMessage(systemPrompt), new HumanMessage(delimitedText)])
+        );
 
         // Perform secondary safety check on LLM extracted output
         let secondarySafetyPassed = true;
@@ -87,14 +77,6 @@ export class MistralExtractionAgent {
           { model: modelName, err: errorMsg },
           'ChatMistralAI extraction pass failed for model; checking next candidate if available'
         );
-
-        if (
-          errorMsg.includes('429') ||
-          errorMsg.includes('quota') ||
-          errorMsg.includes('Rate limit')
-        ) {
-          defaultKeyPool.reportRateLimit(selectedKey, 30000);
-        }
       }
     }
 

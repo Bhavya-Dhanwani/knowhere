@@ -1,5 +1,5 @@
 import { body, param } from 'express-validator';
-import { JUDGE_LANGUAGES } from '@lms/shared';
+import { JUDGE_LANGUAGES, signatureError } from '@lms/shared';
 import validateErrors from '../../shared/utils/validateErrors.util.js';
 
 export const uploadResourceValidators = [
@@ -65,8 +65,24 @@ export const createCodeQuestionValidators = [
   body('title').notEmpty().withMessage('title is required').trim(),
   body('description').notEmpty().withMessage('description is required').trim(),
   body('constraints').isArray().withMessage('constraints must be an array'),
-  body('inputFormat').notEmpty().withMessage('inputFormat is required').trim(),
-  body('outputFormat').notEmpty().withMessage('outputFormat is required').trim(),
+  body('signature')
+    .optional({ values: 'null' })
+    .custom((sig) => {
+      const error = signatureError(sig);
+      if (error) throw new Error(error);
+      return true;
+    }),
+  // a signature defines the input and output; stdin programs must describe them
+  body('inputFormat')
+    .if((_value, { req }) => !req.body.signature)
+    .notEmpty()
+    .withMessage('inputFormat is required')
+    .trim(),
+  body('outputFormat')
+    .if((_value, { req }) => !req.body.signature)
+    .notEmpty()
+    .withMessage('outputFormat is required')
+    .trim(),
   body('examples')
     .optional()
     .isArray({ max: 5 })
@@ -151,6 +167,20 @@ export const checkMcqValidators = [
   validateErrors
 ];
 
+export const assistantValidators = [
+  body('question')
+    .isString()
+    .trim()
+    .isLength({ min: 2, max: 500 })
+    .withMessage('Ask a question (max 500 characters)'),
+  body('facts')
+    .optional()
+    .isString()
+    .isLength({ max: 8000 })
+    .withMessage('facts must be at most 8000 characters'),
+  validateErrors
+];
+
 export const runCodeValidators = [
   param('id').isMongoId().withMessage('Invalid id'),
   body('code')
@@ -161,6 +191,12 @@ export const runCodeValidators = [
     .isIn(JUDGE_LANGUAGES)
     .withMessage(`language must be one of ${JUDGE_LANGUAGES.join(', ')}`),
   body('courseId').optional().isMongoId().withMessage('Invalid course ID'),
+  // custom test inputs (the Testcase tab); omitted means the public examples
+  body('inputs').optional().isArray({ max: 10 }).withMessage('at most 10 custom test cases'),
+  body('inputs.*')
+    .isString()
+    .isLength({ max: 20_000 })
+    .withMessage('each test input must be a string (max 20KB)'),
   validateErrors
 ];
 

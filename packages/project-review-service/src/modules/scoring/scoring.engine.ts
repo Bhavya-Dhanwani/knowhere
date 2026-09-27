@@ -19,6 +19,7 @@ import logger from '../../shared/config/logger.config.js';
 import QualitativeAnalysisAgent, {
   RedesignQualitativeOutput
 } from '../ai/qualitative-analysis.agent.js';
+import RubricAgent from '../ai/rubric.agent.js';
 
 export class ScoringEngine {
   /**
@@ -37,6 +38,7 @@ export class ScoringEngine {
       name: string;
       description?: string;
       problemStatement?: string;
+      judgingPrompt?: string;
       projectType: string;
       requiresLiveUrl?: boolean;
     }
@@ -184,6 +186,88 @@ export class ScoringEngine {
         cs.rawScore = 0;
     }
 
+    // 4b. The organiser's own rubric, graded by an LLM from the real code, the browser
+    // measurements and screenshots. The keyword heuristics above only remain as the fallback.
+    const fe = evidence.frontendEval;
+    const rubric = await RubricAgent.grade({
+      event: {
+        name: eventContext?.name,
+        problemStatement: eventContext?.problemStatement,
+        projectType: eventContext?.projectType,
+        judgingPrompt: eventContext?.judgingPrompt
+      },
+      criteria: effectiveCriteria,
+      requirements,
+      repo: {
+        valid: fileList.length > 0 && evidence.discovery?.repoValid !== false,
+        error: evidence.discovery?.repoErrorMessage,
+        fileList,
+        primaryLanguage: evidence.discovery?.primaryLanguage,
+        languages: evidence.discovery?.languages,
+        frameworks: evidence.discovery?.detectedFrameworks
+      },
+      snippets: evidence.discovery?.keyFileSnippets || {},
+      live: fe?.assessmentMode
+        ? {
+            reachable: fe.isReachable,
+            error: fe.liveError,
+            mode: fe.assessmentMode,
+            lighthouse: fe.lighthouse,
+            findings: fe.findings,
+            screenshots: fe.screenshots
+          }
+        : undefined,
+      build: evidence.buildEval,
+      staticMetrics: dm && {
+        tests: dm.testMetrics,
+        duplicationPercent: dm.codeDuplication?.estimatedDuplicationPercentage,
+        avgComplexity: dm.cyclomaticComplexity?.averagePerFunction,
+        smells: dm.codeSmellsAndTechDebt && {
+          todos: dm.codeSmellsAndTechDebt.todoCount,
+          largeFiles: dm.codeSmellsAndTechDebt.largeFilesCount
+        }
+      },
+      claims
+    });
+    if (rubric) {
+      for (const cs of evaluationData.criterionScores) {
+        const g = rubric.criteria.find((x) => x.criterionId === cs.criterionId)!;
+        cs.rawScore = Math.round(g.score);
+        cs.justification = g.justification;
+        cs.evidenceCitations = [
+          ...g.evidence,
+          ...g.strengths.map((x) => `Strength: ${x}`),
+          ...g.improvements.map((x) => `Improve: ${x}`)
+        ];
+        cs.confidence = fe?.screenshots?.desktop ? 0.9 : 0.8;
+        // measured fact beats model leniency: a page with zero CSS can't score well on looks.
+        // ponytail: keyword match on the criterion text; add an explicit "visual" flag to
+        // criteria if organisers name them in ways this misses
+        const crit = effectiveCriteria.find((c) => c.id === cs.criterionId);
+        if (
+          fe?.metrics?.authorCssRules === 0 &&
+          cs.rawScore > 30 &&
+          /look|design|visual|\bui\b|style|appearance|layout|aesthetic|beaut/i.test(
+            `${crit?.name} ${crit?.description}`
+          )
+        ) {
+          cs.rawScore = 30;
+          cs.justification +=
+            ' (Capped at 30: the live page has no CSS at all and renders in default browser styling.)';
+        }
+      }
+      evaluationData.requirementCompliance = requirements.map((r) => {
+        const g = rubric.requirements.find((x) => x.requirementId === r.id);
+        return {
+          requirementId: r.id,
+          title: r.title,
+          status: g?.status ?? 'UNKNOWN',
+          evidenceSummary: g?.evidence ?? 'Not assessed by the rubric grader'
+        };
+      });
+      evaluationData.synthesisSummary = rubric.summary;
+    }
+
     const validation = EvaluationResultSchema.safeParse(evaluationData);
     if (!validation.success) {
       logger.error(
@@ -215,8 +299,23 @@ export class ScoringEngine {
       };
     });
 
-    // In RE:DESIGN, the canonical overall score is the weighted composite of the 9 Core Engineering Dimensions
-    const displayOverallScore = finalOverallScore;
+    // With a graded rubric the score IS the organiser's weighted criteria (what they asked to be
+    // judged on). Without an LLM we keep the engineering-dimension composite.
+    const totalWeight = effectiveCriteria.reduce((sum, c) => sum + (c.weight || 0), 0) || 1;
+    const displayOverallScore = rubric
+      ? parseFloat(Math.min(100, calculatedCriterionSum / totalWeight).toFixed(1))
+      : finalOverallScore;
+    // lowest-scoring criteria first: that is where the student gains the most
+    const rubricImprovements = rubric
+      ? [...rubric.criteria]
+          .sort((a, b) => a.score - b.score)
+          .flatMap((c) => c.improvements)
+          .slice(0, 8)
+      : [];
+    const improvements = [
+      ...rubricImprovements,
+      ...(qualitativeOutput.highestImpactImprovements || [])
+    ].slice(0, 10);
 
     // 5. Persist to ReviewEvaluation model in MongoDB
     await ReviewEvaluation.findOneAndUpdate(
@@ -230,18 +329,20 @@ export class ScoringEngine {
         confidenceScore,
         dimensionScores,
         engineeringEvidence: allEvidenceFindings,
-        highestImpactImprovements: qualitativeOutput.highestImpactImprovements,
+        highestImpactImprovements: improvements,
         reproducibility: {
           evaluationId: `eval-${submissionId}-${Date.now()}`,
           repoUrl: typeof evidence.discovery === 'object' ? (evidence as any).repoUrl || '' : '',
           timestamp: new Date().toISOString(),
           frameworkVersion: 'RE:DESIGN-2.0',
-          modelVersion: env.MISTRAL_MODEL || 'mistral-medium-latest',
-          promptsVersion: '2.0.0-evidence-grounded'
+          modelVersion: rubric?.gradedBy || env.MISTRAL_MODEL || 'mistral-medium-latest',
+          promptsVersion: rubric ? '3.0.0-rubric-graded' : '2.0.0-evidence-grounded'
         },
         criterionScores: weightedCriterionScores,
         requirementCompliance: validated.requirementCompliance,
-        synthesisSummary: qualitativeOutput.overallSummary || validated.synthesisSummary,
+        synthesisSummary: rubric
+          ? validated.synthesisSummary
+          : qualitativeOutput.overallSummary || validated.synthesisSummary,
         judgeOverride: { overridden: false }
       },
       { upsert: true, new: true }
@@ -259,7 +360,7 @@ export class ScoringEngine {
       qualitativeScore: qualitativeOutput.qualitativeScore,
       confidenceScore,
       dimensionScores,
-      highestImpactImprovements: qualitativeOutput.highestImpactImprovements,
+      highestImpactImprovements: improvements,
       weightedCriterionScores
     };
   }
@@ -285,6 +386,7 @@ export class ScoringEngine {
     const hasTests = dm?.testMetrics.hasTests || false;
     const testCases = dm?.testMetrics.testCaseCount || 0;
     const isTS = dm?.typeSafety.usesTypeScript || false;
+    const staticTyping = dm?.typeSafety.staticTyping ?? isTS;
     const typePct = dm?.typeSafety.typeCoveragePercent || 0;
     const secretsCount = dm?.securityAndLint.secretLeaksCount || 0;
     const critVulns = dm?.securityAndLint.criticalVulnsCount || 0;
@@ -310,22 +412,35 @@ export class ScoringEngine {
     if (largeFiles > 0) maintObj -= largeFiles * 6;
     maintObj = Math.max(20, Math.min(100, maintObj));
 
-    // Testing: presence and test cases
-    let testObj = !hasTests ? 20 : Math.min(95, 55 + testCases * 5);
+    // Testing: tests actually run in the judge sandbox beat counting test files
+    const ran = ((evidence as any).buildEval?.steps || []).filter((s: any) => s.tests);
+    const passed = ran.reduce((n: number, s: any) => n + (s.tests.passed || 0), 0);
+    const failed = ran.reduce((n: number, s: any) => n + (s.tests.failed || 0), 0);
+    let testObj =
+      passed + failed > 0
+        ? Math.round(Math.min(98, 40 + (45 * passed) / (passed + failed) + Math.min(13, passed)))
+        : !hasTests
+          ? 20
+          : Math.min(95, 55 + testCases * 5);
+    const buildFailed = ((evidence as any).buildEval?.steps || []).some(
+      (s: any) => s.name?.startsWith('build') && s.ok === false
+    );
 
     // Reliability: dangerous sinks, complexity
     let relObj = 85;
     if (dangerousSinks > 0) relObj -= dangerousSinks * 20;
     if (avgComplexity > 6) relObj -= 10;
     relObj = Math.max(20, Math.min(100, relObj));
+    if (buildFailed) relObj = Math.min(relObj, 25); // it does not compile: nothing else is reliable
 
     // Complexity: inverse of excessive branching
     let compObj = 90;
     if (avgComplexity > 4) compObj -= Math.min(40, Math.round((avgComplexity - 4) * 8));
     compObj = Math.max(20, Math.min(100, compObj));
 
-    // Engineering Practices: type safety and setup
-    let engObj = isTS ? Math.min(95, 70 + Math.round(typePct * 0.25)) : 68;
+    // Engineering Practices: type safety (TS measured by annotation coverage; other statically typed
+    // languages, or type-hinted Python, are typed by construction)
+    let engObj = isTS ? Math.min(95, 70 + Math.round(typePct * 0.25)) : staticTyping ? 88 : 68;
 
     // Security Practices: secrets and CVEs
     let secObj = 92;
@@ -506,7 +621,8 @@ export class ScoringEngine {
               `Lighthouse Perf: ${lh.performance}`,
               `Lighthouse A11y: ${lh.accessibility}`,
               `Lighthouse BestPractices: ${lh.bestPractices}`,
-              `axe-core violations: ${a11yViolations}`
+              `axe-core violations: ${a11yViolations}`,
+              ...(evidence.frontendEval?.findings || []).slice(0, 10)
             );
             justification = `Frontend evaluated via calibrated Lighthouse 0-100 scores and axe-core accessibility scanner.`;
           } else {

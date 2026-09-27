@@ -1,4 +1,5 @@
 import { ChatMistralAI } from '@langchain/mistralai';
+import { classifyKeyError } from '@lms/shared';
 import env from '../../shared/config/env.config.js';
 import logger from '../../shared/config/logger.config.js';
 
@@ -260,21 +261,60 @@ export class MistralKeyPoolManager {
 
   /**
    * Instantiates a LangChain ChatMistralAI client using the next Round-Robin API key.
+   * Always MISTRAL_MODEL: every submission in a cohort is graded by the same model, so scores
+   * stay comparable. Failover changes the key, never the model.
    */
-  public getChatMistralInstance(options?: {
-    modelName?: string;
-    temperature?: number;
-    maxRetries?: number;
-  }): { model: ChatMistralAI; selectedKey: string } {
+  public getChatMistralInstance(options?: { temperature?: number; maxRetries?: number }): {
+    model: ChatMistralAI;
+    selectedKey: string;
+  } {
     const key = this.getNextKey();
     const model = new ChatMistralAI({
       apiKey: key,
-      modelName: options?.modelName || env.MISTRAL_MODEL || 'mistral-medium-latest',
+      modelName: env.MISTRAL_MODEL || 'mistral-medium-latest',
       temperature: options?.temperature ?? 0.1,
       maxRetries: options?.maxRetries ?? 2
     });
 
     return { model, selectedKey: key };
+  }
+
+  /**
+   * Runs `call`, failing over to the next API key (same model). A key-specific failure (rate
+   * limit, rejected key) moves on through every key; a provider/network failure is not the key's
+   * fault, so a round stops after 3 of those. Between rounds it backs off (15s, then 30s) before
+   * giving up. Request errors are thrown immediately.
+   */
+  public async withModel<T>(
+    options: { temperature?: number },
+    call: (model: ChatMistralAI) => Promise<T>
+  ): Promise<T> {
+    let lastError: unknown;
+    const attempts = Math.max(1, this.getKeyCount());
+    for (let round = 0; ; round++) {
+      let providerErrors = 0;
+      for (let attempt = 1; attempt <= attempts && providerErrors < 3; attempt++) {
+        // maxRetries 0: rotating keys beats retrying a throttled one
+        const { model, selectedKey } = this.getChatMistralInstance({ ...options, maxRetries: 0 });
+        try {
+          const result = await call(model);
+          this.reportSuccess(selectedKey);
+          return result;
+        } catch (err) {
+          const failure = classifyKeyError(err);
+          if (!failure.retry) throw err;
+          if (failure.reason === 'provider or network error') providerErrors++;
+          else this.reportRateLimit(selectedKey, failure.cooldownMs);
+          logger.warn(
+            { round, attempt, reason: failure.reason, err: String(err).slice(0, 200) },
+            'Mistral key failed over to the next key'
+          );
+          lastError = err;
+        }
+      }
+      if (round >= 2) throw lastError;
+      await new Promise((r) => setTimeout(r, 15000 * 2 ** round));
+    }
   }
 
   /**

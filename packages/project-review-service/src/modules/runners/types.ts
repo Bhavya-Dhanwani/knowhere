@@ -80,6 +80,8 @@ export interface DeterministicStaticMetrics {
   };
   typeSafety: {
     usesTypeScript: boolean;
+    /** Statically typed language, or Python with type hints on most functions. */
+    staticTyping?: boolean;
     typeCoveragePercent: number;
     anyTypeCount: number;
     strictModeEnabled: boolean;
@@ -168,6 +170,14 @@ export interface FrontendEvalResult {
   axeViolationsCount: number;
   consoleErrorsCount: number;
   failedRequestsCount: number;
+  /** Browser mode: measured Web Vitals + page facts. */
+  metrics?: Record<string, number | string | boolean>;
+  /** Generated from our own measurements only (safe to show the LLM). */
+  findings?: string[];
+  /** Raw console/page error text from the student's site: humans only, never the LLM. */
+  consoleErrors?: string[];
+  /** JPEG data URLs of the rendered page (desktop full page, mobile viewport). */
+  screenshots?: { desktop?: string; mobile?: string };
 }
 
 export interface BackendEvalResult {

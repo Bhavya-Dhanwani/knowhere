@@ -7,7 +7,8 @@ COPY packages/shared ./packages/shared
 COPY packages/frontend ./packages/frontend
 RUN pnpm install --ignore-scripts
 RUN pnpm --filter @lms/shared build
-RUN pnpm --filter @lms/frontend build
+# Monaco (the code editor) needs more than the default heap to bundle
+RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @lms/frontend build
 
 # --- runtime stage ---
 FROM nginx:alpine

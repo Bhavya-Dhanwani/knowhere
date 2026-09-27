@@ -81,7 +81,15 @@ export function createMembershipClient(opts: MembershipClientOptions) {
     members,
 
     async memberOf(courseId: string, userId: string) {
-      return (await members(courseId)).find((m) => m.userId === userId) || null;
+      const find = (list: CourseMember[]) => list.find((m) => m.userId === userId) || null;
+      const hit = cache.get(courseId);
+      if (hit && Date.now() - hit.at < cacheMs) {
+        const member = find(hit.members);
+        if (member) return member;
+        // a cached "not a member" may predate an enrollment made through another replica
+        cache.delete(courseId);
+      }
+      return find(await members(courseId));
     },
 
     // enrols a user (used to make a course's creator its course admin)
@@ -110,6 +118,17 @@ export function createMembershipClient(opts: MembershipClientOptions) {
         data?: Array<{ userId: string; name: string; avatar?: string; bio?: string }>;
       };
       return body.data || [];
+    },
+
+    // a deleted course takes its enrollments with it
+    async removeCourse(courseId: string) {
+      const res = await fetch(`${opts.userServiceUrl}/api/memberships/courses/${courseId}`, {
+        method: 'DELETE',
+        headers: headers('memberships:write')
+      });
+      if (!res.ok)
+        throw new Error(`user-service responded ${res.status} removing course ${courseId}`);
+      cache.delete(courseId);
     },
 
     forget(courseId: string) {

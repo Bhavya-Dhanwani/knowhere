@@ -77,6 +77,7 @@ export interface ILeaderboardEntry {
   relativeGrading?: IRelativeGrading;
   whyAmIExplanation?: any;
   dimensionScores?: Record<string, any>;
+  headToHead?: any; // LLM verdict vs the entry ranked directly above (see head-to-head.agent.ts)
   relativeAnalysis?: {
     comparedToAbove?: IRelativeComparison | null;
     comparedToBelow?: IRelativeComparison | null;
@@ -111,6 +112,8 @@ export interface IEventRanking extends Document {
     scoreDelta: number;
     boundaryReason: string;
   }>;
+  /** Pairs whose code is substantially the same (see ranking/similarity.ts). */
+  similarityFlags?: any[];
   comparisonMatrix?: Array<{
     dimension: string;
     dimensionName: string;
@@ -137,7 +140,8 @@ const LeaderboardEntrySchema = new Schema<ILeaderboardEntry>(
     relativeGrading: { type: Schema.Types.Mixed, default: null },
     whyAmIExplanation: { type: Schema.Types.Mixed, default: null },
     dimensionScores: { type: Schema.Types.Mixed, default: null },
-    relativeAnalysis: { type: Schema.Types.Mixed, default: null }
+    relativeAnalysis: { type: Schema.Types.Mixed, default: null },
+    headToHead: { type: Schema.Types.Mixed, default: null }
   },
   { _id: false }
 );
@@ -170,6 +174,7 @@ const EventRankingSchema = new Schema<IEventRanking>(
     pairwiseMatrix: { type: [PairwiseMatchSchema], default: [] },
     closeRankingBoundaries: { type: [Schema.Types.Mixed], default: [] },
     comparisonMatrix: { type: [Schema.Types.Mixed], default: [] },
+    similarityFlags: { type: [Schema.Types.Mixed], default: [] },
     generatedAt: { type: Date, default: Date.now }
   },
   { timestamps: true }

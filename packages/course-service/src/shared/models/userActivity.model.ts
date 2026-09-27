@@ -19,7 +19,24 @@ export type UserActivityEventType =
   | 'CODE_QUESTION_STARTED'
   | 'CODE_QUESTION_SUBMITTED'
   | 'CODE_QUESTION_PASSED'
-  | 'CODE_QUESTION_FAILED';
+  | 'CODE_QUESTION_FAILED'
+  // learner-behaviour tracking (see behaviour.service.ts); most come from the browser tracker
+  | 'ITEM_VIEW'
+  | 'ITEM_DWELL'
+  | 'VIDEO_WATCH'
+  | 'VIDEO_SEEK'
+  | 'VIDEO_PAUSE'
+  | 'VIDEO_RATE'
+  | 'VIDEO_ENDED'
+  | 'RESOURCE_OPEN'
+  | 'RESOURCE_DOWNLOAD'
+  | 'CODE_RUN'
+  | 'CODE_SUBMIT'
+  | 'CODE_PASTE'
+  | 'CODE_LANGUAGE'
+  | 'CODE_RESET'
+  | 'ITEM_COMPLETED'
+  | 'SESSION_START';
 
 export interface IUserActivityDocument extends Document {
   _id: Types.ObjectId;
@@ -27,6 +44,8 @@ export interface IUserActivityDocument extends Document {
   courseId: Types.ObjectId;
   moduleId?: Types.ObjectId | null;
   submoduleId?: Types.ObjectId | null;
+  // the course item (outline content id) the event is about
+  itemId?: string | null;
   eventType: UserActivityEventType;
   metadata: Record<string, unknown>;
   timestamp: Date;
@@ -57,6 +76,7 @@ const userActivitySchema = new Schema<IUserActivityDocument>(
       ref: 'Submodule',
       default: null
     },
+    itemId: { type: String, default: null },
     eventType: {
       type: String,
       required: true,

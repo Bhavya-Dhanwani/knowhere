@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { outputsMatch } from './signature.js';
 
 // Server-side judge for JavaScript solutions (`function solve(input) { return output }`).
 // Learner code runs in a separate node process started with the permission model
@@ -19,6 +20,10 @@ export interface JudgeResult {
   passed: number;
   total: number;
   error?: string;
+  // LeetCode-style verdict (see judgeStatus)
+  status?: JudgeStatus;
+  // wall-clock time of the whole run, sandbox start-up included
+  runtimeMs?: number;
   // per-case outcome, in input order (empty when the program never ran)
   cases?: CaseResult[];
 }
@@ -34,7 +39,7 @@ function score(cases: { expectedOutput: string }[], results: RawResult[]): Judge
   let error: string | undefined;
   const out = cases.map((c, i) => {
     const r = results[i] || { ok: false, error: 'Not run' };
-    const ok = r.ok && normalise(r.output || '') === normalise(c.expectedOutput);
+    const ok = r.ok && outputsMatch(c.expectedOutput, r.output || '');
     if (ok) passed++;
     else if (!error) error = r.ok ? `Wrong answer on test ${i + 1}` : `Test ${i + 1}: ${r.error}`;
     return {
@@ -80,8 +85,6 @@ process.stdin.on('data', (d) => (raw += d)).on('end', () => {
   }
   process.stdout.write(JSON.stringify({ results: out }));
 });`;
-
-const normalise = (s: string) => s.replace(/\r\n/g, '\n').trim();
 
 export interface RunOutcome {
   // set when the program never ran (compile error, crash, judge unavailable)
@@ -177,6 +180,19 @@ const verdict = (cases: { expectedOutput: string }[], run: RunOutcome): JudgeRes
     ? { passed: 0, total: cases.length, error: run.fatal, cases: [] }
     : score(cases, run.results);
 
+export type JudgeStatus =
+  'Accepted' | 'Wrong Answer' | 'Runtime Error' | 'Compile Error' | 'Time Limit Exceeded';
+
+// LeetCode-style verdict for a judged submission
+export function judgeStatus(v: JudgeResult): JudgeStatus {
+  if (v.total > 0 && v.passed === v.total) return 'Accepted';
+  const err = v.error || '';
+  if (/compil/i.test(err)) return 'Compile Error';
+  if (/time limit|timed out/i.test(err)) return 'Time Limit Exceeded';
+  if (/wrong answer/i.test(err)) return 'Wrong Answer';
+  return 'Runtime Error';
+}
+
 export async function judgeJavaScript(
   code: string,
   cases: { input: string; expectedOutput: string }[],
@@ -199,13 +215,12 @@ export async function judgeCode(
   cases: { input: string; expectedOutput: string }[],
   opts: { runnerUrl?: string; caseMs?: number } = {}
 ): Promise<JudgeResult> {
-  return verdict(
-    cases,
-    await runCode(
-      language,
-      code,
-      cases.map((c) => c.input),
-      opts
-    )
+  const started = Date.now();
+  const run = await runCode(
+    language,
+    code,
+    cases.map((c) => c.input),
+    opts
   );
+  return { ...verdict(cases, run), runtimeMs: Date.now() - started };
 }

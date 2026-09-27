@@ -13,6 +13,20 @@ spec:
     - http:
         paths:
           - pathType: Prefix
+            path: '/lms-raw-media'
+            backend:
+              service:
+                name: minio
+                port:
+                  number: 9000
+          - pathType: Prefix
+            path: '/lms-transcoded-media'
+            backend:
+              service:
+                name: minio
+                port:
+                  number: 9000
+          - pathType: Prefix
             path: '/docs'
             backend:
               service:

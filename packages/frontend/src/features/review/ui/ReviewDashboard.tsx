@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useEffect } from 'react';
 import {
   Plus,
   Trophy,
@@ -19,6 +20,8 @@ import {
   Trash2,
   Clock,
   Edit3,
+  Eye,
+  EyeOff,
   ChevronDown,
   ChevronUp,
   Award,
@@ -31,7 +34,7 @@ import {
   HelpCircle,
   Download
 } from 'lucide-react';
-import { ReviewEvent, ReviewSubmission, EventRanking } from '../types';
+import { ReviewEvent, ReviewSubmission, EventRanking, HeadToHead } from '../types';
 import { reviewApi } from '../api/reviewApi';
 import { PageHeader } from '../../../shared/layout/PageHeader';
 import { Button } from '../../../shared/ui/Button';
@@ -45,12 +48,55 @@ import { EditSubmissionModal } from './EditSubmissionModal';
 import { SubmissionDetailModal } from './SubmissionDetailModal';
 import { NotionExportModal } from './NotionExportModal';
 
+type MatrixData = {
+  comparisonMatrix: Array<{
+    dimension: string;
+    dimensionName: string;
+    scores: Record<string, number>;
+  }>;
+  closeRankingBoundaries?: Array<{
+    subAId: string;
+    subBId: string;
+    subAName: string;
+    subBName: string;
+    scoreDelta: number;
+    boundaryReason: string;
+  }>;
+};
+
+// server state lives in the TanStack Query cache (keyed per event); UI state stays in useState
+const reviewKeys = {
+  events: ['review', 'events'] as const,
+  submissions: (id: string | null) => ['review', 'submissions', id] as const,
+  ranking: (id: string | null) => ['review', 'ranking', id] as const,
+  matrix: (id: string | null) => ['review', 'matrix', id] as const
+};
+
 export const ReviewDashboard: React.FC = () => {
-  const [events, setEvents] = useState<ReviewEvent[]>([]);
+  const qc = useQueryClient();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [submissions, setSubmissions] = useState<ReviewSubmission[]>([]);
-  const [ranking, setRanking] = useState<EventRanking | null>(null);
-  const [loading, setLoading] = useState(false);
+  const eventsQuery = useQuery({ queryKey: reviewKeys.events, queryFn: reviewApi.listEvents });
+  const events: ReviewEvent[] = eventsQuery.data || [];
+  const loading = eventsQuery.isLoading;
+  const submissions: ReviewSubmission[] =
+    useQuery({
+      queryKey: reviewKeys.submissions(selectedEventId),
+      queryFn: () => reviewApi.listSubmissionsForEvent(selectedEventId!),
+      enabled: Boolean(selectedEventId)
+    }).data || [];
+  // no leaderboard / matrix until the event has been ranked: a 404 just means "not yet"
+  const ranking: EventRanking | null =
+    useQuery({
+      queryKey: reviewKeys.ranking(selectedEventId),
+      queryFn: () => reviewApi.getLeaderboard(selectedEventId!).catch(() => null),
+      enabled: Boolean(selectedEventId)
+    }).data ?? null;
+  const comparisonMatrixData: MatrixData | null =
+    useQuery({
+      queryKey: reviewKeys.matrix(selectedEventId),
+      queryFn: () => reviewApi.getComparisonMatrix(selectedEventId!).catch(() => null),
+      enabled: Boolean(selectedEventId)
+    }).data ?? null;
   const [rankingLoading, setRankingLoading] = useState(false);
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const [pipelineProgress, setPipelineProgress] = useState<{
@@ -75,21 +121,6 @@ export const ReviewDashboard: React.FC = () => {
   const [activeReportTab, setActiveReportTab] = useState<
     'RANKING' | 'MATRIX' | 'SCORECARDS' | 'REPLAY'
   >('RANKING');
-  const [comparisonMatrixData, setComparisonMatrixData] = useState<{
-    comparisonMatrix: Array<{
-      dimension: string;
-      dimensionName: string;
-      scores: Record<string, number>;
-    }>;
-    closeRankingBoundaries?: Array<{
-      subAId: string;
-      subBId: string;
-      subAName: string;
-      subBName: string;
-      scoreDelta: number;
-      boundaryReason: string;
-    }>;
-  } | null>(null);
   const [isNotionModalOpen, setIsNotionModalOpen] = useState(false);
   const [csvExporting, setCsvExporting] = useState(false);
 
@@ -100,89 +131,84 @@ export const ReviewDashboard: React.FC = () => {
     }));
   };
 
-  // 1. Fetch Events
-  const loadEvents = useCallback(async () => {
-    try {
-      setLoading(true);
-      const list = await reviewApi.listEvents();
-      setEvents(list);
-      if (list.length > 0 && !selectedEventId) {
-        setSelectedEventId(list[0]._id);
-      }
-    } catch (err) {
-      console.error('Failed to load review events', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedEventId]);
-
+  // first event is selected by default once the list arrives
   useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+    if (!selectedEventId && events.length) setSelectedEventId(events[0]._id);
+  }, [events, selectedEventId]);
 
-  // 2. Fetch Submissions for selected event
-  const loadSubmissions = useCallback(async (eventId: string) => {
-    try {
-      const list = await reviewApi.listSubmissionsForEvent(eventId);
-      setSubmissions(list);
-
-      // Attempt to fetch leaderboard
-      try {
-        const rankingData = await reviewApi.getLeaderboard(eventId);
-        setRanking(rankingData);
-      } catch {
-        setRanking(null);
-      }
-
-      // Attempt to fetch comparison matrix
-      try {
-        const matrixData = await reviewApi.getComparisonMatrix(eventId);
-        setComparisonMatrixData(matrixData);
-      } catch {
-        setComparisonMatrixData(null);
-      }
-    } catch (err) {
-      console.error('Failed to load submissions', err);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (selectedEventId) {
-      loadSubmissions(selectedEventId);
-    }
-  }, [selectedEventId, loadSubmissions]);
+  const loadEvents = () => qc.invalidateQueries({ queryKey: reviewKeys.events });
+  // submissions, leaderboard and matrix of one event, refetched together
+  const loadSubmissions = (eventId: string) =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: reviewKeys.submissions(eventId) }),
+      qc.invalidateQueries({ queryKey: reviewKeys.ranking(eventId) }),
+      qc.invalidateQueries({ queryKey: reviewKeys.matrix(eventId) })
+    ]);
 
   const selectedEvent = events.find((e) => e._id === selectedEventId) || null;
 
-  // 3. Run Full Evaluation Pipeline on All Submissions
+  // 3. Run Full Evaluation Pipeline on All Submissions: the server evaluates them in parallel
+  // and ranks once at the end; we poll until every submission and the ranking have been refreshed
   const handleRunPipeline = async () => {
     if (!selectedEventId || submissions.length === 0) return;
+    const eventId = selectedEventId;
+    // compare against pre-run snapshots (not timestamps) so browser/server clock skew can't matter
+    const before = new Map(submissions.map((s) => [s._id, s.updatedAt]));
+    const rankedBefore = ranking?.generatedAt;
+    const terminal = ['EVALUATED', 'FAILED', 'FLAGGED_FOR_REVIEW'];
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     try {
       setPipelineRunning(true);
-      const total = submissions.length;
-
-      for (let i = 0; i < total; i++) {
-        const sub = submissions[i];
-        setPipelineProgress({ current: i + 1, total, teamName: sub.teamName });
-        try {
-          await reviewApi.evaluateSubmission(sub._id);
-        } catch (err) {
-          console.error(`Evaluation failed for submission ${sub._id}:`, err);
-        }
+      const { concurrency } = await reviewApi.evaluateEvent(eventId);
+      let allDoneAt = 0;
+      // ponytail: plain polling; swap for SSE if many trainers watch runs at once
+      for (const deadline = Date.now() + 60 * 60_000; Date.now() < deadline;) {
+        await sleep(4000);
+        const list = await reviewApi.listSubmissionsForEvent(eventId);
+        qc.setQueryData(reviewKeys.submissions(eventId), list);
+        const done = list.filter(
+          (s) => terminal.includes(s.status) && s.updatedAt !== before.get(s._id)
+        ).length;
+        const allDone = done >= list.length;
+        setPipelineProgress({
+          current: done,
+          total: list.length,
+          teamName: allDone ? 'writing head-to-head verdicts…' : `${concurrency} in parallel`
+        });
+        if (!allDone) continue;
+        allDoneAt ||= Date.now();
+        const rk = await reviewApi.getLeaderboard(eventId).catch(() => null);
+        // ranking can fail (e.g. every submission failed): give it 3 minutes, then stop waiting
+        if ((rk && rk.generatedAt !== rankedBefore) || Date.now() - allDoneAt > 3 * 60_000) break;
       }
-
-      setRankingLoading(true);
-      const rankingRes = await reviewApi.computeRanking(selectedEventId);
-      setRanking(rankingRes);
-
-      await loadSubmissions(selectedEventId);
+      await loadSubmissions(eventId);
       setActiveReportTab('RANKING');
     } catch (err) {
       console.error('Pipeline execution error', err);
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      alert(msg || 'Failed to start the evaluation pipeline.');
     } finally {
       setPipelineRunning(false);
-      setRankingLoading(false);
       setPipelineProgress(null);
+    }
+  };
+
+  const handleTogglePublish = async () => {
+    if (!selectedEvent) return;
+    const publish = !selectedEvent.resultsPublished;
+    if (
+      publish &&
+      !window.confirm(
+        'Publish results? Students will see their scores, rank and detailed feedback. Review any close calls and copy flags first.'
+      )
+    )
+      return;
+    try {
+      await reviewApi.updateEvent(selectedEvent._id, { resultsPublished: publish });
+      await loadEvents();
+    } catch (err) {
+      console.error('Failed to change results visibility', err);
+      alert('Could not change results visibility. Please try again.');
     }
   };
 
@@ -192,13 +218,7 @@ export const ReviewDashboard: React.FC = () => {
     try {
       setRankingLoading(true);
       const res = await reviewApi.computeRanking(selectedEventId);
-      setRanking(res);
-      try {
-        const matrixData = await reviewApi.getComparisonMatrix(selectedEventId);
-        setComparisonMatrixData(matrixData);
-      } catch (e) {
-        console.error('Failed to reload comparison matrix', e);
-      }
+      qc.setQueryData(reviewKeys.ranking(selectedEventId), res);
       await loadSubmissions(selectedEventId);
     } catch (err) {
       console.error('Failed to compute ranking', err);
@@ -214,7 +234,7 @@ export const ReviewDashboard: React.FC = () => {
       setPipelineProgress({ current: 1, total: 1, teamName });
       await reviewApi.evaluateSubmission(submissionId);
       const rankingRes = await reviewApi.computeRanking(selectedEventId);
-      setRanking(rankingRes);
+      qc.setQueryData(reviewKeys.ranking(selectedEventId), rankingRes);
       await loadSubmissions(selectedEventId);
     } catch (err) {
       console.error('Failed to evaluate submission', err);
@@ -266,7 +286,7 @@ export const ReviewDashboard: React.FC = () => {
         );
       default:
         return (
-          <span className="flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-purple-50 text-purple-700 border border-purple-200">
+          <span className="flex items-center gap-1 text-[11px] px-2.5 py-0.5 rounded-full font-medium bg-zinc-50 text-zinc-700 border border-zinc-200">
             <Layers className="w-3 h-3" /> Fullstack
           </span>
         );
@@ -366,6 +386,27 @@ export const ReviewDashboard: React.FC = () => {
                   <Button size="sm" variant="outline" onClick={() => setIsEditEventOpen(true)}>
                     <Edit3 className="h-3.5 w-3.5" /> Edit
                   </Button>
+                  {/* students see scores and feedback only after this */}
+                  <Button
+                    size="sm"
+                    variant={selectedEvent.resultsPublished ? 'outline' : 'primary'}
+                    onClick={handleTogglePublish}
+                    title={
+                      selectedEvent.resultsPublished
+                        ? 'Hide scores and feedback from students again'
+                        : 'Let students see their scores, rank and detailed feedback'
+                    }
+                  >
+                    {selectedEvent.resultsPublished ? (
+                      <>
+                        <EyeOff className="h-3.5 w-3.5" /> Unpublish results
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-3.5 w-3.5" /> Publish results
+                      </>
+                    )}
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => setIsSubmitModalOpen(true)}>
                     <Plus className="h-3.5 w-3.5" /> Add submission
                   </Button>
@@ -433,7 +474,7 @@ export const ReviewDashboard: React.FC = () => {
               <p className="text-sm text-zinc-400">submissions evaluated</p>
               <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-brand-400 to-fuchsia-400 transition-[width] duration-700"
+                  className="h-full rounded-full bg-gradient-to-r from-zinc-400 to-zinc-900 transition-[width] duration-700"
                   style={{ width: `${evalPct}%` }}
                 />
               </div>
@@ -516,6 +557,26 @@ export const ReviewDashboard: React.FC = () => {
           {/* VIEW A: Bradley-Terry Relative Ranking Leaderboard */}
           {activeReportTab === 'RANKING' && (
             <div className="space-y-4">
+              {!!ranking?.similarityFlags?.length && (
+                <div className="bg-white p-4 rounded-2xl border border-amber-300 shadow-sm space-y-2">
+                  <p className="text-sm font-bold text-amber-800">
+                    Possible copying: {ranking.similarityFlags.length} pair(s) to review
+                  </p>
+                  {ranking.similarityFlags.map((f, i) => (
+                    <div key={i} className="text-xs text-zinc-700">
+                      <span className="font-semibold">
+                        {f.subAName} &amp; {f.subBName}
+                      </span>{' '}
+                      ({Math.round(f.similarity * 100)}%): {f.reason}
+                      {f.sharedExamples.length > 0 && (
+                        <span className="block font-mono text-[11px] text-zinc-500">
+                          e.g. {f.sharedExamples.slice(0, 2).join(' | ')}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
               {!ranking ? (
                 <div className="bg-white rounded-2xl shadow-card p-4 sm:p-6 sm:p-12 text-center space-y-3">
                   <Trophy className="w-12 h-12 text-zinc-300 mx-auto" />
@@ -919,6 +980,10 @@ export const ReviewDashboard: React.FC = () => {
                                           )}
                                         </div>
 
+                                        {entry.headToHead && (
+                                          <HeadToHeadCard h={entry.headToHead} rank={entry.rank} />
+                                        )}
+
                                         {/* Compared to Above (What to Improve to Rank Up) */}
                                         {rel?.comparedToAbove && (
                                           <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-sm space-y-3">
@@ -1094,11 +1159,11 @@ export const ReviewDashboard: React.FC = () => {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 pb-4">
                   <div>
                     <div className="flex items-center gap-2">
-                      <Grid className="w-5 h-5 text-indigo-600" />
+                      <Grid className="w-5 h-5 text-zinc-600" />
                       <h3 className="text-base font-bold text-zinc-900">
                         9-Dimension Engineering Comparison Matrix (§22)
                       </h3>
-                      <span className="text-[10px] px-2.5 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-full font-semibold">
+                      <span className="text-[10px] px-2.5 py-0.5 bg-zinc-50 text-zinc-800 border border-zinc-200 rounded-full font-semibold">
                         Side-by-Side Multi-Project Analysis
                       </span>
                     </div>
@@ -1302,9 +1367,14 @@ export const ReviewDashboard: React.FC = () => {
                         </div>
 
                         {/* Defense Status Badge */}
-                        {sub.status === 'SUBMITTED' ? (
+                        {!['EVALUATED', 'FAILED', 'FLAGGED_FOR_REVIEW'].includes(sub.status) ? (
                           <span className="text-[11px] px-2.5 py-1 bg-zinc-100 text-zinc-600 border border-zinc-200 rounded-full font-semibold flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5" /> PENDING EVALUATION
+                            <Clock className="w-3.5 h-3.5" />{' '}
+                            {sub.status === 'SUBMITTED'
+                              ? 'PENDING EVALUATION'
+                              : sub.status === 'QUEUED'
+                                ? 'QUEUED'
+                                : 'EVALUATING…'}
                           </span>
                         ) : sub.flaggedForHumanReview ? (
                           <span className="text-[11px] px-2.5 py-1 bg-rose-50 text-rose-700 border border-rose-200 rounded-full font-bold flex items-center gap-1">
@@ -1529,6 +1599,7 @@ export const ReviewDashboard: React.FC = () => {
 
       <SubmissionDetailModal
         submissionId={inspectSubmissionId}
+        formFields={selectedEvent?.formFields}
         initialTab={detailInitialTab}
         onClose={() => setInspectSubmissionId(null)}
         onUpdated={() => {
@@ -1548,3 +1619,72 @@ export const ReviewDashboard: React.FC = () => {
 };
 
 export default ReviewDashboard;
+
+/** AI judge's evidence-cited answer to "why is this team not one place higher?" */
+const HeadToHeadCard: React.FC<{ h: HeadToHead; rank: number }> = ({ h, rank }) => (
+  <div className="bg-white p-4 rounded-xl border border-indigo-200 shadow-sm space-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <span className="text-xs font-bold text-zinc-900 uppercase tracking-wide">
+        Why #{rank} is not #{rank - 1} ({h.vsTeam})
+      </span>
+      {!h.agreesWithRanking ? (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-amber-50 text-amber-800 border border-amber-200">
+          Judge picked {h.winnerTeam}: close call, review manually
+        </span>
+      ) : h.positionConsistent === false ? (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-amber-50 text-amber-800 border border-amber-200">
+          Judge was not consistent: close call, review manually
+        </span>
+      ) : h.positionConsistent ? (
+        <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+          Verified both ways
+        </span>
+      ) : null}
+    </div>
+    <p className="text-xs text-zinc-700">{h.verdict}</p>
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-zinc-500">
+            <th className="py-1 pr-3 font-semibold">Area</th>
+            <th className="py-1 pr-3 font-semibold">{h.winnerTeam}</th>
+            <th className="py-1 font-semibold">{h.loserTeam}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {h.decisiveFactors.map((f, i) => (
+            <tr key={i} className="border-t border-zinc-100 align-top">
+              <td className="py-1.5 pr-3 font-medium text-zinc-900 whitespace-nowrap">
+                {f.area} <span className="text-[10px] text-zinc-400">{f.impact}</span>
+              </td>
+              <td className="py-1.5 pr-3 text-emerald-800">{f.winnerDid}</td>
+              <td className="py-1.5 text-rose-800">{f.loserDid}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    {h.whereLoserWasBetter.length > 0 && (
+      <div>
+        <p className="text-[11px] font-semibold text-zinc-600 uppercase">
+          Where {h.loserTeam} was better
+        </p>
+        <ul className="list-disc pl-4 text-xs text-zinc-700">
+          {h.whereLoserWasBetter.map((x, i) => (
+            <li key={i}>{x}</li>
+          ))}
+        </ul>
+      </div>
+    )}
+    <div>
+      <p className="text-[11px] font-semibold text-zinc-600 uppercase">
+        What {h.loserTeam} needs to overtake
+      </p>
+      <ul className="list-disc pl-4 text-xs text-zinc-700">
+        {h.loserToOvertake.map((x, i) => (
+          <li key={i}>{x}</li>
+        ))}
+      </ul>
+    </div>
+  </div>
+);

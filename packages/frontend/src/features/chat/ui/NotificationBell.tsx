@@ -68,7 +68,7 @@ export const NotificationBell: React.FC<{ align?: 'left' | 'right' }> = ({ align
                   </button>
                 ) : null}
               </div>
-              <ul className="max-h-96 overflow-y-auto">
+              <ul className="custom-scrollbar max-h-96 overflow-y-auto">
                 {q.data?.items.length ? (
                   q.data.items.map((n) => {
                     const Icon = icons[n.type];

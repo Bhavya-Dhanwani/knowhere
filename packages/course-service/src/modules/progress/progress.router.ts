@@ -47,4 +47,17 @@ router.get(
   progressController.getCourseGrades
 );
 
+/*
+    @route GET /api/courses/:courseId/leaderboard
+    @desc Top learners in a course and the caller's rank
+    @access Private (course members and staff)
+*/
+router.get(
+  '/:courseId/leaderboard',
+  authMiddleware,
+  requireRole('admin', 'trainer', 'trainee'),
+  getProgressValidators,
+  progressController.getLeaderboard
+);
+
 export default router;

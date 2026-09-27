@@ -20,6 +20,9 @@ router.get('/:id/structure', anyRole, courseIdValidators, courseController.getSt
 // @route GET /api/courses/:id — course details
 router.get('/:id', anyRole, courseIdValidators, courseController.getCourseById);
 
+// @route POST /api/courses/:id/enroll — join a published course as a learner (open enrollment)
+router.post('/:id/enroll', anyRole, courseIdValidators, courseController.enroll);
+
 // @route PUT /api/courses/:id — rename, describe, publish / archive
 router.put('/:id', staff, updateCourseValidators, courseController.updateCourse);
 

@@ -109,7 +109,8 @@ export class EvaluationActivities {
     discovery: unknown,
     codeAnalysis: unknown,
     frontendEval: unknown,
-    backendEval: unknown
+    backendEval: unknown,
+    buildEval?: unknown
   ) {
     logger.info({ submissionId }, 'Activity: Assembling and persisting evidence bundle');
 
@@ -121,7 +122,8 @@ export class EvaluationActivities {
         discovery,
         codeAnalysis,
         frontendEval,
-        backendEval
+        backendEval,
+        buildEval
       },
       { upsert: true, new: true }
     );
@@ -161,6 +163,7 @@ export class EvaluationActivities {
         name: event.name,
         description: event.description,
         problemStatement: event.problemStatement,
+        judgingPrompt: event.judgingPrompt,
         projectType: event.projectType,
         requiresLiveUrl: event.requiresLiveUrl
       }

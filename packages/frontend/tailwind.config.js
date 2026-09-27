@@ -3,17 +3,18 @@
 // Single brand hue for the whole product. `blue` and `indigo` are aliased to it so
 // older screens that were written against Tailwind's blue pick up the brand too.
 const brand = {
-  50: '#f4f3ff',
-  100: '#ebe9fe',
-  200: '#d9d5fe',
-  300: '#bcb4fd',
-  400: '#9b8cfa',
-  500: '#7d66f5',
-  600: '#6a48ea',
-  700: '#5a37d0',
-  800: '#4a2fa9',
-  900: '#3e2a86',
-  950: '#251855'
+  // monochrome: the product is black on off-white; `brand-*` everywhere follows this scale
+  50: '#f6f6f5',
+  100: '#ededec',
+  200: '#dcdcda',
+  300: '#c4c4c1',
+  400: '#8f8f8b',
+  500: '#3f3f3c',
+  600: '#161615',
+  700: '#0c0c0b',
+  800: '#050505',
+  900: '#000000',
+  950: '#000000'
 };
 
 export default {
@@ -37,7 +38,7 @@ export default {
         brand,
         blue: brand,
         indigo: brand,
-        canvas: '#fafafa',
+        canvas: '#f7f7f5',
         ink: '#0a0a0f',
         night: '#08080c',
         // legacy tokens kept for older screens

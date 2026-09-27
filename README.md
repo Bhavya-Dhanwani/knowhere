@@ -33,6 +33,15 @@ Infrastructure: MongoDB, Redis, S3 (MinIO locally), ffmpeg, LiveKit (voice SFU).
   - Python, C++ and Java run in `judge-runner`. Every compile and every test case gets a fresh
     bubblewrap sandbox: no network, read-only system, runs as `nobody`, rlimits.
   - Hidden-test verdicts never echo program output.
+  - LeetCode-style questions declare a function signature, e.g. `twoSum(nums: int[], target: int) -> int[]`.
+    Learners get a `class Solution` template per language and write only that function. A hidden
+    driver (`packages/shared/src/utils/signature.ts`) parses each test input and calls the
+    function. Each input is one JSON value per line, and the result is compared as JSON.
+    `JUDGE_URL=http://localhost:5010 node scripts/check-signatures.mjs` checks the driver for
+    every type in every language.
+  - The editor is Monaco. Run uses the examples or the learner's own cases, and the expected
+    output for a custom case comes from the reference solution. Submit judges the hidden tests
+    and records the attempt in the Submissions tab with its verdict and runtime.
   - AI test generation needs a trainer's reference solution. The model proposes inputs, and
     the reference produces the expected outputs.
 - **Video is encrypted.** Uploads are transcoded to AES-128 HLS with a per-video key.
@@ -44,6 +53,32 @@ Infrastructure: MongoDB, Redis, S3 (MinIO locally), ffmpeg, LiveKit (voice SFU).
   typing indicators, presence, unread counts, file sharing, search, notifications and
   moderator tools. Voice runs through LiveKit, and the roster is shared across chat pods via
   the Redis adapter.
+- **Behaviour tracking and the AI Coach.**
+  - The browser tracker (`packages/frontend/src/shared/lib/tracker.ts`) batches learner
+    events to `/api/course/coach/activity`:
+    - time on each item while the tab is visible
+    - video watch ranges, skips, rewinds, pauses, speed and completion
+    - resource opens and downloads
+    - code runs, pastes, language switches and resets
+  - `behaviour.service.ts` joins these with progress, quiz attempts and code submissions. The
+    result is a per-learner profile: coverage, rewatched and skipped timestamps, attempts to
+    correct, pass rates, sessions, streak, study hours and items not yet started. It also
+    produces deterministic signals such as "skips large parts of videos" or "submits without
+    running".
+  - `coach.service.ts` turns profiles and course content into documents and embeds them with
+    `mistral-embed`, re-embedding only changed text. Retrieval is scoped by role: trainees only
+    see their own data, and trainers and admins only see courses they manage.
+  - `/coach` gives trainees a practice coach. Trainers and admins get a mentor that says how
+    to talk to each learner, plus a cohort view flagged by risk.
+- **AI calls never stop at one key.** Every Mistral call goes through a shared `KeyPool`
+  (`packages/shared/src/utils/keyPool.ts`). It rotates keys round-robin and fails over to the
+  next key on rate limits, revoked keys and provider errors. When a model's quota runs out on
+  every key, it falls back to the next model for 60s. Configure keys as `MISTRAL_API_KEYS=a,b,c`
+  or `MISTRAL_API_KEY1..N`.
+  - Chat replies stream as Server-Sent Events (`/api/course/coach/chat/stream`,
+    `/api/course/assistant/stream`) through LangChain's `ChatMistralAI.stream()`.
+  - If a key fails mid-answer, `KeyPool.streamModels` switches to the next key and sends a
+    `restart` event, and the client drops the partial text before the new answer streams in.
 - **Tokens.**
   - Access tokens are RS256. Only auth-service holds the private key, so no other service can
     mint a user token.
@@ -114,5 +149,15 @@ Manifests are in `k8s/` (`kubectl apply -k k8s`). Before the first deploy:
 3. Make sure nodes allow LiveKit's host ports: 7881/tcp, 3478/udp and 50000–60000/udp.
 4. On clusters older than 1.30, replace the judge's `appArmorProfile` field with the AppArmor
    annotation.
+5. Storage runs on in-cluster MinIO (`k8s/minio.yml`), using the `media-secrets` keys as its
+   login. Browsers reach the buckets through the web origin (`/lms-raw-media/…`), so uploads need
+   no CORS. `S3_PUBLIC_ENDPOINT` in `course-deployment.yml` must be the site's public URL. To use
+   AWS S3 instead, drop `minio.yml` and the two `S3_*ENDPOINT` env vars.
+
+Deploy with `skaffold run`. It builds the images and tags them. `kubectl apply -k k8s` alone
+resets the deployments to stale untagged images. `node scripts/sync-k8s-secrets.cjs` copies the
+LiveKit and Mistral values from your local `.env` files into `k8s/secrets.yml`.
+`scripts\promote-admin.bat` sets platform roles in the cluster database.
+`BASE=http://localhost:3000 node scripts/ui-e2e.mjs` runs the browser test suite against it.
 
 With `NODE_ENV=production`, every service refuses to start without real keys.

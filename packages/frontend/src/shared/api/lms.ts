@@ -161,6 +161,17 @@ export const lmsApi = {
       } satisfies CourseGrades;
     }),
 
+  // learner-visible: top scorers plus the caller's rank ("ahead of N% of the batch")
+  courseLeaderboard: (courseId: string) =>
+    call(async () =>
+      data<{
+        totalStudents: number;
+        courseMaxScore: number;
+        top: { userId: string; totalScoreEarned: number; percentage: number; rank: number }[];
+        me: { rank: number; totalScoreEarned: number; percentage: number; aheadOf: number } | null;
+      }>(await axiosClient.get(`/courses/${courseId}/leaderboard`))
+    ),
+
   // ---- profile & memberships (user-service)
   myProfile: () =>
     call(async () => {
@@ -218,5 +229,21 @@ export const lmsApi = {
   updateUserRole: (userId: string, role: BackendRole) =>
     call(async () =>
       toUser(data<Raw>(await axiosClient.patch(`/auth/users/${userId}/role`, { role })))
+    ),
+
+  // platform admins: newest enrollments + learners per course (user-service)
+  enrollmentOverview: () =>
+    call(async () =>
+      data<{
+        recent: {
+          userId: string;
+          name: string;
+          courseId: string;
+          role: string;
+          assignedAt: string;
+        }[];
+        learnersByCourse: { courseId: string; learners: number }[];
+        totalLearnerEnrollments: number;
+      }>(await axiosClient.get('/memberships/overview'))
     )
 };

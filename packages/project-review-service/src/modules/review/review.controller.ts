@@ -1,23 +1,60 @@
 import { Request, Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
-import { ReviewEvent } from '../../models/Event.model.js';
+import { ReviewEvent, IReviewEvent } from '../../models/Event.model.js';
 import { ReviewSubmission } from '../../models/Submission.model.js';
 import { SanitizationAudit } from '../../models/SanitizationAudit.model.js';
 import { Evidence } from '../../models/Evidence.model.js';
 import { ReviewEvaluation } from '../../models/Evaluation.model.js';
 import { EventRanking, IEventRanking } from '../../models/Ranking.model.js';
 import { ReplayTrace } from '../../models/ReplayTrace.model.js';
-import { WorkflowRunner } from '../workflows/workflow.runner.js';
+import { WorkflowRunner, IN_FLIGHT, toWorkflowInput } from '../workflows/workflow.runner.js';
+import { resolveCommit } from '../runners/discovery.runner.js';
 import { RankingService } from '../ranking/ranking.service.js';
 import { ENGINEERING_DIMENSIONS, DEFAULT_DIMENSION_WEIGHTS } from '../scoring/types.js';
-import { NotFound, BadRequest } from '../../shared/errors/index.js';
+import { NotFound, BadRequest, Conflict, Forbidden } from '../../shared/errors/index.js';
 import HTTP_STATUS from '../../shared/constants/StatusCodes.constants.js';
 import { AuthenticatedRequest } from '../../shared/middlewares/auth.middleware.js';
 import logger from '../../shared/config/logger.config.js';
 import { exportService } from '../export/export.service.js';
+import { checkFormResponses } from './review.validator.js';
+import env from '../../shared/config/env.config.js';
 
 const getId = (req: Request): string =>
   (Array.isArray(req.params.id) ? req.params.id[0] : req.params.id) as string;
+
+export const isStaff = (req: AuthenticatedRequest) =>
+  ['trainer', 'admin'].includes(req.user?.role || '');
+
+/** Staff see everything; students only see judging instructions the organiser made public. */
+const forViewer = (event: IReviewEvent, req: AuthenticatedRequest) => {
+  const data = event.toObject();
+  if (!isStaff(req)) {
+    if (!data.judgingPromptPublic) delete data.judgingPrompt;
+    // hidden test cases: the expected outputs are the answers
+    delete data.ioTests;
+    delete data.runCommand;
+  }
+  return data;
+};
+
+// a submission in one of these states must not be edited or re-queued
+const BUSY = ['QUEUED', ...IN_FLIGHT];
+
+/** Students may only submit/edit while the event is ACTIVE and before its deadline. */
+const assertOpenForStudents = (event: IReviewEvent, req: AuthenticatedRequest) => {
+  if (isStaff(req)) return;
+  if (event.status !== 'ACTIVE') throw new Forbidden('This event is not accepting submissions');
+  if (event.submissionDeadline && Date.now() > event.submissionDeadline.getTime())
+    throw new Forbidden(`Submissions closed at ${event.submissionDeadline.toISOString()}`);
+};
+
+/** Pins the branch to its current commit; a wrong repo/branch is rejected now, not scored 0 later. */
+/** Pins the commit and resolves the branch that actually exists (blank -> repo default). */
+const pinCommit = async (repositoryUrl: string, branch: string) => {
+  const { sha, branch: resolved, error } = await resolveCommit(repositoryUrl, branch);
+  if (error) throw new BadRequest(error);
+  return { commitHash: sha ?? null, branch: resolved || branch || 'main' };
+};
 
 export class ReviewController {
   // ==================== EVENTS ====================
@@ -33,7 +70,13 @@ export class ReviewController {
         requirements,
         strictScoring,
         requiresLiveUrl,
-        requiresApiSpec
+        requiresApiSpec,
+        formFields,
+        submissionDeadline,
+        judgingPrompt,
+        judgingPromptPublic,
+        ioTests,
+        runCommand
       } = req.body;
 
       // Validate total weight sums to 1.0 (or close within float tolerance)
@@ -56,6 +99,12 @@ export class ReviewController {
         requiresApiSpec: !!requiresApiSpec,
         criteria,
         requirements: requirements || [],
+        formFields: formFields || [],
+        submissionDeadline: submissionDeadline || undefined,
+        judgingPrompt: judgingPrompt?.trim() || undefined,
+        judgingPromptPublic: !!judgingPromptPublic,
+        ioTests: ioTests || [],
+        runCommand: runCommand?.trim() || undefined,
         strictScoring: strictScoring !== undefined ? strictScoring : true
       });
 
@@ -75,7 +124,9 @@ export class ReviewController {
       const event = await ReviewEvent.findById(id);
       if (!event) throw new NotFound(`Review event not found: ${id}`);
 
-      return res.status(HTTP_STATUS.OK).json({ success: true, data: event });
+      return res
+        .status(HTTP_STATUS.OK)
+        .json({ success: true, data: forViewer(event, req as AuthenticatedRequest) });
     } catch (error) {
       next(error);
     }
@@ -94,6 +145,13 @@ export class ReviewController {
         strictScoring,
         requiresLiveUrl,
         requiresApiSpec,
+        formFields,
+        submissionDeadline,
+        judgingPrompt,
+        judgingPromptPublic,
+        ioTests,
+        runCommand,
+        resultsPublished,
         status
       } = req.body;
 
@@ -121,6 +179,14 @@ export class ReviewController {
           ...(strictScoring !== undefined && { strictScoring }),
           ...(requiresLiveUrl !== undefined && { requiresLiveUrl }),
           ...(requiresApiSpec !== undefined && { requiresApiSpec }),
+          ...(formFields && { formFields }),
+          // null clears the deadline
+          ...(submissionDeadline !== undefined && { submissionDeadline }),
+          ...(judgingPrompt !== undefined && { judgingPrompt: judgingPrompt.trim() }),
+          ...(judgingPromptPublic !== undefined && { judgingPromptPublic }),
+          ...(resultsPublished !== undefined && { resultsPublished }),
+          ...(ioTests !== undefined && { ioTests }),
+          ...(runCommand !== undefined && { runCommand: runCommand.trim() }),
           ...(status && { status })
         },
         { new: true, runValidators: true }
@@ -140,7 +206,11 @@ export class ReviewController {
   public async listEvents(req: Request, res: Response, next: NextFunction) {
     try {
       const events = await ReviewEvent.find().sort({ createdAt: -1 });
-      return res.status(HTTP_STATUS.OK).json({ success: true, count: events.length, data: events });
+      return res.status(HTTP_STATUS.OK).json({
+        success: true,
+        count: events.length,
+        data: events.map((e) => forViewer(e, req as AuthenticatedRequest))
+      });
     } catch (error) {
       next(error);
     }
@@ -153,11 +223,13 @@ export class ReviewController {
       const eventId = getId(req);
       const event = await ReviewEvent.findById(eventId);
       if (!event) throw new NotFound(`Event not found: ${eventId}`);
+      assertOpenForStudents(event, req);
 
       const { teamName, teamId, repositoryUrl, branch, liveSiteUrl, apiSpecUrl, rawReadmeText } =
         req.body;
-
-      const submission = await ReviewSubmission.create({
+      const formResponses = checkFormResponses(event.formFields || [], req.body.formResponses);
+      const pinned = await pinCommit(repositoryUrl, (branch || '').trim());
+      const data = {
         eventId: new Types.ObjectId(eventId),
         teamName,
         teamId,
@@ -167,18 +239,83 @@ export class ReviewController {
           email: req.user?.email
         },
         repositoryUrl,
-        branch: branch || 'main',
+        branch: pinned.branch,
+        commitHash: pinned.commitHash,
         liveSiteUrl,
         apiSpecUrl,
         rawReadmeText,
+        formResponses,
         status: 'SUBMITTED'
-      });
+      };
 
-      return res.status(HTTP_STATUS.CREATED).json({
+      // one submission per student per event: resubmitting before the deadline replaces it
+      // (staff can file several, e.g. on behalf of teams)
+      const existing = isStaff(req)
+        ? null
+        : await ReviewSubmission.findOne({ eventId, 'author.userId': data.author.userId });
+      if (existing && BUSY.includes(existing.status))
+        throw new Conflict(
+          'Your submission is being evaluated right now; try again in a few minutes'
+        );
+      const submission = existing
+        ? await ReviewSubmission.findByIdAndUpdate(existing._id, data, { new: true })
+        : await ReviewSubmission.create(data);
+
+      return res.status(existing ? HTTP_STATUS.OK : HTTP_STATUS.CREATED).json({
         success: true,
-        message: 'Project submitted successfully for review',
+        message: existing
+          ? 'Your previous submission was replaced with this one'
+          : 'Project submitted successfully for review',
         data: submission
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** The signed-in student's submissions across events, with results where published. */
+  public async listMySubmissions(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      const subs = await ReviewSubmission.find({ 'author.userId': req.user?.userId })
+        .select(
+          'eventId teamName repositoryUrl branch commitHash liveSiteUrl status createdAt updatedAt'
+        )
+        .sort({ createdAt: -1 })
+        .lean();
+      const eventIds = [...new Set(subs.map((s) => String(s.eventId)))];
+      const events = await ReviewEvent.find({ _id: { $in: eventIds } })
+        .select('name status submissionDeadline resultsPublished')
+        .lean();
+      const rankings = await EventRanking.find({ eventId: { $in: eventIds } })
+        .select(
+          'eventId leaderboard.submissionId leaderboard.rank leaderboard.absoluteScore totalSubmissionsRanked'
+        )
+        .lean();
+      const data = subs.map((s) => {
+        const event = events.find((e) => String(e._id) === String(s.eventId));
+        const ranking = rankings.find((r) => String(r.eventId) === String(s.eventId));
+        const entry = ranking?.leaderboard?.find((l) => String(l.submissionId) === String(s._id));
+        const published = !!event?.resultsPublished;
+        return {
+          ...s,
+          event: event && {
+            _id: event._id,
+            name: event.name,
+            status: event.status,
+            submissionDeadline: event.submissionDeadline,
+            resultsPublished: published
+          },
+          result:
+            published && entry
+              ? {
+                  score: entry.absoluteScore,
+                  rank: entry.rank,
+                  of: ranking?.totalSubmissionsRanked
+                }
+              : null
+        };
+      });
+      return res.status(HTTP_STATUS.OK).json({ success: true, data });
     } catch (error) {
       next(error);
     }
@@ -229,26 +366,51 @@ export class ReviewController {
     }
   }
 
-  public async updateSubmission(req: Request, res: Response, next: NextFunction) {
+  public async updateSubmission(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const id = getId(req);
+      const submission = await ReviewSubmission.findById(id);
+      if (!submission) throw new NotFound(`Submission not found: ${id}`);
+      const event = await ReviewEvent.findById(submission.eventId);
+      if (!event) throw new NotFound(`Associated event not found: ${submission.eventId}`);
+      assertOpenForStudents(event, req);
+      if (BUSY.includes(submission.status))
+        throw new Conflict(
+          'This submission is being evaluated right now; try again in a few minutes'
+        );
+
       const { teamName, teamId, repositoryUrl, branch, liveSiteUrl, apiSpecUrl, rawReadmeText } =
         req.body;
+      if (teamName) submission.teamName = teamName.trim();
+      if (teamId) submission.teamId = teamId.trim();
+      if (repositoryUrl) submission.repositoryUrl = repositoryUrl.trim();
+      if (branch !== undefined) submission.branch = branch.trim() || 'main';
+      if (liveSiteUrl !== undefined) submission.liveSiteUrl = liveSiteUrl.trim();
+      if (apiSpecUrl !== undefined) submission.apiSpecUrl = apiSpecUrl.trim();
+      if (rawReadmeText !== undefined) submission.rawReadmeText = rawReadmeText.trim();
+      if (req.body.formResponses !== undefined)
+        submission.formResponses = checkFormResponses(
+          event.formFields || [],
+          req.body.formResponses
+        );
+      // an edit means "evaluate my latest code": re-pin to the branch's current commit
+      submission.commitHash =
+        (await pinCommit(submission.repositoryUrl, submission.branch)).commitHash ?? undefined;
 
-      const submission = await ReviewSubmission.findByIdAndUpdate(
-        id,
-        {
-          ...(teamName && { teamName: teamName.trim() }),
-          ...(teamId && { teamId: teamId.trim() }),
-          ...(repositoryUrl && { repositoryUrl: repositoryUrl.trim() }),
-          ...(branch !== undefined && { branch: branch.trim() || 'main' }),
-          ...(liveSiteUrl !== undefined && { liveSiteUrl: liveSiteUrl.trim() }),
-          ...(apiSpecUrl !== undefined && { apiSpecUrl: apiSpecUrl.trim() }),
-          ...(rawReadmeText !== undefined && { rawReadmeText: rawReadmeText.trim() })
-        },
-        { new: true, runValidators: true }
-      );
-      if (!submission) throw new NotFound(`Submission not found: ${id}`);
+      // anything the evaluator reads changed -> the old score no longer describes this submission
+      if (
+        submission.isModified([
+          'repositoryUrl',
+          'branch',
+          'commitHash',
+          'liveSiteUrl',
+          'apiSpecUrl',
+          'rawReadmeText',
+          'formResponses'
+        ])
+      )
+        submission.status = 'SUBMITTED';
+      await submission.save();
 
       return res.status(HTTP_STATUS.OK).json({
         success: true,
@@ -270,22 +432,48 @@ export class ReviewController {
 
       const event = await ReviewEvent.findById(submission.eventId);
       if (!event) throw new NotFound(`Associated event not found: ${submission.eventId}`);
+      if (BUSY.includes(submission.status))
+        throw new Conflict('This submission is already queued or being evaluated');
 
       // Dispatch durable evaluation workflow
-      const result = await WorkflowRunner.executeEvaluation({
-        submissionId: submission._id.toString(),
-        eventId: event._id.toString(),
-        repoUrl: submission.repositoryUrl,
-        branch: submission.branch,
-        liveSiteUrl: submission.liveSiteUrl,
-        apiSpecUrl: submission.apiSpecUrl,
-        rawReadme: submission.rawReadmeText
-      });
+      const result = await WorkflowRunner.executeEvaluation(toWorkflowInput(submission, event));
 
       return res.status(HTTP_STATUS.ACCEPTED).json({
         success: true,
         message: 'Evaluation workflow executed',
         data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Queues every submission of the event and drains the queue in the background,
+   * REVIEW_CONCURRENCY at a time. The queue is in Mongo, so a restart resumes it.
+   */
+  public async evaluateEvent(req: Request, res: Response, next: NextFunction) {
+    try {
+      const eventId = getId(req);
+      const event = await ReviewEvent.findById(eventId);
+      if (!event) throw new NotFound(`Review event not found: ${eventId}`);
+      if (await ReviewSubmission.exists({ eventId, status: { $in: BUSY } }))
+        throw new Conflict('An evaluation run is already in progress for this event');
+
+      const { modifiedCount } = await ReviewSubmission.updateMany(
+        { eventId },
+        { status: 'QUEUED' }
+      );
+      if (!modifiedCount) throw new BadRequest('No submissions to evaluate');
+
+      WorkflowRunner.drainEvent(eventId).catch((err) =>
+        logger.error({ err, eventId }, 'Evaluation queue failed')
+      );
+
+      return res.status(HTTP_STATUS.ACCEPTED).json({
+        success: true,
+        message: `Evaluating ${modifiedCount} submissions, ${env.REVIEW_CONCURRENCY} at a time`,
+        data: { queued: modifiedCount, concurrency: env.REVIEW_CONCURRENCY }
       });
     } catch (error) {
       next(error);
@@ -322,11 +510,21 @@ export class ReviewController {
 
   // ==================== REPORTS & EVIDENCE ====================
 
-  public async getEvaluationReport(req: Request, res: Response, next: NextFunction) {
+  public async getEvaluationReport(req: AuthenticatedRequest, res: Response, next: NextFunction) {
     try {
       const id = getId(req);
       const submission = await ReviewSubmission.findById(id);
       if (!submission) throw new NotFound(`Submission not found: ${id}`);
+      const staff = isStaff(req);
+      if (!staff) {
+        // students: status only until the organiser publishes results (time to review close calls)
+        const event = await ReviewEvent.findById(submission.eventId).select('resultsPublished');
+        if (!event?.resultsPublished)
+          return res.status(HTTP_STATUS.OK).json({
+            success: true,
+            data: { submission, published: false }
+          });
+      }
 
       const evaluation = await ReviewEvaluation.findOne({ submissionId: id });
       const evidence = await Evidence.findOne({ submissionId: id });
@@ -341,10 +539,12 @@ export class ReviewController {
       return res.status(HTTP_STATUS.OK).json({
         success: true,
         data: {
+          published: true,
           submission,
           evaluation,
           evidence,
-          sanitizationAudit: sanitization,
+          // injection-defence internals are for organisers only
+          sanitizationAudit: staff ? sanitization : undefined,
           ranking: rankingEntry
             ? {
                 rank: rankingEntry.rank,
@@ -355,7 +555,8 @@ export class ReviewController {
                 confidenceInterval: rankingEntry.confidenceInterval,
                 rankReason: rankingEntry.rankReason,
                 relativeGrading: rankingEntry.relativeGrading,
-                relativeAnalysis: rankingEntry.relativeAnalysis
+                relativeAnalysis: rankingEntry.relativeAnalysis,
+                headToHead: rankingEntry.headToHead
               }
             : null
         }
@@ -472,6 +673,7 @@ export class ReviewController {
           totalSubmissionsRanked: ranking.totalSubmissionsRanked,
           leaderboard: ranking.leaderboard,
           closeRankingBoundaries: ranking.closeRankingBoundaries,
+          similarityFlags: ranking.similarityFlags,
           comparisonMatrix: ranking.comparisonMatrix,
           generatedAt: ranking.generatedAt
         }

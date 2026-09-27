@@ -1,11 +1,12 @@
 import {
+  Bot,
   BookOpen,
+  Compass,
   FileCode2,
   Library,
   LayoutDashboard,
   LucideIcon,
   MessagesSquare,
-  Shield,
   Sparkles,
   Users
 } from 'lucide-react';
@@ -27,24 +28,26 @@ export interface NavSection {
 
 const community: NavItem = { label: 'Community', to: '/chat', icon: MessagesSquare, badge: 'live' };
 const docs: NavItem = { label: 'API reference', to: '/docs', icon: FileCode2 };
+const coach: NavItem = { label: 'AI Coach', to: '/coach', icon: Bot };
 
 export function navFor(role: AppRole): NavSection[] {
   if (role === 'admin') {
     return [
       {
         items: [
-          { label: 'Overview', to: '/admin/dashboard', icon: Shield },
+          { label: 'Dashboard', to: '/admin/dashboard', icon: LayoutDashboard },
           { label: 'Courses', to: '/admin/courses', icon: BookOpen, match: ['/admin/course/'] },
-          { label: 'Content library', to: '/library', icon: Library },
-          { label: 'People', to: '/admin/people', icon: Users }
+          { label: 'Content', to: '/library', icon: Library },
+          { label: 'Users', to: '/admin/people', icon: Users }
         ]
       },
       {
         title: 'Workspace',
         items: [
           { label: 'Project reviews', to: '/review', icon: Sparkles },
+          coach,
           community,
-          { label: 'Course catalog', to: '/courses', icon: LayoutDashboard, match: ['/course/'] }
+          { label: 'Course catalog', to: '/courses', icon: Compass, match: ['/course/'] }
         ]
       },
       { title: 'Resources', items: [docs] }
@@ -55,10 +58,11 @@ export function navFor(role: AppRole): NavSection[] {
     return [
       {
         items: [
-          { label: 'Overview', to: '/dashboard', icon: LayoutDashboard },
+          { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
           { label: 'Courses', to: '/courses', icon: BookOpen, match: ['/course/'] },
           { label: 'Content library', to: '/library', icon: Library },
           { label: 'Project reviews', to: '/review', icon: Sparkles },
+          coach,
           community
         ]
       },
@@ -71,6 +75,13 @@ export function navFor(role: AppRole): NavSection[] {
       items: [
         { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
         { label: 'My courses', to: '/courses', icon: BookOpen, match: ['/course/'] },
+        {
+          label: 'My project reviews',
+          to: '/review/my',
+          icon: Sparkles,
+          match: ['/review/submit/']
+        },
+        coach,
         community
       ]
     },

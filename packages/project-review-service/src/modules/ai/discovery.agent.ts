@@ -118,10 +118,8 @@ export class MistralDiscoveryAgent {
       'Starting Mistral Deep Project Discovery Agent'
     );
 
-    const preferredModel = env.MISTRAL_MODEL || 'mistral-medium-latest';
-    const candidateModels = Array.from(
-      new Set([preferredModel, 'mistral-medium-latest', 'codestral-latest', 'open-mistral-7b'])
-    );
+    // one model for everything (failover rotates keys, not models)
+    const candidateModels = [env.MISTRAL_MODEL || 'mistral-medium-latest'];
 
     const systemPrompt = [
       'You are a senior technical architect and source-code inspector in the Project Review Engine.',
@@ -170,27 +168,22 @@ export class MistralDiscoveryAgent {
 
     if (defaultKeyPool.hasKeys()) {
       for (const modelName of candidateModels) {
-        const { model, selectedKey } = defaultKeyPool.getChatMistralInstance({
-          modelName,
-          temperature: 0.1,
-          maxRetries: 1
-        });
-
         try {
           logger.info(
             { submissionId, model: modelName },
             'Invoking LangChain ChatMistralAI Discovery Agent'
           );
-          const structuredModel = model.withStructuredOutput(ProjectDeepDiscoverySchema);
-
-          const result = await structuredModel.invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              `Perform exhaustive whole-project discovery on this repository:\n${JSON.stringify(payload, null, 2)}`
-            )
-          ]);
-
-          defaultKeyPool.reportSuccess(selectedKey);
+          // rotates to the next key on rate limits / bad keys / provider errors
+          const result = await defaultKeyPool.withModel({ temperature: 0.1 }, (model) =>
+            model
+              .withStructuredOutput(ProjectDeepDiscoverySchema)
+              .invoke([
+                new SystemMessage(systemPrompt),
+                new HumanMessage(
+                  `Perform exhaustive whole-project discovery on this repository:\n${JSON.stringify(payload, null, 2)}`
+                )
+              ])
+          );
           logger.info(
             {
               submissionId,
@@ -206,9 +199,6 @@ export class MistralDiscoveryAgent {
             { model: modelName, err: errMsg },
             'Mistral Discovery Agent invocation failed for model, testing next'
           );
-          if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('Rate limit')) {
-            defaultKeyPool.reportRateLimit(selectedKey, 30000);
-          }
         }
       }
     }

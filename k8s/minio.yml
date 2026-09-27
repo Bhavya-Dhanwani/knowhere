@@ -1,0 +1,82 @@
+# S3-compatible storage inside the cluster. It logs in with the media-secrets AWS keys, so
+# course-service talks to it unchanged. Browsers reach the buckets through the frontend/ingress
+# (same origin), so presigned uploads need no CORS. Remove this file and the S3_ENDPOINT /
+# S3_PUBLIC_ENDPOINT env in course-deployment.yml to use real AWS S3 instead.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          imagePullPolicy: IfNotPresent
+          args: ['server', '/data']
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: media-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: media-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: MINIO_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: media-secrets
+                  key: AWS_REGION
+          ports:
+            - containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+          resources:
+            requests:
+              cpu: '50m'
+              memory: '128M'
+            limits:
+              cpu: '500m'
+              memory: '512M'
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minio-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+spec:
+  selector:
+    app: minio
+  ports:
+    - port: 9000
+      targetPort: 9000

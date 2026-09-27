@@ -70,4 +70,11 @@ router.delete(
   membershipController.revokeMember
 );
 
+/*
+    @route DELETE /api/memberships/courses/:courseId
+    @desc Remove every membership of a deleted course
+    @access Service (course-service, memberships:write)
+*/
+router.delete('/', serviceOrUserAuth('memberships:write'), membershipController.removeCourse);
+
 export default router;

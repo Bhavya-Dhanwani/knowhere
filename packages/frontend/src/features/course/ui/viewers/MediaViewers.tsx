@@ -8,6 +8,7 @@ import { Button } from '../../../../shared/ui/Button';
 import { useParams } from 'react-router';
 import { contentApi, OutlineItem } from '../../api/contentApi';
 import { RootState, store } from '../../../../app/store';
+import { track, trackVideo } from '../../../../shared/lib/tracker';
 
 const Frame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-zinc-950 shadow-lift">
@@ -94,6 +95,10 @@ export const VideoViewer: React.FC<{ item: OutlineItem }> = ({ item }) => {
     };
   }, [item.refId, courseId, encrypted, attempt]);
 
+  useEffect(() => {
+    if (video.current) return trackVideo(video.current, courseId, item.id);
+  }, [courseId, item.id]);
+
   return (
     <Frame>
       <video
@@ -160,6 +165,10 @@ export const ResourceViewer: React.FC<{ item: OutlineItem }> = ({ item }) => {
     staleTime: 4 * 60_000 // download URLs live 5 minutes
   });
 
+  useEffect(() => {
+    if (q.data) track('RESOURCE_OPEN', courseId, item.id, { mimeType: q.data.mimeType });
+  }, [q.data, courseId, item.id]);
+
   if (q.isLoading) return <Spinner className="py-16" />;
   if (q.error || !q.data) {
     return (
@@ -196,7 +205,13 @@ export const ResourceViewer: React.FC<{ item: OutlineItem }> = ({ item }) => {
           <p className="text-xs text-zinc-500">{r.mimeType}</p>
         </div>
       )}
-      <a href={r.downloadUrl} target="_blank" rel="noreferrer" download={r.fileName}>
+      <a
+        href={r.downloadUrl}
+        target="_blank"
+        rel="noreferrer"
+        download={r.fileName}
+        onClick={() => track('RESOURCE_DOWNLOAD', courseId, item.id)}
+      >
         <Button variant="outline">
           <Download className="h-4 w-4" /> Download
         </Button>

@@ -1,5 +1,6 @@
 import { BackendEvalResult } from './types.js';
 import logger from '../../shared/config/logger.config.js';
+import { isPublicHost } from './live-site.audit.js';
 
 export class BackendEvalRunner {
   /**
@@ -37,6 +38,16 @@ export class BackendEvalRunner {
         assessmentMode: 'NOT_RUN',
         assessmentNote:
           'The supplied API specification is not an HTTP URL; no remote API test was run.',
+        schemathesis: empty
+      };
+    }
+
+    if (!(await isPublicHost(new URL(apiSpecUrlOrPath).hostname).catch(() => false))) {
+      return {
+        tool: 'OpenAPI document probe',
+        assessmentMode: 'NOT_RUN',
+        assessmentNote:
+          'The API spec URL points to a private/internal address and was not fetched.',
         schemathesis: empty
       };
     }

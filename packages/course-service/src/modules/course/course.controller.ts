@@ -45,8 +45,28 @@ class CourseController {
       await assertCanManageCourse(req.user!, course);
       await this.progressDao.deleteByCourse(course._id.toString());
       await this.courseDao.deleteCourseById(course._id.toString());
-      memberships.forget(course._id.toString());
+      await memberships.removeCourse(course._id.toString());
       return Ok(res, 'Course deleted successfully', { id: course._id.toString() });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // POST /api/courses/:id/enroll — any signed-in user can join a published course as a learner
+  enroll = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const course = await requireCourse(param(req.params.id));
+      const courseId = course._id.toString();
+      if (course.status !== 'published')
+        throw new Forbidden('This course is not open for enrollment.');
+      const existing = await memberships.memberOf(courseId, req.user!.userId);
+      if (!existing) {
+        await memberships.assign(courseId, req.user!.userId, 'trainee');
+      }
+      return Ok(res, existing ? 'Already enrolled' : 'Enrolled', {
+        courseId,
+        role: existing?.role || 'trainee'
+      });
     } catch (error) {
       next(error);
     }

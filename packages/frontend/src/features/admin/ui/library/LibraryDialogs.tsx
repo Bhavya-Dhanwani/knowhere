@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Sparkles, Trash2, Upload } from 'lucide-react';
 import { Modal } from '../../../../shared/ui/Modal';
@@ -9,11 +9,16 @@ import { cn } from '../../../../shared/lib/cn';
 import { FormError } from '../../../auth/ui/AuthControls';
 import {
   contentApi,
+  FunctionSignature,
   ItemType,
   Library,
   LibraryType,
+  PARAM_TYPES,
+  ParamType,
   ResourceType
 } from '../../../course/api/contentApi';
+
+const MonacoEditor = lazy(() => import('../../../course/ui/viewers/MonacoEditor'));
 import { ITEM_META } from '../../../course/ui/itemMeta';
 import { AttachResources, OrderedPicker } from './pickers';
 
@@ -353,7 +358,14 @@ const PairRows: React.FC<{
   onChange: (r: Pair[]) => void;
   max: number;
   noun: string;
-}> = ({ rows, onChange, max, noun }) => (
+  placeholders?: { input: string; output: string };
+}> = ({
+  rows,
+  onChange,
+  max,
+  noun,
+  placeholders = { input: 'input (stdin)', output: 'expected output' }
+}) => (
   <div className="space-y-2">
     {rows.map((r, i) => (
       <div key={i} className="flex items-start gap-2">
@@ -362,8 +374,9 @@ const PairRows: React.FC<{
             <textarea
               key={k}
               value={r[k]}
-              placeholder={k === 'input' ? 'input (stdin)' : 'expected output'}
-              rows={2}
+              placeholder={placeholders[k]}
+              aria-label={`${noun} ${i + 1} ${k}`}
+              rows={k === 'input' ? 3 : 2}
               onChange={(e) =>
                 onChange(rows.map((x, j) => (j === i ? { ...x, [k]: e.target.value } : x)))
               }
@@ -406,6 +419,7 @@ type CodeDoc = {
   supportedLanguages: string[];
   points: number;
   referenceSolution: { language: string; code: string } | null;
+  signature?: FunctionSignature | null;
 };
 
 const CODE_LANGUAGES = [
@@ -431,12 +445,23 @@ export const CodeQuestionDialog: React.FC<DialogProps> = ({ open, onClose, editI
   const [points, setPoints] = useState(10);
   const [refLang, setRefLang] = useState('python');
   const [refCode, setRefCode] = useState('');
+  // LeetCode-style function (default) or a full stdin -> stdout program
+  const [style, setStyle] = useState<'function' | 'program'>('function');
+  const [fnName, setFnName] = useState('');
+  const [params, setParams] = useState<{ name: string; type: ParamType }[]>([
+    { name: 'nums', type: 'int[]' }
+  ]);
+  const [returnType, setReturnType] = useState<ParamType>('int');
 
   const doc = useEditDoc<CodeDoc>('code-question', open, editId, (d) => {
     setLangs(d?.supportedLanguages?.filter((l) => ALL_LANGUAGES.includes(l)) || ALL_LANGUAGES);
     setPoints(d?.points ?? 10);
     setRefLang(d?.referenceSolution?.language || 'python');
     setRefCode(d?.referenceSolution?.code || '');
+    setStyle(d && !d.signature ? 'program' : 'function');
+    setFnName(d?.signature?.functionName || '');
+    setParams(d?.signature?.params || [{ name: 'nums', type: 'int[]' }]);
+    setReturnType(d?.signature?.returnType || 'int');
     setTitle(d?.title || '');
     setDescription(d?.description || '');
     setInputFormat(d?.inputFormat || '');
@@ -453,6 +478,8 @@ export const CodeQuestionDialog: React.FC<DialogProps> = ({ open, onClose, editI
   });
 
   const filled = (rows: Pair[]) => rows.filter((r) => r.input.trim() && r.output.trim());
+  const isFn = style === 'function';
+  const ident = (v: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(v);
   const save = useSave(() => {
     const body = {
       title: title.trim(),
@@ -468,7 +495,8 @@ export const CodeQuestionDialog: React.FC<DialogProps> = ({ open, onClose, editI
       difficulty,
       supportedLanguages: langs,
       points,
-      referenceSolution: refCode.trim() ? { language: refLang, code: refCode } : null
+      referenceSolution: refCode.trim() ? { language: refLang, code: refCode } : null,
+      signature: isFn ? { functionName: fnName.trim(), params, returnType } : null
     };
     return editId
       ? contentApi.update('code-question', editId, body)
@@ -478,8 +506,9 @@ export const CodeQuestionDialog: React.FC<DialogProps> = ({ open, onClose, editI
   const valid = Boolean(
     title.trim() &&
     description.trim() &&
-    inputFormat.trim() &&
-    outputFormat.trim() &&
+    (isFn
+      ? ident(fnName.trim()) && params.length && params.every((p) => ident(p.name))
+      : inputFormat.trim() && outputFormat.trim()) &&
     filled(examples).length &&
     langs.length &&
     // generated tests take their expected output from the reference solution
@@ -518,7 +547,111 @@ export const CodeQuestionDialog: React.FC<DialogProps> = ({ open, onClose, editI
             className={textarea}
           />
         </Field>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Answer style">
+          <div className="inline-flex rounded-xl bg-zinc-100 p-1">
+            {(
+              [
+                ['function', 'Function (LeetCode)'],
+                ['program', 'Full program (stdin/stdout)']
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={style === k}
+                onClick={() => setStyle(k)}
+                className={cn(
+                  'h-8 rounded-lg px-3 text-xs font-medium transition',
+                  style === k ? 'bg-white text-zinc-900 shadow-card' : 'text-zinc-500'
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Field>
+        {isFn ? (
+          <div className="space-y-3 rounded-2xl p-4 ring-1 ring-inset ring-zinc-200">
+            <Input
+              label="Function name"
+              value={fnName}
+              onChange={(e) => setFnName(e.target.value)}
+              placeholder="e.g. twoSum"
+            />
+            <Field label="Parameters">
+              <div className="space-y-2">
+                {params.map((p, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      value={p.name}
+                      onChange={(e) =>
+                        setParams((cur) =>
+                          cur.map((x, j) => (j === i ? { ...x, name: e.target.value } : x))
+                        )
+                      }
+                      aria-label={`Parameter ${i + 1} name`}
+                      placeholder="name"
+                      className={cn(textarea, 'h-10 min-w-0 flex-1 py-0 font-mono text-[13px]')}
+                    />
+                    <select
+                      value={p.type}
+                      onChange={(e) =>
+                        setParams((cur) =>
+                          cur.map((x, j) =>
+                            j === i ? { ...x, type: e.target.value as ParamType } : x
+                          )
+                        )
+                      }
+                      aria-label={`Parameter ${i + 1} type`}
+                      className="h-10 rounded-xl bg-zinc-100 px-2 font-mono text-[13px] text-zinc-700 outline-none"
+                    >
+                      {PARAM_TYPES.map((t) => (
+                        <option key={t}>{t}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={params.length === 1}
+                      onClick={() => setParams((cur) => cur.filter((_, j) => j !== i))}
+                      className="text-zinc-400 hover:text-red-600 disabled:opacity-30"
+                      aria-label={`Remove parameter ${i + 1}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                {params.length < 8 ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    type="button"
+                    onClick={() => setParams((cur) => [...cur, { name: '', type: 'int' }])}
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add parameter
+                  </Button>
+                ) : null}
+              </div>
+            </Field>
+            <label className="flex items-center gap-3 text-sm text-zinc-700">
+              Return type
+              <select
+                value={returnType}
+                onChange={(e) => setReturnType(e.target.value as ParamType)}
+                aria-label="Return type"
+                className="h-10 rounded-xl bg-zinc-100 px-2 font-mono text-[13px] text-zinc-700 outline-none"
+              >
+                {PARAM_TYPES.map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
+              </select>
+            </label>
+            <p className="rounded-xl bg-zinc-50 px-3 py-2 font-mono text-[13px] text-zinc-700">
+              {fnName || 'fn'}({params.map((p) => `${p.name || '?'}: ${p.type}`).join(', ')}) →{' '}
+              {returnType}
+            </p>
+          </div>
+        ) : null}
+        <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2', isFn && 'hidden')}>
           <Field label="Input format">
             <textarea
               value={inputFormat}
@@ -546,7 +679,11 @@ export const CodeQuestionDialog: React.FC<DialogProps> = ({ open, onClose, editI
         </Field>
         <Field
           label="Languages"
-          hint="JavaScript defines solve(input); Python, C++ and Java read stdin and print to stdout. Test cases are shared."
+          hint={
+            isFn
+              ? 'Learners implement the function in any selected language; test cases are shared.'
+              : 'JavaScript defines solve(input); Python, C++ and Java read stdin and print to stdout.'
+          }
         >
           <div className="flex flex-wrap gap-2">
             {CODE_LANGUAGES.map((l) => {
@@ -573,13 +710,39 @@ export const CodeQuestionDialog: React.FC<DialogProps> = ({ open, onClose, editI
           </div>
         </Field>
         <Field label="Examples (public, up to 5)">
-          <PairRows rows={examples} onChange={setExamples} max={5} noun="example" />
+          <PairRows
+            rows={examples}
+            onChange={setExamples}
+            max={5}
+            noun="example"
+            placeholders={
+              isFn
+                ? {
+                    input: `one JSON value per parameter line, e.g.\n[2,7,11,15]\n9`,
+                    output: 'return value as JSON, e.g. [0,1]'
+                  }
+                : undefined
+            }
+          />
         </Field>
         <Field
           label={`Hidden test cases (${filled(tests).length}/100)`}
           hint="Optional — write your own; AI can fill the rest."
         >
-          <PairRows rows={tests} onChange={setTests} max={100} noun="test case" />
+          <PairRows
+            rows={tests}
+            onChange={setTests}
+            max={100}
+            noun="test case"
+            placeholders={
+              isFn
+                ? {
+                    input: `one JSON value per parameter line, e.g.\n[2,7,11,15]\n9`,
+                    output: 'return value as JSON, e.g. [0,1]'
+                  }
+                : undefined
+            }
+          />
         </Field>
         <label
           className={cn(
@@ -595,7 +758,8 @@ export const CodeQuestionDialog: React.FC<DialogProps> = ({ open, onClose, editI
           />
           <span>
             <span className="flex items-center gap-1.5 text-sm font-medium text-zinc-900">
-              <Sparkles className="h-3.5 w-3.5 text-brand-600" /> Auto-generate test cases up to 100
+              <Sparkles className="h-3.5 w-3.5 text-brand-600" /> Generate 100 hidden tests + 5 run
+              cases
             </span>
             <span className="text-xs text-zinc-500">
               Mistral proposes inputs; every expected output comes from running your reference
@@ -605,7 +769,11 @@ export const CodeQuestionDialog: React.FC<DialogProps> = ({ open, onClose, editI
         </label>
         <Field
           label={`Reference solution${generate && !editId ? '' : ' (optional)'}`}
-          hint="Never shown to learners. Required to auto-generate tests."
+          hint={
+            isFn
+              ? 'Never shown to learners. Write it as a learner would (e.g. class Solution). Required to auto-generate tests.'
+              : 'Never shown to learners. Required to auto-generate tests.'
+          }
         >
           <div className="space-y-2">
             <select
@@ -620,18 +788,16 @@ export const CodeQuestionDialog: React.FC<DialogProps> = ({ open, onClose, editI
                 </option>
               ))}
             </select>
-            <textarea
-              value={refCode}
-              onChange={(e) => setRefCode(e.target.value)}
-              rows={8}
-              spellCheck={false}
-              placeholder={
-                refLang === 'javascript'
-                  ? 'function solve(input) { … }'
-                  : 'Reads stdin, prints the answer'
-              }
-              className={cn(textarea, 'font-mono text-[13px]')}
-            />
+            <div className="h-64 overflow-hidden rounded-xl ring-1 ring-inset ring-zinc-200">
+              <Suspense fallback={<div className="h-full animate-pulse bg-zinc-50" />}>
+                <MonacoEditor
+                  value={refCode}
+                  onChange={setRefCode}
+                  language={refLang}
+                  ariaLabel="Reference solution"
+                />
+              </Suspense>
+            </div>
           </div>
         </Field>
         <div className="flex flex-wrap items-end gap-4">

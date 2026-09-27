@@ -99,12 +99,20 @@ export const router = createBrowserRouter([
       // legacy lesson URLs from the old viewer land on the course overview
       { path: '/course/:id/submodule/*', loader: ({ params }) => redirect(`/course/${params.id}`) },
       {
+        path: '/coach',
+        lazy: lazyPage(() => import('../features/coach/ui/CoachPage'), 'CoachPage')
+      },
+      {
         path: '/chat',
         lazy: lazyPage(() => import('../features/chat/ui/CommunitiesPage'), 'CommunitiesPage')
       },
       {
         path: '/course/:id/community',
         lazy: lazyPage(() => import('../features/chat/ui/CommunityPage'), 'CommunityPage')
+      },
+      {
+        path: '/review/my',
+        lazy: lazyPage(() => import('../features/review/ui/MyReviewsPage'), 'MyReviewsPage')
       },
       {
         path: '/review',

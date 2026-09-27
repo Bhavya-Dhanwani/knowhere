@@ -29,17 +29,40 @@ export interface Requirement {
   targetEndpointOrFile?: string;
 }
 
+export interface FormField {
+  id: string;
+  label: string;
+  type: 'text' | 'textarea' | 'url' | 'number' | 'select';
+  required: boolean;
+  options?: string[];
+  helpText?: string;
+}
+
+/** Hidden stdin -> expected stdout case, run against the built program. */
+export interface IoTest {
+  name?: string;
+  input: string;
+  expected: string;
+}
+
 export interface ReviewEvent {
   _id: string;
   name: string;
   description: string;
   problemStatement: string;
+  judgingPrompt?: string;
+  judgingPromptPublic?: boolean;
+  resultsPublished?: boolean;
+  ioTests?: IoTest[];
+  runCommand?: string;
   projectType: ProjectScope;
   requiresLiveUrl?: boolean;
   requiresApiSpec?: boolean;
+  submissionDeadline?: string | null;
   status: 'DRAFT' | 'ACTIVE' | 'EVALUATION' | 'COMPLETED';
   criteria: Criterion[];
   requirements: Requirement[];
+  formFields?: FormField[];
   strictScoring: boolean;
   createdAt: string;
   updatedAt: string;
@@ -57,11 +80,14 @@ export interface ReviewSubmission {
   };
   repositoryUrl: string;
   branch: string;
+  commitHash?: string | null;
   liveSiteUrl?: string;
   apiSpecUrl?: string;
   rawReadmeText?: string;
+  formResponses?: Record<string, string>;
   status:
     | 'SUBMITTED'
+    | 'QUEUED'
     | 'DISCOVERING'
     | 'SANITIZING'
     | 'ANALYZING'
@@ -257,7 +283,28 @@ export interface EvidenceBundle {
       seo: number;
     };
     axeViolationsCount: number;
+    assessmentMode?: string;
+    isReachable?: boolean;
+    liveError?: string;
+    findings?: string[];
+    consoleErrors?: string[];
+    screenshots?: { desktop?: string; mobile?: string };
   };
+  /** Build + tests run in the judge sandbox (offline). */
+  buildEval?: {
+    status: 'RAN' | 'NOT_RUN';
+    reason?: string;
+    steps: Array<{
+      name: string;
+      ok: boolean | null;
+      skipped?: string;
+      error?: string;
+      timeMs?: number;
+      tests?: { passed: number; failed: number };
+      note?: string;
+      output?: string;
+    }>;
+  } | null;
   backendEval?: {
     tool: string;
     schemathesis?: {
@@ -416,6 +463,25 @@ export interface LeaderboardEntry {
     selfImprovement?: SelfImprovement | null;
     selfStrengths?: SelfStrengths | null;
   };
+  headToHead?: HeadToHead | null;
+}
+
+/** AI judge verdict against the team ranked directly above. */
+export interface HeadToHead {
+  vsTeam: string;
+  winnerTeam: string;
+  loserTeam: string;
+  agreesWithRanking: boolean;
+  positionConsistent?: boolean;
+  verdict: string;
+  decisiveFactors: Array<{
+    area: string;
+    winnerDid: string;
+    loserDid: string;
+    impact: 'HIGH' | 'MEDIUM' | 'LOW';
+  }>;
+  whereLoserWasBetter: string[];
+  loserToOvertake: string[];
 }
 
 export interface PairwiseMatch {
@@ -435,6 +501,16 @@ export interface EventRanking {
   totalPairwiseMatches: number;
   leaderboard: LeaderboardEntry[];
   pairwiseMatrix: PairwiseMatch[];
+  /** Pairs whose code is substantially the same (possible copying). */
+  similarityFlags?: Array<{
+    subAId: string;
+    subBId: string;
+    subAName: string;
+    subBName: string;
+    similarity: number;
+    sharedExamples: string[];
+    reason: string;
+  }>;
   closeRankingBoundaries?: Array<{
     subAId: string;
     subBId: string;

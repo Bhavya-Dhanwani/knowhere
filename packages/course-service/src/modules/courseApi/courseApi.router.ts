@@ -12,6 +12,7 @@ import {
   checkMcqValidators,
   idParamValidators,
   runCodeValidators,
+  assistantValidators,
   courseModuleValidators,
   reorderModulesValidators
 } from './courseApi.validator.js';
@@ -103,12 +104,25 @@ router.get('/mcq/:id', anyRole, idParamValidators, courseApiController.getMcq);
 // @route GET /api/course/code-question/:id — problem statement without hidden tests (UI helper)
 router.get('/code-question/:id', anyRole, idParamValidators, courseApiController.getCodeQuestion);
 
+// @route POST /api/course/assistant — dashboard AI assistant grounded in the page's facts
+router.post('/assistant', anyRole, assistantValidators, courseApiController.assistant);
+// @route POST /api/course/assistant/stream — the same answer as Server-Sent Events
+router.post('/assistant/stream', anyRole, assistantValidators, courseApiController.assistantStream);
+
 // @route POST /api/course/code-question/:id/run — run code against the public examples
 router.post(
   '/code-question/:id/run',
   anyRole,
   runCodeValidators,
   courseApiController.runCodeQuestion
+);
+
+// @route GET /api/course/code-question/:id/submissions — the caller's own submission history
+router.get(
+  '/code-question/:id/submissions',
+  anyRole,
+  idParamValidators,
+  courseApiController.listCodeSubmissions
 );
 
 // @route GET /api/course/video/:id — byte-range video chunks tied to the viewer's email

@@ -28,7 +28,9 @@ import {
   verifySegmentToken,
   viewerPlaylist
 } from '../../services/hls.service.js';
-import { judgeCode } from '@lms/shared';
+import { judgeCode, outputsMatch, runCode, starterCode, wrapSolution } from '@lms/shared';
+import CodeSubmission from '../../shared/models/codeSubmission.model.js';
+import { streamSSE } from '../../shared/utils/sse.util.js';
 import mistralGeneratorService from '../../services/mistralGenerator.service.js';
 import activityAnalysisService from '../../services/activityAnalysis.service.js';
 import Ok from '../../shared/responses/Ok.response.js';
@@ -47,6 +49,8 @@ import {
 
 const UPLOAD_URL_TTL_SEC = 900;
 const MAX_TEST_CASES = 100;
+// Run shows this many cases: the examples, topped up with generated public cases
+const RUN_CASES = 5;
 
 const param = (req: AuthenticatedRequest) =>
   Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -197,6 +201,7 @@ class CourseApiController {
         courseId,
         testCaseGeneration,
         referenceSolution,
+        signature,
         points
       } = req.body;
       if (testCaseGeneration?.enabled && !referenceSolution?.code) {
@@ -212,31 +217,21 @@ class CourseApiController {
         isHidden: true
       }));
 
-      // AI fills the remaining slots up to 100 hidden test cases
-      let generationStatus: 'NOT_REQUESTED' | 'COMPLETED' | 'FAILED' = 'NOT_REQUESTED';
-      let generationError: string | undefined;
-      let generated: typeof manual = [];
-      if (testCaseGeneration?.enabled) {
-        const wanted = Math.min(
-          testCaseGeneration.requestedCount ?? MAX_TEST_CASES - manual.length,
-          MAX_TEST_CASES - manual.length
+      const generate = Boolean(testCaseGeneration?.enabled);
+      const allTests = manual;
+      // generated expected outputs come from the reference, so it must pass the examples first
+      if (generate) {
+        const ref = referenceSolution!;
+        const check = await judgeCode(
+          ref.language,
+          signature ? wrapSolution(signature, ref.language, ref.code) : ref.code,
+          publicExamples.map((e) => ({ input: e.input, expectedOutput: e.output })),
+          { runnerUrl: env.JUDGE_URL }
         );
-        const ai = await mistralGeneratorService.generateTestCases({
-          title,
-          description,
-          constraints,
-          inputFormat,
-          outputFormat,
-          examples: publicExamples,
-          requestedCount: wanted,
-          referenceSolution: referenceSolution!
-        });
-        generated = ai.testCases;
-        generationStatus = ai.success ? 'COMPLETED' : 'FAILED';
-        generationError = ai.errorMessage;
+        if (check.passed !== check.total) {
+          throw new BadRequest(`Reference solution fails the public examples: ${check.error}`);
+        }
       }
-
-      const allTests = [...manual, ...generated].slice(0, MAX_TEST_CASES);
       const question = await this.codeQuestionDao.createQuestion({
         title,
         description,
@@ -248,16 +243,38 @@ class CourseApiController {
         supportedLanguages: supportedLanguages || ['javascript', 'python', 'cpp', 'java'],
         ...(points !== undefined && { points: Number(points) }),
         referenceSolution: referenceSolution || null,
+        signature: signature || null,
         testCases: allTests,
-        testCaseGenerationStatus: generationStatus,
+        testCaseGenerationStatus: generate ? 'PENDING' : 'NOT_REQUESTED',
         creatorId: req.user!.userId,
         courseId: courseId ? new Types.ObjectId(courseId) : null
       });
 
+      // AI adds 100 hidden tests (and public cases up to RUN_CASES) in the background; it can take
+      // a few minutes, so the question is saved now with status PENDING
+      if (generate) {
+        const publicNeeded = Math.max(0, RUN_CASES - publicExamples.length);
+        const wanted =
+          Math.min(
+            testCaseGeneration!.requestedCount ?? MAX_TEST_CASES - manual.length,
+            MAX_TEST_CASES - manual.length
+          ) + publicNeeded;
+        this.generateInBackground(question._id.toString(), manual, publicNeeded, {
+          title,
+          description,
+          constraints,
+          inputFormat,
+          outputFormat,
+          examples: publicExamples,
+          requestedCount: wanted,
+          referenceSolution: referenceSolution!,
+          signature
+        });
+      }
+
       return Created(res, 'Coding question created', {
         questionId: question._id.toString(),
-        testCaseGenerationStatus: generationStatus,
-        generationError,
+        testCaseGenerationStatus: generate ? 'PENDING' : 'NOT_REQUESTED',
         publicExampleCount: publicExamples.length,
         hiddenTestCaseCount: allTests.length
       });
@@ -265,6 +282,35 @@ class CourseApiController {
       next(error);
     }
   };
+
+  // Runs test generation after the create response; the first generated cases become public
+  // (they fill the Run tab), the rest are hidden. Never throws: failures land in the status.
+  generationJob: Promise<void> = Promise.resolve();
+  private generateInBackground(
+    questionId: string,
+    manual: { input: string; expectedOutput: string; isHidden: boolean }[],
+    publicNeeded: number,
+    input: Parameters<typeof mistralGeneratorService.generateTestCases>[0]
+  ) {
+    this.generationJob = (async () => {
+      try {
+        const ai = await mistralGeneratorService.generateTestCases(input);
+        const generated = ai.testCases.map((t, i) =>
+          i < publicNeeded ? { ...t, isHidden: false } : t
+        );
+        if (ai.errorMessage)
+          logger.warn({ questionId, err: ai.errorMessage }, 'Test generation incomplete');
+        await this.codeQuestionDao.updateGenerationStatus(
+          questionId,
+          generated.length ? 'COMPLETED' : 'FAILED',
+          [...manual, ...generated]
+        );
+      } catch (error) {
+        logger.error({ err: error, questionId }, 'Test generation failed');
+        await this.codeQuestionDao.updateGenerationStatus(questionId, 'FAILED').catch(() => {});
+      }
+    })();
+  }
 
   // 4. POST /api/course/submodule — built from already-created resources, MCQs and coding questions
   createSubmodule = async (req: CreateSubmoduleRequest, res: Response, next: NextFunction) => {
@@ -684,37 +730,151 @@ class CourseApiController {
         examples: q.examples,
         difficulty: q.difficulty,
         supportedLanguages: q.supportedLanguages,
-        hiddenTestCaseCount: q.testCases.filter((t) => t.isHidden).length
+        signature: q.signature || null,
+        starters: q.signature
+          ? Object.fromEntries(q.supportedLanguages.map((l) => [l, starterCode(q.signature!, l)]))
+          : null,
+        hiddenTestCaseCount: q.testCases.filter((t) => t.isHidden).length,
+        // extra public cases for the Testcase tab (examples come first)
+        sampleCases: q.testCases
+          .filter((t) => !t.isHidden)
+          .slice(0, Math.max(0, RUN_CASES - q.examples.length))
+          .map((t) => ({ input: t.input, output: t.expectedOutput }))
       });
     } catch (error) {
       next(error);
     }
   };
 
-  // POST /api/course/code-question/:id/run — runs a solution against the public examples only,
-  // so learners see their real output per example (hidden tests stay on the submit path)
+  // POST /api/course/code-question/:id/run — runs a solution on the public examples, or on the
+  // learner's own inputs (Testcase tab). Hidden tests stay on the submit path.
   runCodeQuestion = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       await assertContentAccess(req.user!, param(req), req.body.courseId);
       const q = await this.codeQuestionDao.findQuestionById(param(req));
       if (!q) throw new NotFound(`Coding question '${param(req)}' not found.`);
-      if (!q.supportedLanguages.includes(req.body.language)) {
+      const language = String(req.body.language);
+      if (!q.supportedLanguages.includes(language)) {
         throw new BadRequest(`This question accepts ${q.supportedLanguages.join(', ')}.`);
       }
-      const cases = q.examples.map((e) => ({ input: e.input, expectedOutput: e.output }));
-      const verdict = await judgeCode(req.body.language, req.body.code, cases, {
+      const program = (lang: string, code: string) =>
+        q.signature ? wrapSolution(q.signature, lang, code) : code;
+      const key = (s: string) => s.replace(/\r\n/g, '\n').trim();
+      const known = new Map([
+        ...q.examples.map((e) => [key(e.input), e.output] as const),
+        ...q.testCases
+          .filter((t) => !t.isHidden)
+          .map((t) => [key(t.input), t.expectedOutput] as const)
+      ]);
+      const inputs: string[] = req.body.inputs?.length
+        ? req.body.inputs
+        : q.examples.map((e) => e.input);
+
+      let refOutputs: (string | undefined)[] = [];
+      const ref = q.referenceSolution;
+      if (ref?.code && inputs.some((i) => !known.has(key(i)))) {
+        const r = await runCode(ref.language, program(ref.language, ref.code), inputs, {
+          runnerUrl: env.JUDGE_URL
+        });
+        refOutputs = inputs.map((_, k) =>
+          !r.fatal && r.results[k]?.ok ? r.results[k].output : undefined
+        );
+      }
+
+      const started = Date.now();
+      const run = await runCode(language, program(language, req.body.code), inputs, {
         runnerUrl: env.JUDGE_URL
       });
-      return Ok(res, 'Examples run', {
-        passed: verdict.passed,
-        total: verdict.total,
-        error: verdict.error,
-        cases: (verdict.cases || []).map((c, i) => ({
-          ...c,
-          input: cases[i].input,
-          expected: cases[i].expectedOutput
-        }))
+      const runtimeMs = Date.now() - started;
+      const cases = inputs.map((input, k) => {
+        const expected = known.get(key(input)) ?? refOutputs[k] ?? null;
+        const r = run.results[k];
+        const output = r?.ok ? (r.output || '').slice(0, 2000) : '';
+        return {
+          input,
+          output,
+          expected,
+          passed:
+            r?.ok && expected !== null ? outputsMatch(expected, output) : r?.ok ? null : false,
+          ...(r && !r.ok ? { error: r.error } : {})
+        };
       });
+      return Ok(res, 'Code run', {
+        passed: cases.filter((c) => c.passed).length,
+        total: cases.length,
+        error: run.fatal,
+        runtimeMs,
+        cases
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // GET /api/course/code-question/:id/submissions?courseId= — the caller's own submissions
+  listCodeSubmissions = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const courseId = req.query.courseId ? String(req.query.courseId) : undefined;
+      await assertContentAccess(req.user!, param(req), courseId);
+      const rows = await CodeSubmission.find({ userId: req.user!.userId, questionId: param(req) })
+        .sort({ createdAt: -1 })
+        .limit(30)
+        .lean();
+      return Ok(
+        res,
+        'Submissions fetched',
+        rows.map((r) => ({
+          id: String(r._id),
+          status: r.status,
+          language: r.language,
+          passed: r.passed,
+          total: r.total,
+          runtimeMs: r.runtimeMs,
+          code: r.code,
+          createdAt: r.createdAt
+        }))
+      );
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // POST /api/course/assistant — dashboard AI; grounded in facts the caller's page already has
+  assistant = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!mistralGeneratorService.isConfigured()) {
+        return res.status(503).json({
+          success: false,
+          status: 503,
+          message: 'The AI assistant is not configured on this server (MISTRAL_API_KEYS).'
+        });
+      }
+      const text = await mistralGeneratorService.answer(
+        String(req.body.question),
+        String(req.body.facts || ''),
+        req.user!.role || 'user'
+      );
+      return Ok(res, 'Answered', { answer: text });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  assistantStream = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!mistralGeneratorService.isConfigured()) {
+        return res.status(503).json({
+          success: false,
+          status: 503,
+          message: 'The AI assistant is not configured on this server (MISTRAL_API_KEYS).'
+        });
+      }
+      const messages = mistralGeneratorService.assistantMessages(
+        String(req.body.question),
+        String(req.body.facts || ''),
+        req.user!.role || 'user'
+      );
+      await streamSSE(req, res, mistralGeneratorService.stream(messages, 0.2));
     } catch (error) {
       next(error);
     }

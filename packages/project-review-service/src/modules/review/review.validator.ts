@@ -1,4 +1,57 @@
 import { body, param } from 'express-validator';
+import type { IFormField } from '../../models/Event.model.js';
+import { BadRequest } from '../../shared/errors/index.js';
+
+/** Checks a submission's answers against the event's custom form; returns only known, trimmed answers. */
+export const checkFormResponses = (
+  fields: Pick<IFormField, 'id' | 'label' | 'type' | 'required' | 'options'>[],
+  raw: unknown
+): Record<string, string> => {
+  const input = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const answers: Record<string, string> = {};
+  for (const f of fields) {
+    const value = String(input[f.id] ?? '').trim();
+    if (!value) {
+      if (f.required) throw new BadRequest(`"${f.label}" is required`);
+      continue;
+    }
+    if (value.length > 5000) throw new BadRequest(`"${f.label}" is too long (max 5000 characters)`);
+    if (f.type === 'url' && !/^https?:\/\/\S+$/i.test(value))
+      throw new BadRequest(`"${f.label}" must be a valid http(s) URL`);
+    if (f.type === 'number' && !Number.isFinite(Number(value)))
+      throw new BadRequest(`"${f.label}" must be a number`);
+    if (f.type === 'select' && !f.options?.includes(value))
+      throw new BadRequest(`"${f.label}" must be one of: ${(f.options || []).join(', ')}`);
+    answers[f.id] = value;
+  }
+  return answers;
+};
+
+// custom submission-form fields an organiser attaches to an event
+const formFieldValidators = [
+  body('formFields').optional().isArray({ max: 30 }),
+  body('formFields.*.id').isString().notEmpty(),
+  body('formFields.*.label').isString().notEmpty().withMessage('Form field label is required'),
+  body('formFields.*.type').isIn(['text', 'textarea', 'url', 'number', 'select']),
+  body('formFields.*.required').optional().isBoolean(),
+  body('formFields.*.options').optional().isArray(),
+  body('judgingPromptPublic').optional().isBoolean(),
+  body('resultsPublished').optional().isBoolean(),
+  body('ioTests').optional().isArray({ max: 200 }),
+  body('ioTests.*.input').optional().isString().isLength({ max: 100_000 }),
+  body('ioTests.*.expected').isString().isLength({ max: 100_000 }),
+  body('ioTests.*.name').optional().isString().isLength({ max: 200 }),
+  body('runCommand').optional({ values: 'falsy' }).isString().isLength({ max: 500 }),
+  body('judgingPrompt')
+    .optional()
+    .isString()
+    .isLength({ max: 4000 })
+    .withMessage('Judging instructions can be at most 4000 characters'),
+  body('submissionDeadline')
+    .optional({ values: 'null' })
+    .isISO8601()
+    .withMessage('Invalid deadline')
+];
 
 export const createEventValidators = [
   body('name').isString().notEmpty().withMessage('Event name is required'),
@@ -19,7 +72,8 @@ export const createEventValidators = [
     .isIn(['FRONTEND', 'BACKEND', 'FULLSTACK', 'CUSTOM'])
     .withMessage('Invalid project type'),
   body('requiresLiveUrl').optional().isBoolean(),
-  body('requiresApiSpec').optional().isBoolean()
+  body('requiresApiSpec').optional().isBoolean(),
+  ...formFieldValidators
 ];
 
 export const updateEventValidators = [
@@ -32,6 +86,7 @@ export const updateEventValidators = [
   body('projectType').optional().isIn(['FRONTEND', 'BACKEND', 'FULLSTACK', 'CUSTOM']),
   body('requiresLiveUrl').optional().isBoolean(),
   body('requiresApiSpec').optional().isBoolean(),
+  ...formFieldValidators,
   body('status').optional().isIn(['DRAFT', 'ACTIVE', 'EVALUATION', 'COMPLETED'])
 ];
 
@@ -46,7 +101,8 @@ export const createSubmissionValidators = [
     .isURL()
     .withMessage('Live site must be a valid URL'),
   body('apiSpecUrl').optional({ checkFalsy: true }).isString(),
-  body('rawReadmeText').optional({ checkFalsy: true }).isString()
+  body('rawReadmeText').optional({ checkFalsy: true }).isString(),
+  body('formResponses').optional().isObject()
 ];
 
 export const updateSubmissionValidators = [
@@ -60,7 +116,8 @@ export const updateSubmissionValidators = [
     .isURL()
     .withMessage('Live site must be a valid URL'),
   body('apiSpecUrl').optional({ checkFalsy: true }).isString(),
-  body('rawReadmeText').optional({ checkFalsy: true }).isString()
+  body('rawReadmeText').optional({ checkFalsy: true }).isString(),
+  body('formResponses').optional().isObject()
 ];
 
 export const submissionIdValidators = [

@@ -5,7 +5,9 @@ import {
   SanitizationAudit,
   EvidenceBundle,
   ReplayTrace,
-  EventRanking
+  EventRanking,
+  FormField,
+  IoTest
 } from '../types';
 
 import { axiosClient } from '../../../shared/lib/axiosClient';
@@ -17,6 +19,11 @@ export interface CreateEventPayload {
   name: string;
   description: string;
   problemStatement: string;
+  judgingPrompt?: string;
+  judgingPromptPublic?: boolean;
+  resultsPublished?: boolean;
+  ioTests?: IoTest[];
+  runCommand?: string;
   projectType: string;
   requiresLiveUrl?: boolean;
   requiresApiSpec?: boolean;
@@ -34,6 +41,8 @@ export interface CreateEventPayload {
     mandatory: boolean;
     targetEndpointOrFile?: string;
   }>;
+  formFields?: FormField[];
+  submissionDeadline?: string | null;
 }
 
 export interface CreateSubmissionPayload {
@@ -44,9 +53,34 @@ export interface CreateSubmissionPayload {
   liveSiteUrl?: string;
   apiSpecUrl?: string;
   rawReadmeText?: string;
+  formResponses?: Record<string, string>;
+}
+
+/** A student's own submission, with its event and (once published) its result. */
+export interface MySubmission {
+  _id: string;
+  teamName: string;
+  repositoryUrl: string;
+  branch: string;
+  commitHash?: string | null;
+  status: ReviewSubmission['status'];
+  createdAt: string;
+  event?: {
+    _id: string;
+    name: string;
+    status: ReviewEvent['status'];
+    submissionDeadline?: string | null;
+    resultsPublished: boolean;
+  };
+  result: { score: number; rank: number; of?: number } | null;
 }
 
 export const reviewApi = {
+  async getMySubmissions(): Promise<MySubmission[]> {
+    const { data } = await reviewClient.get('/review/my-submissions');
+    return data.data || [];
+  },
+
   // Events
   async listEvents(): Promise<ReviewEvent[]> {
     const { data } = await reviewClient.get('/review/events');
@@ -106,6 +140,12 @@ export const reviewApi = {
     return data.data;
   },
 
+  /** Starts a background batch run (parallel on the server); poll submissions for progress. */
+  async evaluateEvent(eventId: string): Promise<{ queued: number; concurrency: number }> {
+    const { data } = await reviewClient.post(`/review/events/${eventId}/evaluate-all`);
+    return data.data;
+  },
+
   async getEvaluationStatus(submissionId: string): Promise<{
     status: string;
     flaggedForHumanReview: boolean;
@@ -117,6 +157,8 @@ export const reviewApi = {
 
   // Reports & Audits
   async getEvaluationReport(submissionId: string): Promise<{
+    /** false for students until the organiser publishes results (then only `submission`) */
+    published?: boolean;
     submission: ReviewSubmission;
     evaluation?: ReviewEvaluation;
     evidence?: EvidenceBundle;
@@ -129,6 +171,7 @@ export const reviewApi = {
       confidenceInterval: [number, number];
       rankReason?: string;
       relativeGrading?: import('../types').RelativeGrading;
+      headToHead?: import('../types').HeadToHead | null;
       relativeAnalysis?: {
         comparedToAbove?: import('../types').RelativeComparison | null;
         comparedToBelow?: import('../types').RelativeComparison | null;

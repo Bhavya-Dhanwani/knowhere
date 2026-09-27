@@ -1,3 +1,4 @@
+import type { FunctionSignature } from '@lms/shared';
 import { AuthenticatedRequest } from '../../shared/middlewares/auth.middleware.js';
 
 export interface UploadResourceBody {
@@ -51,6 +52,7 @@ export interface CreateCodeQuestionBody {
   supportedLanguages: string[];
   points?: number;
   referenceSolution?: { language: string; code: string };
+  signature?: FunctionSignature | null;
   courseId?: string;
   testCaseGeneration?: {
     enabled: boolean;

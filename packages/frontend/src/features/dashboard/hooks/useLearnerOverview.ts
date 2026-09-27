@@ -3,6 +3,7 @@ import { lmsApi, Course, CourseProgress } from '../../../shared/api/lms';
 
 export interface LearnerCourse extends Course {
   progress?: CourseProgress;
+  enrolledAt?: string;
 }
 
 // Courses the learner is a member of (user-service) joined with course-service data and progress.
@@ -10,7 +11,8 @@ export function useLearnerOverview() {
   const profile = useQuery({ queryKey: ['me', 'profile'], queryFn: lmsApi.myProfile });
   const courses = useQuery({ queryKey: ['courses'], queryFn: lmsApi.listCourses });
 
-  const memberIds = new Set((profile.data?.memberships || []).map((m) => m.courseId));
+  const joined = new Map((profile.data?.memberships || []).map((m) => [m.courseId, m.assignedAt]));
+  const memberIds = new Set(joined.keys());
   const all = courses.data || [];
   const enrolled = all.filter((c) => memberIds.has(c.id));
   const discover = all.filter((c) => !memberIds.has(c.id) && c.status === 'published');
@@ -25,7 +27,8 @@ export function useLearnerOverview() {
 
   const withProgress: LearnerCourse[] = enrolled.map((c, i) => ({
     ...c,
-    progress: progress[i]?.data
+    progress: progress[i]?.data,
+    enrolledAt: joined.get(c.id)
   }));
 
   return {

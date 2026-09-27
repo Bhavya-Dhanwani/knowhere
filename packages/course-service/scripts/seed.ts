@@ -29,13 +29,18 @@ import ChatMessage from '../../chat-service/src/shared/models/message.model.js';
 import ReadState from '../../chat-service/src/shared/models/readState.model.js';
 import Notification from '../../chat-service/src/shared/models/notification.model.js';
 
-const BASE = (process.env.MONGO_BASE_URI || 'mongodb://localhost:27017').replace(/\/$/, '');
+const BASE = (process.env.MONGO_BASE_URI || 'mongodb://127.0.0.1:27017').replace(/\/$/, '');
 const PASSWORD = 'Password123!';
 const DAY = 24 * 60 * 60 * 1000;
 const ago = (days: number) => new Date(Date.now() - days * DAY);
 const { ObjectId } = mongoose.Types;
 
-async function useDb(name: string, work: () => Promise<void>) {
+// MONGO_DB_SUFFIX=_dev seeds authService_dev, courseService_dev, ... so a shared cluster's
+// real databases are never wiped
+const SUFFIX = process.env.MONGO_DB_SUFFIX || '';
+
+async function useDb(base: string, work: () => Promise<void>) {
+  const name = base + SUFFIX;
   const uri = BASE.includes('?') ? BASE.replace('?', `/${name}?`) : `${BASE}/${name}`;
   await mongoose.connect(uri);
   console.log(`\n→ ${name}`);

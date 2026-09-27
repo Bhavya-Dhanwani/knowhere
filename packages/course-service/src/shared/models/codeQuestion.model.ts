@@ -1,4 +1,5 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
+import type { FunctionSignature } from '@lms/shared';
 
 export type CodingDifficulty = 'easy' | 'medium' | 'hard';
 
@@ -29,6 +30,8 @@ export interface ICodingQuestionDocument extends Document {
   // trainer's accepted solution; generated test cases take their expected output from it
   referenceSolution?: { language: string; code: string } | null;
   supportedLanguages: string[];
+  // LeetCode-style function to implement; null means a full stdin -> stdout program
+  signature?: FunctionSignature | null;
   testCases: ICodingTestCase[];
   testCaseGenerationStatus: TestCaseGenerationStatus;
   creatorId: string;
@@ -55,6 +58,15 @@ const testCaseSchema = new Schema<ICodingTestCase>(
   { _id: false }
 );
 
+const signatureSchema = new Schema(
+  {
+    functionName: String,
+    params: [new Schema({ name: String, type: { type: String } }, { _id: false })],
+    returnType: String
+  },
+  { _id: false }
+);
+
 const codingQuestionSchema = new Schema<ICodingQuestionDocument>(
   {
     title: {
@@ -72,16 +84,9 @@ const codingQuestionSchema = new Schema<ICodingQuestionDocument>(
       required: [true, 'Constraints are required'],
       default: []
     },
-    inputFormat: {
-      type: String,
-      required: [true, 'Input format is required'],
-      trim: true
-    },
-    outputFormat: {
-      type: String,
-      required: [true, 'Output format is required'],
-      trim: true
-    },
+    // required for stdin programs (validators); optional when a signature defines the I/O
+    inputFormat: { type: String, default: '', trim: true },
+    outputFormat: { type: String, default: '', trim: true },
     examples: {
       type: [exampleCaseSchema],
       validate: {
@@ -101,6 +106,7 @@ const codingQuestionSchema = new Schema<ICodingQuestionDocument>(
       type: { language: String, code: String },
       default: null
     },
+    signature: { type: signatureSchema, default: null },
     supportedLanguages: {
       type: [String],
       required: [true, 'Supported languages are required'],

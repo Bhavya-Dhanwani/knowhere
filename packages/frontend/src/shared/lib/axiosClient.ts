@@ -21,6 +21,10 @@ const isAuthEndpoint = (url?: string) =>
 
 let refreshing: Promise<string | null> | null = null;
 
+// one refresh at a time, shared by axios and the SSE client
+export const refreshOnce = () =>
+  (refreshing = refreshing || refreshAccessToken().finally(() => (refreshing = null)));
+
 async function refreshAccessToken(): Promise<string | null> {
   try {
     const { data } = await axios.post(`${baseURL}/auth/refresh`, {}, { withCredentials: true });
@@ -37,7 +41,15 @@ async function refreshAccessToken(): Promise<string | null> {
 }
 
 axiosClient.interceptors.response.use(
-  (response) => response,
+  // the API always answers JSON; an HTML page means a proxy served the SPA instead
+  (response) =>
+    typeof response.data === 'string' && /text\/html/.test(String(response.headers['content-type']))
+      ? Promise.reject(
+          new Error(
+            `The server returned a web page instead of data for ${response.config.url}. The API route is not reachable (check the proxy/ingress routing).`
+          )
+        )
+      : response,
   async (error) => {
     const original = error.config;
 
@@ -51,8 +63,7 @@ axiosClient.interceptors.response.use(
     }
 
     original._retry = true;
-    refreshing = refreshing || refreshAccessToken().finally(() => (refreshing = null));
-    const token = await refreshing;
+    const token = await refreshOnce();
 
     if (!token) {
       store.dispatch(logout());

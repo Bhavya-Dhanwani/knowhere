@@ -91,18 +91,32 @@ body,
     scrollbar-width: thin !important;
     scrollbar-color: #d4d4d8 transparent !important;
     -ms-overflow-style: auto !important;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+  }
+  .custom-scrollbar:hover {
+    scrollbar-color: #a1a1aa transparent !important;
   }
   .custom-scrollbar::-webkit-scrollbar {
     display: block !important;
-    width: 6px !important;
-    height: 6px !important;
+    width: 10px !important;
+    height: 10px !important;
   }
   .custom-scrollbar::-webkit-scrollbar-track {
     background: transparent !important;
+    margin: 6px 0;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: #d4d4d8 !important;
+    background-color: #e4e4e7 !important;
+    border: 3px solid transparent !important;
+    background-clip: padding-box !important;
     border-radius: 9999px !important;
+  }
+  .custom-scrollbar:hover::-webkit-scrollbar-thumb {
+    background-color: #a1a1aa !important;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:active {
+    background-color: #18181b !important;
   }
 
   .mask-fade-x {

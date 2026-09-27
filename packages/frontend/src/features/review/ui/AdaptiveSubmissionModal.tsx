@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { ReviewEvent } from '../types';
 import { reviewApi } from '../api/reviewApi';
+import { CustomFormInputs } from './CustomForm';
 
 interface AdaptiveSubmissionModalProps {
   isOpen: boolean;
@@ -36,6 +37,7 @@ export const AdaptiveSubmissionModal: React.FC<AdaptiveSubmissionModalProps> = (
   const [includeLiveUrl, setIncludeLiveUrl] = useState(false);
   const [apiSpecUrl, setApiSpecUrl] = useState('');
   const [rawReadmeText, setRawReadmeText] = useState('');
+  const [formResponses, setFormResponses] = useState<Record<string, string>>({});
   const [showAdvancedTesting, setShowAdvancedTesting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,7 +119,8 @@ Clean production-grade service conforming to all specifications.
         branch: branch.trim() || 'main',
         liveSiteUrl: needsLiveSiteUrl && liveSiteUrl.trim() ? liveSiteUrl.trim() : undefined,
         apiSpecUrl: needsApiSpecUrl && apiSpecUrl.trim() ? apiSpecUrl.trim() : undefined,
-        rawReadmeText: rawReadmeText.trim() || undefined
+        rawReadmeText: rawReadmeText.trim() || undefined,
+        formResponses
       });
       onSubmitted();
       onClose();
@@ -144,7 +147,7 @@ Clean production-grade service conforming to all specifications.
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-bold text-white">Project Submission</h2>
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-mono bg-indigo-950 text-indigo-300 border border-indigo-800">
+              <span className="text-xs px-2.5 py-0.5 rounded-full font-mono bg-zinc-950 text-zinc-300 border border-zinc-800">
                 {event.projectType}
               </span>
             </div>
@@ -166,7 +169,7 @@ Clean production-grade service conforming to all specifications.
               <CheckCircle2 className="w-3 h-3" /> Code & Security (Semgrep, Gitleaks, SBOM)
             </span>
             {needsLiveSiteUrl && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-indigo-300 bg-indigo-950/40 px-2 py-0.5 rounded border border-indigo-900">
+              <span className="inline-flex items-center gap-1 text-[11px] text-zinc-300 bg-zinc-950/40 px-2 py-0.5 rounded border border-zinc-900">
                 <Globe className="w-3 h-3" /> Lighthouse Browser Audit
               </span>
             )}
@@ -197,7 +200,7 @@ Clean production-grade service conforming to all specifications.
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
                 placeholder="e.g. CyberKnights"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-zinc-500"
               />
             </div>
             <div>
@@ -210,7 +213,7 @@ Clean production-grade service conforming to all specifications.
                 value={teamId}
                 onChange={(e) => setTeamId(e.target.value)}
                 placeholder="e.g. team-404"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-zinc-500 font-mono"
               />
             </div>
           </div>
@@ -219,7 +222,7 @@ Clean production-grade service conforming to all specifications.
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-slate-300 uppercase mb-1 flex items-center gap-1.5">
-                <GitBranch className="w-3.5 h-3.5 text-indigo-400" /> Repository URL
+                <GitBranch className="w-3.5 h-3.5 text-zinc-400" /> Repository URL
               </label>
               <input
                 type="url"
@@ -227,7 +230,7 @@ Clean production-grade service conforming to all specifications.
                 value={repositoryUrl}
                 onChange={(e) => setRepositoryUrl(e.target.value)}
                 placeholder="https://github.com/org/repo"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-zinc-500"
               />
             </div>
             <div>
@@ -239,7 +242,7 @@ Clean production-grade service conforming to all specifications.
                 value={branch}
                 onChange={(e) => setBranch(e.target.value)}
                 placeholder="main"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-zinc-500 font-mono"
               />
             </div>
           </div>
@@ -256,7 +259,7 @@ Clean production-grade service conforming to all specifications.
                 value={liveSiteUrl}
                 onChange={(e) => setLiveSiteUrl(e.target.value)}
                 placeholder="https://my-app.vercel.app"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-zinc-500"
               />
               <p className="text-[11px] text-slate-400 mt-1">
                 Required for this event: Audited by Lighthouse CI (Performance, Accessibility, SEO,
@@ -273,7 +276,7 @@ Clean production-grade service conforming to all specifications.
                     setIncludeLiveUrl(e.target.checked);
                     if (!e.target.checked) setLiveSiteUrl('');
                   }}
-                  className="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500"
+                  className="rounded border-slate-700 text-zinc-600 focus:ring-zinc-500"
                 />
                 <span className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5 text-emerald-400" />
@@ -287,7 +290,7 @@ Clean production-grade service conforming to all specifications.
                     value={liveSiteUrl}
                     onChange={(e) => setLiveSiteUrl(e.target.value)}
                     placeholder="https://my-app.vercel.app"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-zinc-500"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">
                     Optional live deployment for browser and visual evaluation.
@@ -310,7 +313,7 @@ Clean production-grade service conforming to all specifications.
                 value={apiSpecUrl}
                 onChange={(e) => setApiSpecUrl(e.target.value)}
                 placeholder="https://api.my-app.com/openapi.json or swagger.yaml"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-zinc-500"
               />
               <p className="text-[11px] text-slate-400 mt-1">
                 Audited by Schemathesis (property-based endpoint test generation & fuzzing).
@@ -320,18 +323,27 @@ Clean production-grade service conforming to all specifications.
 
           {/* Automatic GitHub README Information */}
           <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3.5 text-xs text-slate-300 flex items-start gap-2.5">
-            <FileText className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
+            <FileText className="w-4 h-4 text-zinc-400 flex-shrink-0 mt-0.5" />
             <div className="space-y-1">
               <span className="font-semibold text-slate-200 block">
                 Automatic Repository Extraction
               </span>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Project documentation (<code className="text-indigo-300 font-mono">README.md</code>
+                Project documentation (<code className="text-zinc-300 font-mono">README.md</code>
                 ), structure, and dependencies will be extracted automatically from your GitHub
                 repository during evaluation. No manual copy-pasting required.
               </p>
             </div>
           </div>
+
+          {/* organiser's custom questions */}
+          <CustomFormInputs
+            fields={event.formFields || []}
+            values={formResponses}
+            onChange={setFormResponses}
+            labelClassName="block text-xs font-semibold text-slate-300 uppercase mb-1"
+            inputClassName="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-zinc-500"
+          />
 
           {/* prompt-injection test harness: dev builds only */}
           <div className={import.meta.env.DEV ? 'space-y-2' : 'hidden'}>
@@ -339,7 +351,7 @@ Clean production-grade service conforming to all specifications.
               <button
                 type="button"
                 onClick={() => setShowAdvancedTesting(!showAdvancedTesting)}
-                className="text-[11px] text-slate-500 hover:text-indigo-400 flex items-center gap-1 transition"
+                className="text-[11px] text-slate-500 hover:text-zinc-400 flex items-center gap-1 transition"
               >
                 <ShieldAlert className="w-3.5 h-3.5 text-amber-500/80" />
                 {showAdvancedTesting
@@ -351,7 +363,7 @@ Clean production-grade service conforming to all specifications.
                   <button
                     type="button"
                     onClick={handleSimulateBenign}
-                    className="text-[11px] text-indigo-400 hover:text-indigo-300 underline"
+                    className="text-[11px] text-zinc-400 hover:text-zinc-300 underline"
                   >
                     Fill Benign
                   </button>
@@ -373,7 +385,7 @@ Clean production-grade service conforming to all specifications.
                 value={rawReadmeText}
                 onChange={(e) => setRawReadmeText(e.target.value)}
                 placeholder="Override README or test adversarial prompt injection attacks..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white text-xs font-mono focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-white text-xs font-mono focus:outline-none focus:border-zinc-500"
               />
             )}
           </div>
@@ -390,7 +402,7 @@ Clean production-grade service conforming to all specifications.
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-lg shadow-indigo-600/20 transition flex items-center gap-2"
+              className="px-5 py-2 bg-zinc-600 hover:bg-zinc-500 disabled:opacity-50 text-white rounded-xl text-sm font-semibold shadow-lg shadow-zinc-600/20 transition flex items-center gap-2"
             >
               <Send className="w-4 h-4" />
               {loading ? 'Submitting...' : 'Submit Project'}

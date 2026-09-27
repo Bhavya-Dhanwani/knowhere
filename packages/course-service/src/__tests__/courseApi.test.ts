@@ -14,6 +14,7 @@ import CodeQuestionDao from '../shared/dao/codeQuestion.dao.js';
 import s3Service from '../services/s3.service.js';
 import CourseProgressDao from '../shared/dao/courseProgress.dao.js';
 import { memberships } from '../services/access.service.js';
+import mistralGeneratorService from '../services/mistralGenerator.service.js';
 
 const COURSE_ID = '507f1f77bcf86cd799439050';
 
@@ -82,6 +83,13 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
     role: 'trainee',
     email: 'trainee@knowhere.dev',
     name: 'Trainee One'
+  });
+
+  // unit tests never reach the real LLM, even when MISTRAL keys are in .env
+  beforeEach(() => {
+    jest
+      .spyOn(mistralGeneratorService as unknown as { invoke: () => Promise<never> }, 'invoke')
+      .mockRejectedValue(new Error('AI unavailable in tests'));
   });
 
   afterEach(() => {
@@ -224,6 +232,63 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.questionId).toBe('code-q-1');
       expect(res.body.data.publicExampleCount).toBe(1);
+    });
+
+    it('tops the Run tab up to 5 public cases and keeps 100 hidden tests', async () => {
+      const generate = jest
+        .spyOn(mistralGeneratorService, 'generateTestCases')
+        .mockImplementation(async ({ requestedCount }) => ({
+          success: true,
+          testCases: Array.from({ length: requestedCount }, (_, i) => ({
+            input: `${i}\n${i}`,
+            expectedOutput: String(2 * i),
+            isHidden: true
+          })),
+          publicExampleCount: 1,
+          hiddenTestCaseCount: requestedCount
+        }));
+      const create = jest
+        .spyOn(CodeQuestionDao.prototype, 'createQuestion')
+        .mockResolvedValue({ _id: 'code-q-2' } as unknown as ICodingQuestionDocument);
+      const stored = new Promise<ICodingQuestionDocument['testCases']>((resolve) =>
+        jest
+          .spyOn(CodeQuestionDao.prototype, 'updateGenerationStatus')
+          .mockImplementation(async (id, _status, tests) => {
+            // other tests' background jobs may still be finishing
+            if (id === 'code-q-2') resolve(tests!);
+            return null;
+          })
+      );
+
+      const res = await request(app)
+        .post('/api/course/code-question')
+        .set('Authorization', `Bearer ${trainerToken}`)
+        .send({
+          title: 'Add two',
+          description: 'Return a + b.',
+          constraints: [],
+          signature: {
+            functionName: 'addTwo',
+            params: [
+              { name: 'a', type: 'int' },
+              { name: 'b', type: 'int' }
+            ],
+            returnType: 'int'
+          },
+          examples: [{ input: '2\n3', output: '5' }],
+          supportedLanguages: ['javascript'],
+          referenceSolution: { language: 'javascript', code: 'var addTwo = (a, b) => a + b;' },
+          testCaseGeneration: { enabled: true }
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.data.testCaseGenerationStatus).toBe('PENDING');
+      expect(create.mock.calls[0][0].testCaseGenerationStatus).toBe('PENDING');
+      // generation finishes after the response
+      const saved = await stored;
+      expect(generate.mock.calls[0][0].requestedCount).toBe(104);
+      expect(saved.filter((t) => !t.isHidden)).toHaveLength(4);
+      expect(saved.filter((t) => t.isHidden)).toHaveLength(100);
     });
   });
 
@@ -614,16 +679,23 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
           referenceSolution: { language: 'javascript', code: "function solve(){ return '42' }" },
           testCaseGeneration: { enabled: true }
         });
-      expect(res.status).toBe(201);
-      expect(res.body.data.testCaseGenerationStatus).toBe('FAILED');
-      expect(res.body.data.generationError).toMatch(/fails the public examples/);
-      expect((create.mock.calls[0][0] as { testCases: unknown[] }).testCases).toEqual([]);
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/fails the public examples/);
+      expect(create).not.toHaveBeenCalled();
     });
 
     it('never stores fabricated test cases when AI generation is unavailable', async () => {
       const create = jest.spyOn(CodeQuestionDao.prototype, 'createQuestion').mockResolvedValue({
         _id: 'code-q-2'
       } as unknown as ICodingQuestionDocument);
+      const finished = new Promise<[string, ICodingQuestionDocument['testCases']]>((resolve) =>
+        jest
+          .spyOn(CodeQuestionDao.prototype, 'updateGenerationStatus')
+          .mockImplementation(async (_id, status, tests) => {
+            resolve([status, tests!]);
+            return null;
+          })
+      );
 
       const res = await request(app)
         .post('/api/course/code-question')
@@ -645,9 +717,13 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
         });
 
       expect(res.status).toBe(201);
-      expect(res.body.data.testCaseGenerationStatus).toBe('FAILED');
+      expect(res.body.data.testCaseGenerationStatus).toBe('PENDING');
       const saved = create.mock.calls[0][0] as { testCases: { input: string }[] };
       expect(saved.testCases).toEqual([{ input: '2 2', expectedOutput: '4', isHidden: true }]);
+      // the AI is unavailable: the job fails and keeps only the hand-written test
+      const [status, tests] = await finished;
+      expect(status).toBe('FAILED');
+      expect(tests).toEqual([{ input: '2 2', expectedOutput: '4', isHidden: true }]);
     });
 
     it('serves videos only through the streaming route', async () => {
@@ -687,6 +763,74 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
       enrolTraineeWith('507f1f77bcf86cd799439031', 'mcq', '2099-01-01');
       const res = await request(app)
         .get('/api/course/mcq/507f1f77bcf86cd799439031?courseId=507f1f77bcf86cd799439050')
+        .set('Authorization', `Bearer ${traineeToken}`);
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe('POST /api/courses/:id/enroll', () => {
+    const id = '507f1f77bcf86cd799439077';
+    const course = (status: string) =>
+      jest.spyOn(CourseDao.prototype, 'findCourseById').mockResolvedValue({
+        _id: { toString: () => id },
+        status
+      } as unknown as ICourseDocument);
+
+    it('refuses courses that are not published', async () => {
+      course('draft');
+      const res = await request(app)
+        .post(`/api/courses/${id}/enroll`)
+        .set('Authorization', `Bearer ${traineeToken}`);
+      expect(res.status).toBe(403);
+    });
+
+    it('enrolls the caller as a learner once', async () => {
+      course('published');
+      jest.spyOn(memberships, 'memberOf').mockResolvedValue(null);
+      const assign = jest.spyOn(memberships, 'assign').mockResolvedValue(undefined as never);
+      const res = await request(app)
+        .post(`/api/courses/${id}/enroll`)
+        .set('Authorization', `Bearer ${traineeToken}`);
+      expect(res.status).toBe(200);
+      expect(assign).toHaveBeenCalledWith(id, expect.any(String), 'trainee');
+
+      jest
+        .spyOn(memberships, 'memberOf')
+        .mockResolvedValue({ userId: 'x', role: 'trainee' } as never);
+      assign.mockClear();
+      const again = await request(app)
+        .post(`/api/courses/${id}/enroll`)
+        .set('Authorization', `Bearer ${traineeToken}`);
+      expect(again.body.message).toBe('Already enrolled');
+      expect(assign).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /api/courses/:courseId/leaderboard', () => {
+    it('ranks members by score and reports the caller standing', async () => {
+      enrolTraineeWith('507f1f77bcf86cd799439031', 'mcq');
+      jest.spyOn(CourseProgressDao.prototype, 'listGradesByCourse').mockResolvedValue([
+        { userId: 'a', totalScoreEarned: 10, completedItems: [] },
+        { userId: 'trainee-1', totalScoreEarned: 30, completedItems: [] },
+        { userId: 'b', totalScoreEarned: 50, completedItems: [] }
+      ] as never);
+      const res = await request(app)
+        .get(`/api/courses/${COURSE_ID}/leaderboard`)
+        .set('Authorization', `Bearer ${traineeToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.top.map((r: { userId: string }) => r.userId)).toEqual([
+        'b',
+        'trainee-1',
+        'a'
+      ]);
+      expect(res.body.data.me).toMatchObject({ rank: 2, aheadOf: 50 });
+    });
+
+    it('refuses people who are not enrolled', async () => {
+      enrolTraineeWith('507f1f77bcf86cd799439031', 'mcq');
+      jest.spyOn(memberships, 'memberOf').mockResolvedValue(null);
+      const res = await request(app)
+        .get(`/api/courses/${COURSE_ID}/leaderboard`)
         .set('Authorization', `Bearer ${traineeToken}`);
       expect(res.status).toBe(403);
     });

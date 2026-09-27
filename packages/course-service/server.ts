@@ -3,6 +3,7 @@ import createApp from './src/app.js';
 import connectDB from './src/shared/config/db.config.js';
 import env from './src/shared/config/env.config.js';
 import logger from './src/shared/config/logger.config.js';
+import s3Service from './src/services/s3.service.js';
 
 // function to start the server
 async function startServer() {
@@ -14,6 +15,7 @@ async function startServer() {
   });
 
   await connectDB();
+  await s3Service.ensureBuckets();
 }
 
 startServer();

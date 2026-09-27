@@ -1,13 +1,14 @@
 import React from 'react';
 import { cn } from '../lib/cn';
 
+// monochrome covers: graphite tones that sit quietly on the off-white UI
 const palettes = [
-  ['#7d66f5', '#3e2a86', '#c4b5fd'],
-  ['#0ea5e9', '#1e3a8a', '#7dd3fc'],
-  ['#10b981', '#064e3b', '#6ee7b7'],
-  ['#f59e0b', '#7c2d12', '#fcd34d'],
-  ['#ec4899', '#581c87', '#f9a8d4'],
-  ['#14b8a6', '#134e4a', '#99f6e4']
+  ['#27272a', '#09090b', '#52525b'],
+  ['#3f3f46', '#18181b', '#71717a'],
+  ['#1c1917', '#0c0a09', '#57534e'],
+  ['#404040', '#171717', '#737373'],
+  ['#292524', '#0c0a09', '#78716c'],
+  ['#52525b', '#27272a', '#a1a1aa']
 ];
 
 function hash(s: string) {

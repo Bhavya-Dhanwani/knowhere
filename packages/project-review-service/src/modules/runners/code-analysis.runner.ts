@@ -7,6 +7,16 @@ import {
 } from './types.js';
 import { defaultSandboxRunner } from './sandbox.runner.js';
 import logger from '../../shared/config/logger.config.js';
+import {
+  syntaxFor,
+  functionName,
+  branchCount,
+  isTestPath,
+  TEST_CASES,
+  STATIC_TYPED,
+  UNSAFE_CALLS,
+  CODE_FILE
+} from './language-syntax.js';
 
 export class CodeAnalysisRunner {
   /**
@@ -164,28 +174,25 @@ export class CodeAnalysisRunner {
         }
       }
 
-      if (lowerPath.endsWith('.js') || lowerPath.endsWith('.ts')) {
+      // dangerous calls, per language (C gets/strcpy, Python pickle/shell, Java exec, JS eval,
+      // SQL built from strings, ...): see language-syntax.ts
+      const rules = UNSAFE_CALLS.filter(([pathRe]) => pathRe.test(filePath));
+      if (rules.length) {
+        const syntax = syntaxFor(filePath);
         for (let i = 0; i < lines.length; i++) {
-          const l = lines[i];
-          if (/\beval\s*\(/i.test(l)) {
-            findings.push({
-              ruleId: 'security.javascript.eval-detected',
-              message: 'Dangerous use of eval() execution sink',
-              path: filePath,
-              line: i + 1,
-              severity: 'HIGH'
-            });
-            highCount++;
-          }
-          if (/document\.write\s*\(/i.test(l)) {
-            findings.push({
-              ruleId: 'security.javascript.document-write-detected',
-              message: 'Use of document.write() is prohibited and vulnerable to XSS injection',
-              path: filePath,
-              line: i + 1,
-              severity: 'HIGH'
-            });
-            highCount++;
+          const t = lines[i].trim();
+          if (syntax.line.some((c) => t.startsWith(c)) || t.startsWith('*')) continue;
+          for (const [, re, rule, message] of rules) {
+            if (re.test(t)) {
+              findings.push({
+                ruleId: `security.${rule}`,
+                message,
+                path: filePath,
+                line: i + 1,
+                severity: 'HIGH'
+              });
+              highCount++;
+            }
           }
         }
       }
@@ -299,6 +306,8 @@ export class CodeAnalysisRunner {
     let deepNestingCount = 0;
     let anyTypeCount = 0;
     let typeAnnotatedCount = 0;
+    let pyDefs = 0;
+    let pyTypedDefs = 0;
 
     // Test metrics tracking
     let hasTests = false;
@@ -350,13 +359,8 @@ export class CodeAnalysisRunner {
         });
       }
 
-      // Test detection
-      const isTestFile =
-        lower.includes('.test.') ||
-        lower.includes('.spec.') ||
-        lower.includes('__tests__') ||
-        lower.includes('/tests/') ||
-        lower.includes('/test/');
+      const syntax = syntaxFor(filePath);
+      const isTestFile = isTestPath(filePath);
 
       if (isTestFile) {
         hasTests = true;
@@ -370,13 +374,53 @@ export class CodeAnalysisRunner {
         }
       }
 
-      let inBlockComment = false;
+      let blockEnd: string | null = null;
       let currentFunction: {
         name: string;
         startLine: number;
         complexity: number;
         lines: number;
       } | null = null;
+      const closeFunction = () => {
+        const fn = currentFunction;
+        if (!fn) return;
+        if (fn.lines > 80) {
+          largeEntities.push({
+            type: 'FUNCTION',
+            name: fn.name,
+            file: filePath,
+            line: fn.startLine,
+            lineCount: fn.lines
+          });
+          observedFacts.push({
+            dimension: 'complexity',
+            fact: `Large function detected: ${fn.name}() in ${filePath}:${fn.startLine} spans ${fn.lines} lines.`,
+            interpretation:
+              'Overly long functions often combine multiple responsibilities and are difficult to test.',
+            severity: 'LOW',
+            sourceFile: filePath,
+            line: fn.startLine
+          });
+        }
+        if (fn.complexity >= 10) {
+          highComplexityFunctions.push({
+            file: filePath,
+            line: fn.startLine,
+            name: fn.name,
+            complexity: fn.complexity
+          });
+          observedFacts.push({
+            dimension: 'complexity',
+            fact: `High cyclomatic complexity (${fn.complexity}) in ${fn.name}() at ${filePath}:${fn.startLine}.`,
+            interpretation:
+              'High branching density increases test path complexity and the chance of edge-case bugs.',
+            severity: 'MEDIUM',
+            sourceFile: filePath,
+            line: fn.startLine
+          });
+        }
+        currentFunction = null;
+      };
 
       for (let i = 0; i < lines.length; i++) {
         const rawLine = lines[i];
@@ -388,14 +432,19 @@ export class CodeAnalysisRunner {
           continue;
         }
 
-        // Comment detection
-        if (trimmed.startsWith('/*')) inBlockComment = true;
-        if (inBlockComment) {
+        // Comment detection, with this language's own markers (C `#include` is code, Python `#` isn't)
+        if (blockEnd) {
           commentLines++;
-          if (trimmed.endsWith('*/') || trimmed.includes('*/')) inBlockComment = false;
+          if (trimmed.includes(blockEnd)) blockEnd = null;
           continue;
         }
-        if (trimmed.startsWith('//') || trimmed.startsWith('#')) {
+        const opener = syntax.block.find(([open]) => trimmed.startsWith(open));
+        if (opener) {
+          commentLines++;
+          if (!trimmed.slice(opener[0].length).includes(opener[1])) blockEnd = opener[1];
+          continue;
+        }
+        if (syntax.line.some((c) => trimmed.startsWith(c))) {
           commentLines++;
           // Scan for debt markers in comment
           if (/\bTODO\b/i.test(trimmed)) {
@@ -461,83 +510,53 @@ export class CodeAnalysisRunner {
           }
         }
 
-        // Test syntax checks
-        if (isTestFile) {
-          if (/\b(it|test)\s*\(/i.test(trimmed)) testCaseCount++;
-          if (/\b(expect|assert|should)\s*\(|\bassert\b/i.test(trimmed)) assertionCount++;
-          if (/jest\b/i.test(trimmed)) testFrameworksSet.add('Jest');
-          if (/vitest\b/i.test(trimmed)) testFrameworksSet.add('Vitest');
-          if (/mocha\b/i.test(trimmed)) testFrameworksSet.add('Mocha');
-          if (/pytest\b/i.test(trimmed)) testFrameworksSet.add('Pytest');
-          if (/playwright\b/i.test(trimmed)) testFrameworksSet.add('Playwright');
+        // Test cases in any ecosystem. Loose patterns (JS `it(`, C `test_x()`) only count inside
+        // test files; explicit markers (@Test, #[test], TEST(...)) count anywhere (Rust keeps
+        // tests inline, for example).
+        for (const [re, framework] of TEST_CASES) {
+          const loose = framework.startsWith('Jest') || framework.startsWith('C test');
+          if ((isTestFile || !loose) && re.test(trimmed)) {
+            testCaseCount++;
+            hasTests = true;
+            testFrameworksSet.add(framework);
+            break;
+          }
+        }
+        if (
+          (isTestFile || testFrameworksSet.size) &&
+          /\b(expect|assert\w*|should|EXPECT_\w+|ASSERT_\w+|require)\s*[.(!]|\bassert\b/.test(
+            trimmed
+          )
+        )
+          assertionCount++;
+        if (/\.py$/i.test(filePath) && /^(async\s+)?def\s/.test(trimmed)) {
+          pyDefs++;
+          if (/->|:\s*[A-Za-z_][\w.\[\], ]*\s*[,)=]/.test(trimmed)) pyTypedDefs++;
         }
 
-        // Function and Complexity detection
-        const funcMatch = trimmed.match(
-          /(?:function\s+([a-zA-Z0-9_$]+)|(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>|([a-zA-Z0-9_$]+)\s*\([^)]*\)\s*\{)/
-        );
-        if (funcMatch) {
-          if (currentFunction && currentFunction.lines > 80) {
-            largeEntities.push({
-              type: 'FUNCTION',
-              name: currentFunction.name,
-              file: filePath,
-              line: currentFunction.startLine,
-              lineCount: currentFunction.lines
-            });
-            observedFacts.push({
-              dimension: 'complexity',
-              fact: `Large function detected: ${currentFunction.name}() in ${filePath}:${currentFunction.startLine} exceeds 80 lines (${currentFunction.lines} lines).`,
-              interpretation:
-                'Overly long functions often combine multiple responsibilities and are difficult to unit-test.',
-              severity: 'LOW',
-              sourceFile: filePath,
-              line: currentFunction.startLine
-            });
-          }
-          const fnName = funcMatch[1] || funcMatch[2] || funcMatch[3] || 'anonymous';
+        // Function and complexity detection. A function runs until the next declaration (or the
+        // end of the file): works for brace and indentation languages alike.
+        // ponytail: top-level code after the last function is attributed to it; a real parser
+        // (tree-sitter) would give exact extents if this ever matters.
+        const fnName = functionName(syntax, trimmed);
+        if (fnName) {
+          closeFunction();
           currentFunction = { name: fnName, startLine: lineNum, complexity: 1, lines: 0 };
           totalFunctions++;
         }
-
         if (currentFunction) {
           currentFunction.lines++;
-          // Cyclomatic branch keywords
-          if (/\b(if|else if|for|while|catch|case)\b|\?.*:|\&\&|\|\|/i.test(trimmed)) {
-            currentFunction.complexity++;
-            totalBranches++;
-            if (currentFunction.complexity > maxComplexity) {
-              maxComplexity = currentFunction.complexity;
-            }
-          }
-          if (trimmed === '}' && currentFunction.lines > 5) {
-            if (currentFunction.complexity >= 10) {
-              highComplexityFunctions.push({
-                file: filePath,
-                line: currentFunction.startLine,
-                name: currentFunction.name,
-                complexity: currentFunction.complexity
-              });
-              observedFacts.push({
-                dimension: 'complexity',
-                fact: `High cyclomatic complexity (${currentFunction.complexity}) in function ${currentFunction.name}() at ${filePath}:${currentFunction.startLine}.`,
-                interpretation:
-                  'High branching density increases test path complexity and likelihood of latent edge-case bugs.',
-                severity: 'MEDIUM',
-                sourceFile: filePath,
-                line: currentFunction.startLine
-              });
-            }
-            currentFunction = null;
-          }
+          const branches = branchCount(syntax, trimmed);
+          currentFunction.complexity += branches;
+          totalBranches += branches;
+          maxComplexity = Math.max(maxComplexity, currentFunction.complexity);
         }
 
         // Code duplication detection (4-line sliding window)
         if (
           i <= lines.length - 4 &&
           trimmed.length > 15 &&
-          !trimmed.startsWith('import ') &&
-          !trimmed.startsWith('export ')
+          !/^(import|export|from|package|using|#include|require|use)\b/.test(trimmed)
         ) {
           const windowKey = lines
             .slice(i, i + 4)
@@ -565,6 +584,7 @@ export class CodeAnalysisRunner {
           }
         }
       }
+      closeFunction(); // the file's last function ends with the file
     }
 
     // Wrap up duplication observed facts
@@ -617,8 +637,14 @@ export class CodeAnalysisRunner {
       });
     }
 
-    // Type safety facts
+    // Type safety facts. Statically typed languages are typed by definition (no TS-only bonus);
+    // Python earns it with type hints on most of its functions.
     const usesTypeScript = fileList.some((f) => f.endsWith('.ts') || f.endsWith('.tsx'));
+    const codeFiles = fileList.filter((f) => CODE_FILE.test(f));
+    const typedFiles = codeFiles.filter((f) => STATIC_TYPED.test(f)).length;
+    const pythonHinted = pyDefs >= 3 && pyTypedDefs / pyDefs >= 0.6;
+    const staticTyping =
+      (codeFiles.length > 0 && typedFiles / codeFiles.length >= 0.5) || pythonHinted;
     const totalTypeSignals = anyTypeCount + typeAnnotatedCount;
     const typeCoveragePercent =
       usesTypeScript && totalTypeSignals > 0
@@ -684,6 +710,7 @@ export class CodeAnalysisRunner {
       },
       typeSafety: {
         usesTypeScript,
+        staticTyping,
         typeCoveragePercent,
         anyTypeCount,
         strictModeEnabled: true
@@ -705,8 +732,9 @@ export class CodeAnalysisRunner {
         highVulnsCount: findings.filter((f) => f.severity === 'HIGH').length,
         mediumVulnsCount: findings.filter((f) => f.severity === 'MEDIUM').length,
         syntaxIssuesCount: findings.filter((f) => f.ruleId.startsWith('html.syntax')).length,
+        // every per-language unsafe-call rule (see UNSAFE_CALLS), not just JS eval
         dangerousSinksCount: findings.filter(
-          (f) => f.ruleId.includes('eval') || f.ruleId.includes('document-write')
+          (f) => f.ruleId.startsWith('security.') && !/secret|key|credential/.test(f.ruleId)
         ).length
       },
       observedFacts

@@ -1,7 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { ModalShell } from '../../../shared/ui/ModalShell';
 import { X, Plus, Trash2, Shield, Layers, Layout, Server, AlertCircle, Save } from 'lucide-react';
-import { ProjectScope, Criterion, ReviewEvent, CRITERIA_PRESETS } from '../types';
+import {
+  ProjectScope,
+  Criterion,
+  ReviewEvent,
+  FormField,
+  Requirement,
+  CRITERIA_PRESETS,
+  IoTest
+} from '../types';
+import {
+  FormFieldsEditor,
+  RequirementsEditor,
+  DeadlineInput,
+  JudgingPromptInput,
+  IoTestsEditor,
+  toLocalInput,
+  fromLocalInput
+} from './CustomForm';
 import { reviewApi } from '../api/reviewApi';
 
 interface EditEventModalProps {
@@ -20,18 +37,32 @@ export const EditEventModal: React.FC<EditEventModalProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [problemStatement, setProblemStatement] = useState('');
+  const [judgingPrompt, setJudgingPrompt] = useState('');
+  const [judgingPromptPublic, setJudgingPromptPublic] = useState(false);
+  const [ioTests, setIoTests] = useState<IoTest[]>([]);
+  const [runCommand, setRunCommand] = useState('');
   const [projectType, setProjectType] = useState<ProjectScope>('FULLSTACK');
   const [requiresLiveUrl, setRequiresLiveUrl] = useState(false);
   const [requiresApiSpec, setRequiresApiSpec] = useState(false);
   const [criteria, setCriteria] = useState<Criterion[]>([]);
+  const [formFields, setFormFields] = useState<FormField[]>([]);
+  const [requirements, setRequirements] = useState<Requirement[]>([]);
+  const [deadline, setDeadline] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (event) {
       setName(event.name || '');
+      setFormFields(event.formFields || []);
+      setRequirements(event.requirements || []);
+      setDeadline(toLocalInput(event.submissionDeadline));
       setDescription(event.description || '');
       setProblemStatement(event.problemStatement || '');
+      setJudgingPrompt(event.judgingPrompt || '');
+      setJudgingPromptPublic(!!event.judgingPromptPublic);
+      setIoTests(event.ioTests || []);
+      setRunCommand(event.runCommand || '');
       setProjectType(event.projectType || 'FULLSTACK');
       setRequiresLiveUrl(event.requiresLiveUrl ?? false);
       setRequiresApiSpec(
@@ -109,11 +140,17 @@ export const EditEventModal: React.FC<EditEventModalProps> = ({
         name,
         description,
         problemStatement,
+        judgingPrompt,
+        judgingPromptPublic,
+        ioTests: ioTests.filter((t) => t.expected.trim() || t.input.trim()),
+        runCommand,
         projectType,
         requiresLiveUrl,
         requiresApiSpec: projectType === 'FRONTEND' ? false : requiresApiSpec,
         criteria,
-        requirements: event.requirements
+        requirements,
+        formFields,
+        submissionDeadline: fromLocalInput(deadline)
       });
       onUpdated(updated);
       onClose();
@@ -199,7 +236,7 @@ export const EditEventModal: React.FC<EditEventModalProps> = ({
                     : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'
                 }`}
               >
-                <Layers className="w-5 h-5 mb-1 text-purple-600" />
+                <Layers className="w-5 h-5 mb-1 text-zinc-600" />
                 <span className="font-semibold">Fullstack</span>
                 <span className="text-[10px] text-zinc-500">Full end-to-end audit</span>
               </button>
@@ -306,6 +343,13 @@ export const EditEventModal: React.FC<EditEventModalProps> = ({
                 className="w-full bg-white border border-zinc-300 rounded-xl px-4 py-2.5 text-zinc-900 text-sm focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition"
               />
             </div>
+
+            <JudgingPromptInput
+              value={judgingPrompt}
+              onChange={setJudgingPrompt}
+              isPublic={judgingPromptPublic}
+              onPublicChange={setJudgingPromptPublic}
+            />
           </div>
 
           {/* Dynamic Criteria Section */}
@@ -398,6 +442,19 @@ export const EditEventModal: React.FC<EditEventModalProps> = ({
               ))}
             </div>
           </div>
+
+          <DeadlineInput value={deadline} onChange={setDeadline} />
+
+          <RequirementsEditor requirements={requirements} onChange={setRequirements} />
+
+          <FormFieldsEditor fields={formFields} onChange={setFormFields} />
+
+          <IoTestsEditor
+            tests={ioTests}
+            onChange={setIoTests}
+            runCommand={runCommand}
+            onRunCommandChange={setRunCommand}
+          />
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-zinc-200">

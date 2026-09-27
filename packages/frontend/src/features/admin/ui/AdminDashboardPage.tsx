@@ -6,19 +6,26 @@ import {
   Archive,
   BookOpen,
   Eye,
-  GraduationCap,
   MoreHorizontal,
   PenLine,
   Plus,
   Presentation,
   Search,
-  Shield,
   Users
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { RootState } from '../../../app/store';
 import { BackendRole, Course, CourseStatus, PlatformUser, lmsApi } from '../../../shared/api/lms';
-import { PageHeader, StatCard } from '../../../shared/layout/PageHeader';
+import { PageHeader } from '../../../shared/layout/PageHeader';
+import {
+  AnswerList,
+  AssistantChip,
+  AssistantPanel,
+  DashboardGrid,
+  Greeting,
+  Panel,
+  StatTile
+} from '../../../shared/layout/DashboardKit';
 import { Button } from '../../../shared/ui/Button';
 import { Badge } from '../../../shared/ui/Badge';
 import { Avatar } from '../../../shared/ui/Avatar';
@@ -28,9 +35,7 @@ import { Tabs } from '../../../shared/ui/Tabs';
 import { EmptyState } from '../../../shared/ui/EmptyState';
 import { Skeleton } from '../../../shared/ui/Skeleton';
 import { CourseCover } from '../../../shared/ui/CourseCover';
-import { CountUp } from '../../../shared/ui/fx';
 import { timeAgo } from '../../../shared/lib/format';
-import { cn } from '../../../shared/lib/cn';
 import { CreateCourseModal } from './CreateCourseModal';
 import { CourseMembersModal } from './CourseMembersModal';
 
@@ -49,12 +54,6 @@ const statusVariant: Record<CourseStatus, 'green' | 'gray' | 'amber'> = {
   archived: 'amber'
 };
 
-const roleMeta: Record<BackendRole, { label: string; icon: typeof Users; color: string }> = {
-  trainee: { label: 'Students', icon: GraduationCap, color: 'bg-brand-500' },
-  trainer: { label: 'Trainers', icon: Presentation, color: 'bg-sky-500' },
-  admin: { label: 'Admins', icon: Shield, color: 'bg-emerald-500' }
-};
-
 export const AdminDashboardPage: React.FC = () => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -63,6 +62,24 @@ export const AdminDashboardPage: React.FC = () => {
 
   const courses = useQuery({ queryKey: ['courses'], queryFn: lmsApi.listCourses });
   const users = useQuery({ queryKey: ['users', ''], queryFn: () => lmsApi.listUsers() });
+
+  if (section === 'overview') {
+    return (
+      <>
+        <AdminOverview
+          courses={courses.data}
+          users={users.data}
+          loading={courses.isLoading || users.isLoading}
+          onNewCourse={() => setCreating(true)}
+        />
+        <CreateCourseModal
+          open={creating}
+          onClose={() => setCreating(false)}
+          onCreated={(course) => navigate(`/admin/course/${course.id}`)}
+        />
+      </>
+    );
+  }
 
   return (
     <div className="page space-y-6 py-6 sm:py-8">
@@ -85,7 +102,6 @@ export const AdminDashboardPage: React.FC = () => {
 
       <Tabs
         tabs={[
-          { id: 'overview', label: 'Overview' },
           {
             id: 'courses',
             label: 'Courses',
@@ -109,13 +125,7 @@ export const AdminDashboardPage: React.FC = () => {
           exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.2 }}
         >
-          {section === 'overview' ? (
-            <Overview
-              courses={courses.data}
-              users={users.data}
-              loading={courses.isLoading || users.isLoading}
-            />
-          ) : section === 'courses' ? (
+          {section === 'courses' ? (
             <CoursesSection
               courses={courses.data}
               loading={courses.isLoading}
@@ -130,7 +140,7 @@ export const AdminDashboardPage: React.FC = () => {
       <CreateCourseModal
         open={creating}
         onClose={() => setCreating(false)}
-        onCreated={() => navigate('/admin/courses')}
+        onCreated={(course) => navigate(`/admin/course/${course.id}`)}
       />
     </div>
   );
@@ -144,168 +154,222 @@ const Count: React.FC<{ n: number }> = ({ n }) => (
 
 /* ---------------------------------------------------------------- overview */
 
-const Overview: React.FC<{
+const roleName = (r: string) =>
+  r === 'trainee' ? 'Trainee' : r === 'trainer' ? 'Trainer' : 'Course admin';
+const shortDate = (d: string) =>
+  new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+const AdminOverview: React.FC<{
   courses?: Course[];
   users?: { users: PlatformUser[]; stats: Record<BackendRole, number> };
   loading: boolean;
-}> = ({ courses = [], users, loading }) => {
+  onNewCourse: () => void;
+}> = ({ courses = [], users, loading, onNewCourse }) => {
+  const me = useSelector((s: RootState) => s.auth.user);
+  const overview = useQuery({
+    queryKey: ['enrollment-overview'],
+    queryFn: lmsApi.enrollmentOverview
+  });
   const stats = users?.stats || { trainee: 0, trainer: 0, admin: 0 };
-  const totalUsers = stats.trainee + stats.trainer + stats.admin;
-  const published = courses.filter((c) => c.status === 'published').length;
+  const titleOf = new Map(courses.map((c) => [c.id, c.title]));
+  const top = (overview.data?.learnersByCourse || [])
+    .filter((c) => titleOf.has(c.courseId))
+    .slice(0, 5);
+  const trainers = (users?.users || []).filter((u) => u.role === 'trainer');
+  const byStatus = (st: CourseStatus) => courses.filter((c) => c.status === st).length;
+
+  // the same numbers the page shows, handed to the assistant as its only source of truth
+  const facts = [
+    `Students: ${stats.trainee}. Trainers: ${stats.trainer}. Admins: ${stats.admin}.`,
+    `Courses: ${courses.length} (published ${byStatus('published')}, draft ${byStatus('draft')}, archived ${byStatus('archived')}).`,
+    `Learner enrollments: ${overview.data?.totalLearnerEnrollments ?? 'unknown'}.`,
+    `Courses by learners: ${top.map((c) => `${titleOf.get(c.courseId)} (${c.learners})`).join('; ') || 'none'}.`,
+    `Trainers: ${trainers.map((t) => t.name).join(', ') || 'none'}.`,
+    `Recent enrollments: ${
+      (overview.data?.recent || [])
+        .map(
+          (r) =>
+            `${r.name} joined ${titleOf.get(r.courseId) || 'a course'} as ${roleName(r.role)} on ${shortDate(r.assignedAt)}`
+        )
+        .join('; ') || 'none'
+    }.`
+  ].join('\n');
+
+  const chips: AssistantChip[] = [
+    {
+      label: 'Show total enrollments',
+      answer: () => (
+        <AnswerList
+          title={`${overview.data?.totalLearnerEnrollments ?? 0} learner enrollments`}
+          rows={top.map((c) => [titleOf.get(c.courseId), c.learners])}
+        />
+      )
+    },
+    {
+      label: 'List all trainers',
+      answer: () => (
+        <AnswerList title={`${trainers.length} trainers`} rows={trainers.map((t) => [t.name])} />
+      )
+    },
+    {
+      label: 'Show popular courses',
+      answer: () => (
+        <AnswerList
+          title="Most enrolled courses"
+          rows={top.map((c, i) => [
+            `${i + 1}. ${titleOf.get(c.courseId)}`,
+            `${c.learners} learners`
+          ])}
+        />
+      )
+    },
+    {
+      label: 'Course status',
+      answer: () => (
+        <AnswerList
+          title={`${courses.length} courses`}
+          rows={[
+            ['Published', byStatus('published')],
+            ['Draft', byStatus('draft')],
+            ['Archived', byStatus('archived')]
+          ]}
+        />
+      )
+    }
+  ];
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-3 xs:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          label="Total people"
+    <DashboardGrid aside={<AssistantPanel chips={chips} facts={facts} />}>
+      <Greeting
+        name={me?.name?.split(' ')[0] || 'Admin'}
+        subtitle="Manage your learners, trainers and courses."
+        action={
+          <Button size="sm" onClick={onNewCourse}>
+            <Plus className="h-4 w-4" /> New course
+          </Button>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatTile
           icon={<Users />}
-          value={loading ? '—' : <CountUp to={totalUsers} />}
+          value={loading ? null : stats.trainee}
+          label="Trainees"
+          to="/admin/people"
         />
-        <StatCard
-          label="Students"
-          icon={<GraduationCap />}
-          value={loading ? '—' : <CountUp to={stats.trainee} />}
-        />
-        <StatCard
-          label="Courses"
-          icon={<BookOpen />}
-          value={loading ? '—' : <CountUp to={courses.length} />}
-          hint={`${published} published`}
-        />
-        <StatCard
-          label="Trainers"
+        <StatTile
           icon={<Presentation />}
-          value={loading ? '—' : <CountUp to={stats.trainer} />}
-          hint={`${stats.admin} admin${stats.admin === 1 ? '' : 's'}`}
+          value={loading ? null : stats.trainer}
+          label="Trainers"
+          to="/admin/people"
+        />
+        <StatTile
+          icon={<BookOpen />}
+          value={loading ? null : courses.length}
+          label="Courses"
+          to="/admin/courses"
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <div className="min-w-0 space-y-4 rounded-2xl bg-white p-4 shadow-card sm:p-5 lg:col-span-2">
-          <h3 className="text-sm font-semibold text-zinc-900">Role distribution</h3>
-          {loading ? (
-            <Skeleton className="h-32" />
-          ) : (
-            <>
-              <div className="flex h-2.5 overflow-hidden rounded-full bg-zinc-100">
-                {(Object.keys(roleMeta) as BackendRole[]).map((r) => (
-                  <motion.span
-                    key={r}
-                    className={roleMeta[r].color}
-                    initial={{ width: 0 }}
-                    animate={{ width: totalUsers ? `${(stats[r] / totalUsers) * 100}%` : 0 }}
-                    transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-                  />
-                ))}
-              </div>
-              <ul className="space-y-2.5">
-                {(Object.keys(roleMeta) as BackendRole[]).map((r) => (
-                  <li key={r} className="flex items-center gap-3 text-sm">
-                    <span className={cn('h-2 w-2 rounded-full', roleMeta[r].color)} />
-                    <span className="flex-1 text-zinc-600">{roleMeta[r].label}</span>
-                    <span className="font-medium tabular-nums text-zinc-900">{stats[r]}</span>
-                    <span className="w-10 text-right text-xs tabular-nums text-zinc-400">
-                      {totalUsers ? Math.round((stats[r] / totalUsers) * 100) : 0}%
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          <Link
-            to="/admin/people"
-            className="inline-flex text-xs font-medium text-brand-700 hover:text-brand-800"
-          >
-            Manage people →
-          </Link>
-        </div>
-
-        <div className="min-w-0 rounded-2xl bg-white shadow-card lg:col-span-3">
-          <div className="flex items-center justify-between gap-2 p-4 pb-2 sm:p-5 sm:pb-2">
-            <h3 className="text-sm font-semibold text-zinc-900">Newest members</h3>
-            <Link
-              to="/admin/people"
-              className="text-xs font-medium text-zinc-500 hover:text-zinc-900"
-            >
-              View all
-            </Link>
-          </div>
-          {loading ? (
-            <div className="space-y-2 p-4">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <Panel title="Recent enrollments" viewAll="/admin/courses">
+          {overview.isLoading ? (
+            <div className="space-y-2 p-2">
               {[0, 1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-9" />
+              ))}
+            </div>
+          ) : overview.error ? (
+            <p className="p-3 text-sm text-red-600">{(overview.error as Error).message}</p>
+          ) : overview.data?.recent.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full table-fixed text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-zinc-500">
+                    <th className="w-[42%] rounded-l-lg bg-zinc-50 px-3 py-2 font-medium">Name</th>
+                    <th className="hidden w-[18%] bg-zinc-50 px-3 py-2 font-medium 2xl:table-cell">
+                      Role
+                    </th>
+                    <th className="hidden bg-zinc-50 px-3 py-2 font-medium sm:table-cell">
+                      Course
+                    </th>
+                    <th className="w-[5.5rem] rounded-r-lg bg-zinc-50 px-3 py-2 font-medium">
+                      Enrolled
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overview.data.recent.map((r) => (
+                    <tr
+                      key={`${r.userId}-${r.courseId}`}
+                      className="border-b border-zinc-100 last:border-0"
+                    >
+                      <td className="px-3 py-2.5">
+                        <span className="flex items-center gap-2.5">
+                          <Avatar name={r.name} size="xs" />
+                          <span className="min-w-0 truncate text-zinc-900">{r.name}</span>
+                        </span>
+                      </td>
+                      <td className="hidden truncate px-3 py-2.5 text-zinc-500 2xl:table-cell">
+                        {roleName(r.role)}
+                      </td>
+                      <td className="hidden truncate px-3 py-2.5 text-zinc-500 sm:table-cell">
+                        {titleOf.get(r.courseId) || '—'}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-zinc-500">
+                        {shortDate(r.assignedAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="p-3 text-sm text-zinc-500">
+              No enrollments yet. Add people to a course from Courses.
+            </p>
+          )}
+        </Panel>
+
+        <Panel title="Top courses" viewAll="/admin/courses">
+          {overview.isLoading ? (
+            <div className="space-y-2 p-2">
+              {[0, 1, 2].map((i) => (
                 <Skeleton key={i} className="h-10" />
               ))}
             </div>
-          ) : (
-            <ul className="divide-y divide-zinc-100 px-2 pb-2">
-              {(users?.users || []).slice(0, 6).map((u) => (
-                <li key={u.id} className="flex items-center gap-3 px-2 py-2.5">
-                  <Avatar name={u.name} size="sm" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm text-zinc-900">{u.name}</span>
-                    <span className="block truncate text-xs text-zinc-500">{u.email}</span>
-                  </span>
-                  <RoleBadge role={u.role} />
+          ) : top.length ? (
+            <ol className="space-y-1">
+              {top.map((c, i) => (
+                <li key={c.courseId}>
+                  <Link
+                    to={`/admin/course/${c.courseId}`}
+                    className="flex items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-zinc-50"
+                  >
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-zinc-100 text-sm font-medium text-zinc-700">
+                      {i + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm text-zinc-900">
+                      {titleOf.get(c.courseId)}
+                    </span>
+                    <span className="text-right">
+                      <span className="block text-sm font-semibold tabular-nums text-zinc-900">
+                        {c.learners}
+                      </span>
+                      <span className="block text-[10px] text-zinc-400">learners</span>
+                    </span>
+                  </Link>
                 </li>
               ))}
-            </ul>
+            </ol>
+          ) : (
+            <p className="p-3 text-sm text-zinc-500">No learners enrolled yet.</p>
           )}
-        </div>
+        </Panel>
       </div>
-
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-zinc-900">Recent courses</h3>
-          <Link
-            to="/admin/courses"
-            className="text-xs font-medium text-zinc-500 hover:text-zinc-900"
-          >
-            View all
-          </Link>
-        </div>
-        {loading ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-40" />
-            ))}
-          </div>
-        ) : courses.length ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {courses.slice(0, 3).map((c) => (
-              <Link
-                key={c.id}
-                to={`/admin/course/${c.id}`}
-                className="group overflow-hidden rounded-2xl bg-white shadow-card transition hover:-translate-y-0.5 hover:shadow-lift"
-              >
-                <CourseCover seed={c.id} title={c.title} className="aspect-[16/6]" />
-                <div className="flex items-center gap-2 p-4">
-                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
-                    {c.title}
-                  </p>
-                  <Badge size="sm" variant={statusVariant[c.status]} dot>
-                    {c.status}
-                  </Badge>
-                </div>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            icon={<BookOpen />}
-            title="No courses yet"
-            description="Create the first course to get your cohort started."
-          />
-        )}
-      </div>
-    </div>
+    </DashboardGrid>
   );
 };
-
-const RoleBadge: React.FC<{ role: BackendRole }> = ({ role }) => (
-  <Badge size="sm" variant={role === 'admin' ? 'green' : role === 'trainer' ? 'blue' : 'gray'}>
-    {role === 'trainee' ? 'student' : role}
-  </Badge>
-);
 
 /* ----------------------------------------------------------------- courses */
 
@@ -375,7 +439,9 @@ const CoursesSection: React.FC<{ courses?: Course[]; loading: boolean; error: un
               <div className="flex flex-1 flex-col p-4">
                 <div className="flex items-start gap-2">
                   <h3 className="line-clamp-2 min-w-0 flex-1 text-[15px] font-semibold leading-snug text-zinc-900">
-                    {c.title}
+                    <Link to={`/admin/course/${c.id}`} className="hover:underline">
+                      {c.title}
+                    </Link>
                   </h3>
                   <Badge size="sm" variant={statusVariant[c.status]} dot>
                     {c.status}

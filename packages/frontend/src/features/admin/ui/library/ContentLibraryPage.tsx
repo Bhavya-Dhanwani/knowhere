@@ -181,6 +181,10 @@ export const ContentLibraryPage: React.FC = () => {
                 <Badge size="sm" variant="amber">
                   AI tests failed
                 </Badge>
+              ) : q.testCaseGenerationStatus === 'PENDING' ? (
+                <Badge size="sm" variant="gray">
+                  Generating tests…
+                </Badge>
               ) : q.testCaseGenerationStatus === 'COMPLETED' ? (
                 <Badge size="sm" variant="green">
                   AI tests

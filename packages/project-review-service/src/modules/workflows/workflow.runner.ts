@@ -5,12 +5,40 @@ import {
   ActivityExecutionSnapshot
 } from './types.js';
 import EvaluationActivities from './evaluation.activities.js';
+import { BuildRunner } from '../runners/build.runner.js';
 import { ReplayTrace } from '../../models/ReplayTrace.model.js';
-import { ReviewSubmission } from '../../models/Submission.model.js';
-import { ReviewEvent } from '../../models/Event.model.js';
+import { ReviewSubmission, IReviewSubmission } from '../../models/Submission.model.js';
+import { ReviewEvent, IReviewEvent } from '../../models/Event.model.js';
 import { EvaluationLogger } from '../logging/evaluation-logger.service.js';
 import env from '../../shared/config/env.config.js';
 import logger from '../../shared/config/logger.config.js';
+
+/** Statuses of a submission that a worker is currently evaluating. */
+export const IN_FLIGHT = ['DISCOVERING', 'SANITIZING', 'ANALYZING', 'SCORING'];
+
+// A worker holds a lease on the submission it evaluates and renews it every minute; any replica
+// may requeue work whose lease ran out (its worker died), so replicas and restarts are both safe.
+export const LEASE_MS = 3 * 60_000;
+const lease = () => new Date(Date.now() + LEASE_MS);
+const draining = new Set<string>(); // events this process is draining right now
+
+export const toWorkflowInput = (
+  submission: IReviewSubmission,
+  event: IReviewEvent
+): EvaluationWorkflowInput => ({
+  submissionId: submission._id.toString(),
+  eventId: event._id.toString(),
+  repoUrl: submission.repositoryUrl,
+  // pinned commit when we have one: re-runs score exactly what was submitted
+  branch: submission.commitHash || submission.branch,
+  liveSiteUrl: submission.liveSiteUrl,
+  apiSpecUrl: submission.apiSpecUrl,
+  rawReadme: submission.rawReadmeText,
+  formFields: event.formFields,
+  formResponses: submission.formResponses,
+  ioTests: event.ioTests,
+  runCommand: event.runCommand
+});
 
 export class WorkflowRunner {
   /**
@@ -39,11 +67,22 @@ export class WorkflowRunner {
     });
 
     // Update submission status to DISCOVERING
+    // a re-run starts clean: an old injection flag must not stick if the content was fixed
     await ReviewSubmission.findByIdAndUpdate(input.submissionId, {
       status: 'DISCOVERING',
-      currentWorkflowId: workflowId
+      currentWorkflowId: workflowId,
+      leaseUntil: lease(),
+      flaggedForHumanReview: false,
+      $unset: { flagReason: 1 }
     });
 
+    const heartbeat = setInterval(
+      () =>
+        ReviewSubmission.updateOne({ _id: input.submissionId }, { leaseUntil: lease() }).catch(
+          () => {}
+        ),
+      60_000
+    );
     let overallFinalStatus: EvaluationWorkflowResult['status'] = 'SUCCESS';
     let overallScore: number | undefined;
     let flaggedForHumanReview = false;
@@ -106,7 +145,18 @@ export class WorkflowRunner {
 
       // Step 2: Content Sanitization & Injection Defense Activity
       await ReviewSubmission.findByIdAndUpdate(input.submissionId, { status: 'SANITIZING' });
-      const rawReadme = input.rawReadme || discovery.rawReadme || '';
+      // the organiser's custom form answers are untrusted student text: they go through the same
+      // injection defense + claim extraction as the README, so scoring sees them as claims
+      const formAnswers = (input.formFields || [])
+        .filter((f) => input.formResponses?.[f.id])
+        .map((f) => `### ${f.label}\n${input.formResponses![f.id]}`)
+        .join('\n\n');
+      const rawReadme = [
+        input.rawReadme || discovery.rawReadme || '',
+        formAnswers && `## Submission form answers\n\n${formAnswers}`
+      ]
+        .filter(Boolean)
+        .join('\n\n');
       const sanitization = await runTrackedActivity(
         'SanitizationDefenseActivity',
         () =>
@@ -198,10 +248,22 @@ export class WorkflowRunner {
               { apiSpecUrl: input.apiSpecUrl, targetUrl: input.liveSiteUrl }
             );
 
-      const [codeAnalysis, frontendEval, backendEval] = await Promise.all([
+      // build + tests in the judge sandbox, at the pinned commit (input.branch is the sha)
+      const buildEvalPromise = runTrackedActivity(
+        'BuildAndTestActivity',
+        () =>
+          BuildRunner.run(input.repoUrl, input.branch || 'main', {
+            ioTests: input.ioTests,
+            runCommand: input.runCommand
+          }),
+        { repoUrl: input.repoUrl, ref: input.branch }
+      );
+
+      const [codeAnalysis, frontendEval, backendEval, buildEval] = await Promise.all([
         codeAnalysisPromise,
         frontendEvalPromise,
-        backendEvalPromise
+        backendEvalPromise,
+        buildEvalPromise
       ]);
 
       EvaluationLogger.logStep(
@@ -214,7 +276,7 @@ export class WorkflowRunner {
           liveSiteUrl: input.liveSiteUrl,
           projectType
         },
-        { codeAnalysis, frontendEval, backendEval }
+        { codeAnalysis, frontendEval, backendEval, buildEval }
       );
 
       // Step 4: Assemble & Persist Evidence
@@ -225,7 +287,8 @@ export class WorkflowRunner {
           discovery,
           codeAnalysis,
           frontendEval,
-          backendEval
+          backendEval,
+          buildEval
         )
       );
       EvaluationLogger.logStep(
@@ -261,31 +324,36 @@ export class WorkflowRunner {
       });
 
       // Auto-recalibrate relative rankings and comparative insights for the event
-      try {
-        const { RankingService } = await import('../ranking/ranking.service.js');
-        const rankingResult = await RankingService.rankEvent(input.eventId);
-        EvaluationLogger.logStep(
-          input.submissionId,
-          workflowId,
-          6,
-          'RelativeRankingActivity',
-          { eventId: input.eventId },
-          rankingResult
-        );
-      } catch (rankErr) {
-        logger.warn(
-          { rankErr, eventId: input.eventId },
-          'Automatic post-evaluation relative ranking generation failed'
-        );
-        EvaluationLogger.logStep(
-          input.submissionId,
-          workflowId,
-          6,
-          'RelativeRankingActivity',
-          { eventId: input.eventId },
-          null,
-          { status: 'FAILED', error: rankErr instanceof Error ? rankErr.message : String(rankErr) }
-        );
+      if (!input.skipRanking) {
+        try {
+          const { RankingService } = await import('../ranking/ranking.service.js');
+          const rankingResult = await RankingService.rankEvent(input.eventId);
+          EvaluationLogger.logStep(
+            input.submissionId,
+            workflowId,
+            6,
+            'RelativeRankingActivity',
+            { eventId: input.eventId },
+            rankingResult
+          );
+        } catch (rankErr) {
+          logger.warn(
+            { rankErr, eventId: input.eventId },
+            'Automatic post-evaluation relative ranking generation failed'
+          );
+          EvaluationLogger.logStep(
+            input.submissionId,
+            workflowId,
+            6,
+            'RelativeRankingActivity',
+            { eventId: input.eventId },
+            null,
+            {
+              status: 'FAILED',
+              error: rankErr instanceof Error ? rankErr.message : String(rankErr)
+            }
+          );
+        }
       }
     } catch (err: unknown) {
       logger.error({ err, workflowId }, 'Evaluation workflow failed during activity execution');
@@ -293,6 +361,8 @@ export class WorkflowRunner {
       await ReviewSubmission.findByIdAndUpdate(input.submissionId, { status: 'FAILED' });
     }
 
+    clearInterval(heartbeat);
+    await ReviewSubmission.updateOne({ _id: input.submissionId }, { $unset: { leaseUntil: 1 } });
     const totalDurationMs = Date.now() - workflowStart;
 
     // Finalize human-readable execution summary Markdown
@@ -335,6 +405,89 @@ export class WorkflowRunner {
       totalDurationMs
     };
   }
+
+  /**
+   * Evaluates every QUEUED submission of an event, `concurrency` at a time, then ranks once.
+   * The queue lives in Mongo (status QUEUED) and each claim is atomic, so any number of
+   * replicas can drain the same event; the ranking only runs once nothing is left anywhere.
+   */
+  public static async drainEvent(
+    eventId: string,
+    concurrency = env.REVIEW_CONCURRENCY
+  ): Promise<void> {
+    if (draining.has(eventId)) return;
+    const event = await ReviewEvent.findById(eventId);
+    if (!event) return;
+    draining.add(eventId);
+    try {
+      logger.info({ eventId, concurrency }, 'Draining evaluation queue');
+      const worker = async () => {
+        for (;;) {
+          const sub = await ReviewSubmission.findOneAndUpdate(
+            { eventId, status: 'QUEUED' },
+            { status: 'DISCOVERING', leaseUntil: lease() },
+            { sort: { createdAt: 1 }, new: true }
+          );
+          if (!sub) return;
+          await WorkflowRunner.executeEvaluation({
+            ...toWorkflowInput(sub, event),
+            skipRanking: true
+          }).catch((err) =>
+            logger.error({ err, submissionId: sub.id }, 'Queued evaluation failed')
+          );
+        }
+      };
+      await Promise.all(Array.from({ length: concurrency }, worker));
+      // another replica still working on this event ranks it when it finishes
+      if (await ReviewSubmission.exists({ eventId, status: { $in: ['QUEUED', ...IN_FLIGHT] } })) {
+        logger.info({ eventId }, 'Queue empty here; another worker is still evaluating this event');
+        return;
+      }
+      const { RankingService } = await import('../ranking/ranking.service.js');
+      await RankingService.rankEvent(eventId);
+      logger.info({ eventId }, 'Evaluation queue drained and event ranked');
+    } finally {
+      draining.delete(eventId);
+    }
+  }
+
+  /**
+   * Requeues work whose worker died (lease expired, or no lease from before leases existed) and
+   * drains every event with queued work. Runs at boot and then every minute on every replica.
+   */
+  public static async resumeInterrupted(): Promise<void> {
+    await ReviewSubmission.updateMany(
+      {
+        status: { $in: IN_FLIGHT },
+        $or: [{ leaseUntil: { $lt: new Date() } }, { leaseUntil: { $exists: false } }]
+      },
+      { status: 'QUEUED', $unset: { leaseUntil: 1 } }
+    );
+    const eventIds = await ReviewSubmission.distinct('eventId', { status: 'QUEUED' });
+    for (const id of eventIds) {
+      if (draining.has(String(id))) continue;
+      logger.info({ eventId: id }, 'Resuming queued evaluation work');
+      WorkflowRunner.drainEvent(String(id)).catch((err) =>
+        logger.error({ err, eventId: id }, 'Resumed evaluation queue failed')
+      );
+    }
+  }
+}
+
+/** Runs `fn` over `items` with at most `limit` in flight; one failure never stops the rest. */
+export async function runPool<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<unknown>
+): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const item = items[next++];
+      await fn(item).catch((err) => logger.error({ err }, 'Batch item failed'));
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 export default WorkflowRunner;

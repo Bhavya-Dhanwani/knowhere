@@ -19,7 +19,7 @@ const words = { sm: 'text-[15px]', md: 'text-[17px]', lg: 'text-xl' };
 export const LogoMark: React.FC<{ className?: string }> = ({ className }) => (
   <span
     className={cn(
-      'relative grid shrink-0 place-items-center bg-gradient-to-br from-brand-400 via-brand-600 to-brand-800 shadow-[inset_0_1px_0_rgb(255_255_255/0.35),0_4px_14px_-4px_rgb(106_72_234/0.7)]',
+      'relative grid shrink-0 place-items-center bg-gradient-to-br from-zinc-600 via-zinc-900 to-black shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_4px_12px_-4px_rgb(0_0_0/0.45)]',
       className
     )}
   >

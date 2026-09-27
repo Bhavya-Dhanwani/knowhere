@@ -12,6 +12,9 @@ RUN pnpm --filter @lms/project-review-service deploy --legacy /prod/project-revi
 
 # --- runtime stage ---
 FROM node:22-alpine
+# real browser for live-site audits (JS-rendered pages, Web Vitals, axe-core)
+RUN apk add --no-cache chromium nss freetype harfbuzz ttf-freefont
+ENV CHROMIUM_PATH=/usr/bin/chromium-browser
 WORKDIR /app
 COPY --from=build /prod/project-review-service ./
 COPY --from=build /app/packages/project-review-service/dist ./dist

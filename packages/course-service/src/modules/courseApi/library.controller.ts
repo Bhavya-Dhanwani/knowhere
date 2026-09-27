@@ -1,4 +1,4 @@
-import { JUDGE_LANGUAGES } from '@lms/shared';
+import { JUDGE_LANGUAGES, signatureError } from '@lms/shared';
 import { Response, NextFunction } from 'express';
 import { Types } from 'mongoose';
 import { AuthenticatedRequest, AuthUser } from '../../shared/middlewares/auth.middleware.js';
@@ -37,7 +37,15 @@ function assertUnused(kind: string, users: { title?: string; question?: string }
 }
 
 // shared checks for the fields the library update routes accept
-function assertScoring(body: { points?: unknown; referenceSolution?: unknown }) {
+function assertScoring(body: {
+  points?: unknown;
+  referenceSolution?: unknown;
+  signature?: unknown;
+}) {
+  if (body.signature) {
+    const error = signatureError(body.signature);
+    if (error) throw new BadRequest(error);
+  }
   if (
     body.points !== undefined &&
     !(Number.isInteger(body.points) && Number(body.points) >= 0 && Number(body.points) <= 1000)
@@ -207,7 +215,8 @@ class LibraryController {
           'difficulty',
           'supportedLanguages',
           'points',
-          'referenceSolution'
+          'referenceSolution',
+          'signature'
         ]),
         ...(body.testCases && {
           testCases: body.testCases.slice(0, 100).map((t) => ({ ...t, isHidden: true }))

@@ -74,6 +74,10 @@ build:
       context: .
       docker:
         dockerfile: packages/frontend/Dockerfile
+    - image: judge-runner
+      context: .
+      docker:
+        dockerfile: packages/judge-runner/Dockerfile
 manifests:
   kustomize:
     paths:

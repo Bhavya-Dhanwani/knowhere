@@ -8,7 +8,11 @@ const envConstants = {
   OPENAI_API_KEY: '',
   ANTHROPIC_API_KEY: '',
   MISTRAL_API_KEYS: '',
-  MISTRAL_MODEL: 'mistral-medium-latest'
+  MISTRAL_MODEL: 'mistral-medium-latest',
+  REVIEW_CONCURRENCY: 3,
+  CHROMIUM_PATH: '',
+  GITHUB_TOKEN: '',
+  JUDGE_URL: ''
 } as const;
 
 export default envConstants;

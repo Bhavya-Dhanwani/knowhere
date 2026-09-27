@@ -2,6 +2,108 @@ import fs from 'fs';
 import path from 'path';
 import { DiscoveryResult } from './types.js';
 import logger from '../../shared/config/logger.config.js';
+import env from '../../shared/config/env.config.js';
+
+// a token lifts GitHub's limit from 60 to 5000 requests/hour: needed for any real cohort
+export const githubHeaders: Record<string, string> = {
+  'User-Agent': 'Knowhere-Discovery/2.0',
+  ...(env.GITHUB_TOKEN ? { Authorization: `Bearer ${env.GITHUB_TOKEN}` } : {})
+};
+
+// Denylist, not allowlist: every text file counts, so ANY language/stack is read (C, Java, Node,
+// Go, Rust, Elixir, Assembly, Arduino, notebooks, ...) without having to be listed here.
+const BINARY_EXT =
+  /\.(png|jpe?g|gif|webp|avif|bmp|ico|icns|tiff?|psd|ai|sketch|fig|mp[34]|m4a|wav|ogg|flac|webm|mov|avi|mkv|woff2?|ttf|otf|eot|pdf|docx?|xlsx?|pptx?|zip|tar|gz|tgz|bz2|xz|7z|rar|jar|war|ear|class|o|obj|a|lib|so|dylib|dll|exe|bin|out|elf|pyc|pyo|whl|wasm|db|sqlite3?|lockb|pack|idx|keystore|jks|p12|pem|crt)$/i;
+const NOISE =
+  /(^|\/)(node_modules|\.git|dist|build|out|target|obj|\.next|\.nuxt|\.svelte-kit|\.turbo|\.gradle|\.idea|\.vscode|coverage|vendor|__pycache__|\.venv|venv|env|Pods|DerivedData|cmake-build-[^/]*)\/|(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|composer\.lock|poetry\.lock|Pipfile\.lock|Cargo\.lock|Gemfile\.lock|go\.sum|\.DS_Store)$|\.min\.(js|css)$|\.map$/i;
+
+/** Files worth reading to judge a project, whatever its stack: any non-binary, non-generated file. */
+export const isSourceFile = (path: string) => !BINARY_EXT.test(path) && !NOISE.test(path);
+
+/** Fetched content that is really binary (NUL bytes) is skipped whatever its extension. */
+export const isTextContent = (content: string) => !content.slice(0, 8000).includes('\u0000');
+
+/**
+ * Lower = read first. Stack-neutral: entry-point names in any language, then code over docs/
+ * config, then shallower files; tests and docs last (the organiser's keywords can still lift them).
+ */
+export const sourcePriority = (path: string) => {
+  const p = path.toLowerCase();
+  const base = p.split('/').pop() || p;
+  const depth = p.split('/').length - 1;
+  const isEntry =
+    /^(index|main|app|server|program|start|run|mod|lib|core|__main__|manage)\.[a-z0-9]+$/.test(
+      base
+    );
+  const isManifest =
+    /^(package\.json|pom\.xml|build\.gradle(\.kts)?|cmakelists\.txt|makefile|cargo\.toml|go\.mod|requirements\.txt|pyproject\.toml|gemfile|composer\.json|[^/]*\.(csproj|sln)|dockerfile)$/.test(
+      base
+    );
+  const isDocOrTest =
+    /(^|\/)(docs?|tests?|__tests__|spec|examples?)\/|\.(test|spec)\.|\.(md|txt|rst)$/.test(p);
+  return (isEntry ? 0 : isManifest ? 1 : isDocOrTest ? 4 : 2) + Math.min(depth, 5) * 0.1;
+};
+
+/**
+ * owner/repo from whatever students actually paste: .git suffixes, /tree/main links, any casing,
+ * or their GitHub Pages site (user.github.io/repo -> github.com/user/repo). null = not a repo.
+ */
+export const parseGithubRepo = (url: string) => {
+  const u = url.trim().replace(/\/+$/, '');
+  const gh = u.match(/(?:^|[/.])github\.com\/([^/\s?#]+)\/([^/\s?#]+)/i);
+  if (gh) return { owner: gh[1], repo: gh[2].replace(/\.git$/i, '') };
+  const pages = u.match(/^(?:https?:\/\/)?([^./\s]+)\.github\.io(?:\/([^/?#\s]+))?/i);
+  if (pages) return { owner: pages[1], repo: pages[2] || `${pages[1]}.github.io` };
+  return null;
+};
+
+/**
+ * Pins a submission to the exact commit its branch points at right now, so every evaluation
+ * (and every re-run) scores the code the team actually submitted, not later pushes.
+ * Returns { error } for a wrong URL/branch so the student learns at submit time, not from a 0.
+ */
+export async function resolveCommit(
+  repoUrl: string,
+  branch: string
+): Promise<{ sha?: string; branch?: string; error?: string }> {
+  const gh = parseGithubRepo(repoUrl);
+  if (!gh)
+    return {
+      error:
+        'Paste your GitHub repository link, like https://github.com/you/project (a profile link or another site is not enough)'
+    };
+  const api = `https://api.github.com/repos/${gh.owner}/${gh.repo}`;
+  const get = (url: string) =>
+    fetch(url, { headers: githubHeaders, signal: AbortSignal.timeout(8000) });
+  const defaultBranch = async () => {
+    const repo = await get(api);
+    return repo.ok
+      ? ((await repo.json()) as { default_branch?: string }).default_branch
+      : undefined;
+  };
+  try {
+    let ref = branch.trim() || (await defaultBranch()) || 'main';
+    let res = await get(`${api}/commits/${encodeURIComponent(ref)}`);
+    // the form's untouched "main" on a repo whose default is master/dev/...: use the real default
+    // branch instead of rejecting the student
+    if ([404, 409, 422].includes(res.status) && branch.trim() === 'main') {
+      const fallback = await defaultBranch();
+      if (fallback && fallback !== 'main') {
+        ref = fallback;
+        res = await get(`${api}/commits/${encodeURIComponent(ref)}`);
+      }
+    }
+    if (res.status === 404 || res.status === 422 || res.status === 409)
+      return {
+        error: `Could not find branch "${ref}" in ${gh.owner}/${gh.repo}. Is the repository public and the branch name right?`
+      };
+    // rate limit / outage: accept the submission unpinned rather than block the student
+    if (!res.ok) return { branch: ref || undefined };
+    return { sha: ((await res.json()) as { sha: string }).sha, branch: ref };
+  } catch {
+    return { branch: branch.trim() || undefined };
+  }
+}
 
 export class ProjectDiscoveryRunner {
   /**
@@ -67,35 +169,12 @@ export class ProjectDiscoveryRunner {
           result.rawReadme = fs.readFileSync(path.join(repoPathOrUrl, readmeFile), 'utf-8');
         }
 
-        // 2. Read all text/code files across the entire local directory
+        // 2. Read every text file (any language), same filter as remote repos
         for (const relPath of files) {
-          const lower = relPath.toLowerCase();
-          const isCodeOrDoc =
-            lower.endsWith('.html') ||
-            lower.endsWith('.htm') ||
-            lower.endsWith('.js') ||
-            lower.endsWith('.mjs') ||
-            lower.endsWith('.cjs') ||
-            lower.endsWith('.ts') ||
-            lower.endsWith('.jsx') ||
-            lower.endsWith('.tsx') ||
-            lower.endsWith('.css') ||
-            lower.endsWith('.scss') ||
-            lower.endsWith('.json') ||
-            lower.endsWith('.py') ||
-            lower.endsWith('.md') ||
-            lower.endsWith('.txt') ||
-            lower.endsWith('.sql') ||
-            lower.endsWith('.sh') ||
-            lower.endsWith('.yaml') ||
-            lower.endsWith('.yml') ||
-            lower.endsWith('.xml') ||
-            lower.endsWith('.svg');
-
-          if (isCodeOrDoc) {
+          if (isSourceFile(relPath)) {
             try {
-              const full = path.join(repoPathOrUrl, relPath);
-              result.keyFileSnippets[relPath] = fs.readFileSync(full, 'utf-8').slice(0, 10000);
+              const content = fs.readFileSync(path.join(repoPathOrUrl, relPath), 'utf-8');
+              if (isTextContent(content)) result.keyFileSnippets[relPath] = content.slice(0, 10000);
             } catch {}
           }
         }
@@ -158,25 +237,21 @@ export class ProjectDiscoveryRunner {
       (repoPathOrUrl.includes('github.com') || repoPathOrUrl.startsWith('http'))
     ) {
       // Case B: Real Remote GitHub Repository Discovery via GitHub API & Raw Content
-      const cleanUrl = repoPathOrUrl
-        .trim()
-        .replace(/\.git$/i, '')
-        .replace(/\/+$/, '');
-      const match = cleanUrl.match(/github\.com\/([^/]+)\/([^/]+)/i);
+      const parsed = parseGithubRepo(repoPathOrUrl);
 
-      if (!match) {
+      if (!parsed) {
         logger.warn({ repoPathOrUrl }, 'Repository URL is not a valid GitHub repository');
         result.repoValid = false;
         result.repoErrorMessage = `Repository URL "${repoPathOrUrl}" is invalid (must be a valid GitHub repository)`;
         result.primaryLanguage = 'None';
       } else {
-        const [, owner, repo] = match;
+        const { owner, repo } = parsed;
         const targetBranch = branch && branch.trim() ? branch.trim() : 'main';
 
         // 1. Fetch real language statistics from GitHub API
         try {
           const langRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/languages`, {
-            headers: { 'User-Agent': 'Knowhere-Discovery/2.0' },
+            headers: githubHeaders,
             signal: AbortSignal.timeout(5000)
           });
           if (langRes.ok) {
@@ -193,23 +268,25 @@ export class ProjectDiscoveryRunner {
 
         // 2. Fetch full repository tree from GitHub Git Trees API
         let filePaths: string[] = [];
-        try {
-          const treeRes = await fetch(
-            `https://api.github.com/repos/${owner}/${repo}/git/trees/${targetBranch}?recursive=1`,
-            {
-              headers: { 'User-Agent': 'Knowhere-Discovery/2.0' },
-              signal: AbortSignal.timeout(6000)
-            }
+        // not wrapped in try/catch on purpose: a rate limit or outage must fail the run (so it
+        // can be re-run) instead of silently scoring the project as an empty repository
+        const treeRes = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/git/trees/${targetBranch}?recursive=1`,
+          { headers: githubHeaders, signal: AbortSignal.timeout(15000) }
+        );
+        if (treeRes.status === 404 || treeRes.status === 409) {
+          result.repoValid = false;
+          result.repoErrorMessage = `Repository "${owner}/${repo}" at "${targetBranch}" was not found, is private, or is empty`;
+        } else if (!treeRes.ok) {
+          throw new Error(
+            `GitHub API returned ${treeRes.status} reading the repository tree (rate limit or outage); set GITHUB_TOKEN and re-run`
           );
-          if (treeRes.ok) {
-            const treeData = (await treeRes.json()) as { tree?: Array<{ path: string }> };
-            if (Array.isArray(treeData.tree)) {
-              filePaths = treeData.tree.map((t) => t.path);
-              result.fileList = filePaths;
-            }
+        } else {
+          const treeData = (await treeRes.json()) as { tree?: Array<{ path: string }> };
+          if (Array.isArray(treeData.tree)) {
+            filePaths = treeData.tree.map((t) => t.path);
+            result.fileList = filePaths;
           }
-        } catch (e) {
-          logger.warn({ e }, 'GitHub git tree API lookup failed');
         }
 
         // 3. Fallback language detection if API didn't return languages
@@ -232,7 +309,7 @@ export class ProjectDiscoveryRunner {
             const pkgRes = await fetch(
               `https://raw.githubusercontent.com/${owner}/${repo}/${targetBranch}/package.json`,
               {
-                headers: { 'User-Agent': 'Knowhere-Discovery/2.0' },
+                headers: githubHeaders,
                 signal: AbortSignal.timeout(4000)
               }
             );
@@ -263,7 +340,7 @@ export class ProjectDiscoveryRunner {
             const reqRes = await fetch(
               `https://raw.githubusercontent.com/${owner}/${repo}/${targetBranch}/requirements.txt`,
               {
-                headers: { 'User-Agent': 'Knowhere-Discovery/2.0' },
+                headers: githubHeaders,
                 signal: AbortSignal.timeout(4000)
               }
             );
@@ -288,7 +365,7 @@ export class ProjectDiscoveryRunner {
             const sRes = await fetch(
               `https://raw.githubusercontent.com/${owner}/${repo}/${targetBranch}/${swaggerFile}`,
               {
-                headers: { 'User-Agent': 'Knowhere-Discovery/2.0' },
+                headers: githubHeaders,
                 signal: AbortSignal.timeout(4000)
               }
             );
@@ -310,7 +387,7 @@ export class ProjectDiscoveryRunner {
           const readmeRes = await fetch(
             `https://raw.githubusercontent.com/${owner}/${repo}/${targetBranch}/${readmeFile}`,
             {
-              headers: { 'User-Agent': 'Knowhere-Discovery/2.0' },
+              headers: githubHeaders,
               signal: AbortSignal.timeout(4000)
             }
           );
@@ -320,49 +397,15 @@ export class ProjectDiscoveryRunner {
         } catch {}
 
         // 8. Fetch real file contents across the entire repository for deep code inspection
-        const relevantFiles = filePaths.filter((p) => {
-          const lower = p.toLowerCase();
-          return (
-            (lower.endsWith('.html') ||
-              lower.endsWith('.htm') ||
-              lower.endsWith('.js') ||
-              lower.endsWith('.mjs') ||
-              lower.endsWith('.cjs') ||
-              lower.endsWith('.ts') ||
-              lower.endsWith('.jsx') ||
-              lower.endsWith('.tsx') ||
-              lower.endsWith('.css') ||
-              lower.endsWith('.scss') ||
-              lower.endsWith('.json') ||
-              lower.endsWith('.py') ||
-              lower.endsWith('.md') ||
-              lower.endsWith('.txt') ||
-              lower.endsWith('.sql') ||
-              lower.endsWith('.sh') ||
-              lower.endsWith('.yaml') ||
-              lower.endsWith('.yml') ||
-              lower.endsWith('.xml') ||
-              lower.endsWith('.svg')) &&
-            !lower.includes('node_modules') &&
-            !lower.includes('.git/') &&
-            !lower.includes('dist/') &&
-            !lower.includes('build/') &&
-            !lower.includes('package-lock.json') &&
-            !lower.includes('pnpm-lock.yaml') &&
-            !lower.includes('yarn.lock')
-          );
-        });
+        // every text file of any stack, entry points first
+        const relevantFiles = filePaths
+          .filter((p) => isSourceFile(p))
+          // entry points and app code first, so a capped fetch still gets what matters
+          .sort((a, b) => sourcePriority(a) - sourcePriority(b))
+          // ponytail: fetch cap; a monorepo bigger than this loses its least-central files
+          .slice(0, 400);
 
-        // Ensure all HTML files and primary entry points are prioritized
-        relevantFiles.sort((a, b) => {
-          const aHtml = a.endsWith('.html') || a.endsWith('.htm') ? -2 : 0;
-          const bHtml = b.endsWith('.html') || b.endsWith('.htm') ? -2 : 0;
-          const aIndex = a.toLowerCase().includes('index') ? -1 : 0;
-          const bIndex = b.toLowerCase().includes('index') ? -1 : 0;
-          return aHtml + aIndex - (bHtml + bIndex);
-        });
-
-        // Scan ALL files across the entire project in concurrent batches (no file count limit)
+        // Fetch the selected files in concurrent batches
         const snippets: Record<string, string> = {};
         const BATCH_SIZE = 10;
         for (let i = 0; i < relevantFiles.length; i += BATCH_SIZE) {
@@ -373,13 +416,13 @@ export class ProjectDiscoveryRunner {
                 const kRes = await fetch(
                   `https://raw.githubusercontent.com/${owner}/${repo}/${targetBranch}/${kf}`,
                   {
-                    headers: { 'User-Agent': 'Knowhere-Discovery/2.0' },
+                    headers: githubHeaders,
                     signal: AbortSignal.timeout(6000)
                   }
                 );
                 if (kRes.ok) {
                   const content = await kRes.text();
-                  snippets[kf] = content.slice(0, 10000);
+                  if (isTextContent(content)) snippets[kf] = content.slice(0, 10000);
                 }
               } catch {}
             })

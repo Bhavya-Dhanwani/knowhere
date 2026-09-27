@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ModalShell } from '../../../shared/ui/ModalShell';
 import {
   X,
@@ -40,21 +41,41 @@ import {
   RelativeGrading,
   SelfImprovement,
   SelfStrengths,
-  RedesignWhyThisRankExplanation
+  RedesignWhyThisRankExplanation,
+  FormField
 } from '../types';
 import { reviewApi } from '../api/reviewApi';
 
 interface SubmissionDetailModalProps {
   submissionId: string | null;
+  formFields?: FormField[];
   initialTab?: ActiveTab;
   onClose: () => void;
   onUpdated: () => void;
 }
 
+type RankingInfo = {
+  rank: number;
+  totalSubmissionsRanked: number;
+  latentSkillScore: number;
+  winRate: number;
+  confidenceInterval: [number, number];
+  rankReason?: string;
+  relativeGrading?: RelativeGrading;
+  whyAmIExplanation?: RedesignWhyThisRankExplanation;
+  relativeAnalysis?: {
+    comparedToAbove?: RelativeComparison | null;
+    comparedToBelow?: RelativeComparison | null;
+    selfImprovement?: SelfImprovement | null;
+    selfStrengths?: SelfStrengths | null;
+  };
+};
+
 type ActiveTab = 'SCORECARD' | 'RELATIVE' | 'SANITIZATION' | 'EVIDENCE' | 'REPLAY' | 'OVERRIDE';
 
 export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
   submissionId,
+  formFields = [],
   initialTab = 'SCORECARD',
   onClose,
   onUpdated
@@ -67,32 +88,8 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     }
   }, [initialTab, submissionId]);
 
-  const [submission, setSubmission] = useState<ReviewSubmission | null>(null);
-  const [evaluation, setEvaluation] = useState<ReviewEvaluation | null>(null);
-  const [evidence, setEvidence] = useState<EvidenceBundle | null>(null);
-  const [audit, setAudit] = useState<SanitizationAudit | null>(null);
-  const [replay, setReplay] = useState<ReplayTrace | null>(null);
-  const [evidenceExplorerData, setEvidenceExplorerData] = useState<any | null>(null);
   const [evidenceFilterDim, setEvidenceFilterDim] = useState<string>('ALL');
 
-  const [rankingInfo, setRankingInfo] = useState<{
-    rank: number;
-    totalSubmissionsRanked: number;
-    latentSkillScore: number;
-    winRate: number;
-    confidenceInterval: [number, number];
-    rankReason?: string;
-    relativeGrading?: RelativeGrading;
-    whyAmIExplanation?: RedesignWhyThisRankExplanation;
-    relativeAnalysis?: {
-      comparedToAbove?: RelativeComparison | null;
-      comparedToBelow?: RelativeComparison | null;
-      selfImprovement?: SelfImprovement | null;
-      selfStrengths?: SelfStrengths | null;
-    };
-  } | null>(null);
-
-  const [loading, setLoading] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
 
   // Judge Override states (§25)
@@ -105,43 +102,39 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
   const [isNotionModalOpen, setIsNotionModalOpen] = useState(false);
   const [csvExporting, setCsvExporting] = useState(false);
 
-  const fetchDetails = useCallback(async () => {
-    if (!submissionId) return;
-    try {
-      setLoading(true);
-      const report = await reviewApi.getEvaluationReport(submissionId);
-      setSubmission(report.submission);
-      setEvaluation(report.evaluation || null);
-      if (report.evaluation?.overallScore !== undefined) {
-        setOverrideScoreVal(report.evaluation.overallScore);
-      }
-      setEvidence(report.evidence || null);
-      setAudit(report.sanitizationAudit || null);
-      setRankingInfo(report.ranking || null);
-
-      try {
-        const replayData = await reviewApi.getReplayTrace(submissionId);
-        setReplay(replayData);
-      } catch {
-        // May not have replay yet if not run
-      }
-
-      try {
-        const explorer = await reviewApi.getEvidenceExplorer(submissionId);
-        setEvidenceExplorerData(explorer);
-      } catch {
-        // Explorer optional fallback
-      }
-    } catch (err) {
-      console.error('Failed to load submission report', err);
-    } finally {
-      setLoading(false);
+  // the report, replay and evidence explorer are one cached query per submission
+  const qc = useQueryClient();
+  const detailsKey = ['review', 'submission-report', submissionId];
+  const details = useQuery({
+    queryKey: detailsKey,
+    enabled: Boolean(submissionId),
+    queryFn: async () => {
+      const report = await reviewApi.getEvaluationReport(submissionId!);
+      // replay and explorer exist only after an evaluation has run
+      const [replay, explorer] = await Promise.all([
+        reviewApi.getReplayTrace(submissionId!).catch(() => null),
+        reviewApi.getEvidenceExplorer(submissionId!).catch(() => null)
+      ]);
+      return { report, replay, explorer };
     }
-  }, [submissionId]);
+  });
+  const report = details.data?.report;
+  const submission: ReviewSubmission | null = report?.submission ?? null;
+  const evaluation: ReviewEvaluation | null = report?.evaluation ?? null;
+  const evidence: EvidenceBundle | null = report?.evidence ?? null;
+  const audit: SanitizationAudit | null = report?.sanitizationAudit ?? null;
+  const rankingInfo = (report?.ranking ?? null) as RankingInfo | null;
+  const replay: ReplayTrace | null = details.data?.replay ?? null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const evidenceExplorerData: any | null = details.data?.explorer ?? null;
+  const loading = details.isLoading;
+  const fetchDetails = () => details.refetch();
 
+  // the override form starts from the current score
   useEffect(() => {
-    fetchDetails();
-  }, [fetchDetails]);
+    const score = details.data?.report.evaluation?.overallScore;
+    if (score !== undefined) setOverrideScoreVal(score);
+  }, [details.data]);
 
   if (!submissionId) return null;
 
@@ -168,7 +161,9 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         newScore: overrideAction === 'MODIFY' ? overrideScoreVal : undefined,
         reason: overrideReason
       });
-      setEvaluation(updated);
+      qc.setQueryData(detailsKey, (d: typeof details.data) =>
+        d ? { ...d, report: { ...d.report, evaluation: updated } } : d
+      );
       onUpdated();
       alert(`Judge decision recorded successfully: ${overrideAction}`);
     } catch (err) {
@@ -296,6 +291,24 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
           </div>
         </div>
 
+        {formFields.some((f) => submission?.formResponses?.[f.id]) && (
+          <details className="px-4 py-2 sm:px-6 border-b border-zinc-200 text-xs">
+            <summary className="cursor-pointer font-semibold text-zinc-700">Form answers</summary>
+            <dl className="mt-2 space-y-2">
+              {formFields
+                .filter((f) => submission?.formResponses?.[f.id])
+                .map((f) => (
+                  <div key={f.id}>
+                    <dt className="text-zinc-500">{f.label}</dt>
+                    <dd className="whitespace-pre-wrap break-words text-zinc-900">
+                      {submission!.formResponses![f.id]}
+                    </dd>
+                  </div>
+                ))}
+            </dl>
+          </details>
+        )}
+
         {/* Status / Overall Score Banner */}
         <div className="px-4 py-3 sm:px-6 bg-zinc-50 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs">
@@ -331,7 +344,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
               </span>
             )}
             {evaluation?.qualitativeScore !== undefined && (
-              <span className="text-[11px] px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 font-mono">
+              <span className="text-[11px] px-2 py-0.5 rounded bg-zinc-50 text-zinc-700 border border-zinc-200 font-mono">
                 Qualitative (60%):{' '}
                 <strong>{(evaluation.qualitativeScore / 10).toFixed(1)}/10</strong>
               </span>
@@ -512,10 +525,10 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                       </div>
 
                       <div className="bg-white p-3 rounded-lg border border-zinc-200 space-y-1 shadow-sm">
-                        <span className="text-[10px] font-bold text-purple-700 uppercase block">
+                        <span className="text-[10px] font-bold text-zinc-700 uppercase block">
                           Qualitative Score (60%)
                         </span>
-                        <div className="text-lg font-bold font-mono text-purple-800">
+                        <div className="text-lg font-bold font-mono text-zinc-800">
                           {evaluation.qualitativeScore !== undefined
                             ? `${(evaluation.qualitativeScore / 10).toFixed(1)} / 10`
                             : `${(evaluation.overallScore / 10).toFixed(1)} / 10`}
@@ -625,7 +638,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                                 <span className="text-zinc-500">
                                   Obj: <strong>{(dim.objectiveScore / 10).toFixed(1)}</strong>
                                 </span>
-                                <span className="text-purple-700 text-right">
+                                <span className="text-zinc-700 text-right">
                                   Qual: <strong>{(dim.qualitativeScore / 10).toFixed(1)}</strong>
                                 </span>
                               </div>
@@ -1728,11 +1741,11 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                             <p className="text-zinc-700 leading-snug">{finding.interpretation}</p>
                           </div>
 
-                          <div className="p-2 bg-purple-50/40 rounded-lg border border-purple-100">
-                            <span className="text-[10px] font-bold text-purple-800 uppercase block mb-0.5">
+                          <div className="p-2 bg-zinc-50/40 rounded-lg border border-zinc-100">
+                            <span className="text-[10px] font-bold text-zinc-800 uppercase block mb-0.5">
                               ⚖️ AI Evaluator Judgment:
                             </span>
-                            <p className="text-purple-900 leading-snug font-medium">
+                            <p className="text-zinc-900 leading-snug font-medium">
                               {finding.aiJudgment}
                             </p>
                           </div>
@@ -1811,6 +1824,105 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                       total
                     </p>
                   </div>
+
+                  {/* Build & tests: actually compiled and run in the sandbox */}
+                  {evidence?.buildEval && (
+                    <div className="md:col-span-2 p-3.5 bg-white border border-zinc-200 rounded-xl space-y-2 shadow-sm text-xs">
+                      <h4 className="text-xs font-bold text-blue-700 uppercase">
+                        Build &amp; Tests (run in sandbox, offline)
+                      </h4>
+                      {evidence.buildEval.status === 'NOT_RUN' ? (
+                        <p className="text-zinc-600">Not run: {evidence.buildEval.reason}</p>
+                      ) : evidence.buildEval.steps.length === 0 ? (
+                        <p className="text-zinc-600">Nothing to build or test was detected.</p>
+                      ) : (
+                        evidence.buildEval.steps.map((s, i) => (
+                          <div key={i} className="space-y-1">
+                            <p className="font-semibold text-zinc-800">
+                              <span
+                                className={
+                                  s.ok === null
+                                    ? 'text-zinc-500'
+                                    : s.ok
+                                      ? 'text-emerald-700'
+                                      : 'text-red-700'
+                                }
+                              >
+                                {s.ok === null ? 'NOT RUN' : s.ok ? 'PASSED' : 'FAILED'}
+                              </span>{' '}
+                              {s.name}
+                              {s.tests && ` · ${s.tests.passed} passed, ${s.tests.failed} failed`}
+                              {s.timeMs !== undefined && ` · ${(s.timeMs / 1000).toFixed(1)}s`}
+                            </p>
+                            {(s.skipped || s.error || s.note) && (
+                              <p className="text-zinc-500">{s.skipped || s.error || s.note}</p>
+                            )}
+                            {s.output && (
+                              <details>
+                                <summary className="cursor-pointer text-zinc-600">Output</summary>
+                                <pre className="mt-1 whitespace-pre-wrap break-all bg-zinc-50 p-2 rounded text-[11px] text-zinc-700 max-h-64 overflow-auto">
+                                  {s.output}
+                                </pre>
+                              </details>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* Live site: what the real browser saw */}
+                  {evidence?.frontendEval?.assessmentMode && (
+                    <div className="md:col-span-2 p-3.5 bg-white border border-zinc-200 rounded-xl space-y-2 shadow-sm text-xs">
+                      <h4 className="text-xs font-bold text-blue-700 uppercase">
+                        Live Site ({evidence.frontendEval.tool})
+                      </h4>
+                      {evidence.frontendEval.liveError && (
+                        <p className="text-red-700 font-semibold">
+                          {evidence.frontendEval.liveError}
+                        </p>
+                      )}
+                      <p className="font-mono text-zinc-700">
+                        Perf {evidence.frontendEval.lighthouse.performance} · A11y{' '}
+                        {evidence.frontendEval.lighthouse.accessibility} · Best practices{' '}
+                        {evidence.frontendEval.lighthouse.bestPractices} · SEO{' '}
+                        {evidence.frontendEval.lighthouse.seo}
+                      </p>
+                      {evidence.frontendEval.screenshots?.desktop && (
+                        <div className="flex gap-2 items-start">
+                          <img
+                            src={evidence.frontendEval.screenshots.desktop}
+                            alt="Live site on desktop, as the grader saw it"
+                            className="w-3/4 rounded border border-zinc-200"
+                          />
+                          {evidence.frontendEval.screenshots.mobile && (
+                            <img
+                              src={evidence.frontendEval.screenshots.mobile}
+                              alt="Live site on a 375px phone, as the grader saw it"
+                              className="w-1/4 rounded border border-zinc-200"
+                            />
+                          )}
+                        </div>
+                      )}
+                      {!!evidence.frontendEval.findings?.length && (
+                        <ul className="list-disc pl-4 text-zinc-700 space-y-0.5">
+                          {evidence.frontendEval.findings.map((f, i) => (
+                            <li key={i}>{f}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {!!evidence.frontendEval.consoleErrors?.length && (
+                        <details>
+                          <summary className="cursor-pointer font-semibold text-zinc-700">
+                            Console errors ({evidence.frontendEval.consoleErrors.length})
+                          </summary>
+                          <pre className="mt-1 whitespace-pre-wrap break-all bg-zinc-50 p-2 rounded text-[11px] text-zinc-700">
+                            {evidence.frontendEval.consoleErrors.join('\n')}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1874,12 +1986,12 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
             <div className="space-y-6">
               {/* Prior Override Audit Banner */}
               {evaluation?.judgeOverride?.overridden && (
-                <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl space-y-2">
+                <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-purple-800 flex items-center gap-1.5">
-                      <Edit3 className="w-4 h-4 text-purple-600" /> Active Judge Override Record
+                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-800 flex items-center gap-1.5">
+                      <Edit3 className="w-4 h-4 text-zinc-600" /> Active Judge Override Record
                     </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-300 font-bold">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-100 text-zinc-900 border border-zinc-300 font-bold">
                       Action: {evaluation.judgeOverride.action || 'MODIFY'}
                     </span>
                   </div>
@@ -1892,13 +2004,13 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                           : 'N/A'}
                       </strong>{' '}
                       &rarr; Overridden Score:{' '}
-                      <strong className="font-mono text-purple-800">
+                      <strong className="font-mono text-zinc-800">
                         {evaluation.judgeOverride.newScore !== undefined
                           ? `${evaluation.judgeOverride.newScore}/100`
                           : 'N/A'}
                       </strong>
                     </p>
-                    <p className="text-zinc-600 italic bg-white p-2.5 rounded border border-purple-200">
+                    <p className="text-zinc-600 italic bg-white p-2.5 rounded border border-zinc-200">
                       &quot;{evaluation.judgeOverride.reason}&quot;
                     </p>
                   </div>

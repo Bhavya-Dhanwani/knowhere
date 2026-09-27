@@ -74,8 +74,28 @@ class CourseMembershipDao {
   }
 
   // function to revoke/delete membership from a course
+  async removeAllForCourse(courseId: string) {
+    return await this.CourseMembershipModel.deleteMany({ courseId });
+  }
+
   async removeMembership(courseId: string, userId: string) {
     return await this.CourseMembershipModel.findOneAndDelete({ courseId, userId });
+  }
+
+  // newest active enrollments across every course (admin overview)
+  async findRecentMemberships(limit = 8) {
+    return await this.CourseMembershipModel.find({ status: 'active' })
+      .sort({ assignedAt: -1 })
+      .limit(limit);
+  }
+
+  // active learners per course, most enrolled first
+  async countLearnersByCourse() {
+    return await this.CourseMembershipModel.aggregate<{ _id: string; count: number }>([
+      { $match: { status: 'active', role: 'trainee' } },
+      { $group: { _id: '$courseId', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
   }
 }
 

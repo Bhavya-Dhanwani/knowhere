@@ -12,6 +12,8 @@ export interface IEvidence extends Document {
     openApiEndpointsCount: number;
     openApiEndpoints: string[];
     detectedFrameworks: string[];
+    repoValid?: boolean;
+    repoErrorMessage?: string;
     fileList?: string[];
     keyFileSnippets?: Record<string, string>;
     deepAnalysis?: Record<string, any>;
@@ -74,7 +76,13 @@ export interface IEvidence extends Document {
     axeViolationsCount: number;
     consoleErrorsCount: number;
     failedRequestsCount: number;
+    metrics?: Record<string, number | string | boolean>;
+    findings?: string[];
+    consoleErrors?: string[];
+    screenshots?: { desktop?: string; mobile?: string };
   };
+  /** Build + test run in the judge sandbox (see runners/build.runner.ts). */
+  buildEval?: any;
   backendEval?: {
     tool: string;
     assessmentMode?: 'OPENAPI_STATIC' | 'HTTP_PROBE' | 'NOT_RUN';
@@ -128,6 +136,8 @@ const EvidenceSchema = new Schema<IEvidence>(
       openApiEndpointsCount: { type: Number, default: 0 },
       openApiEndpoints: { type: [String], default: [] },
       detectedFrameworks: { type: [String], default: [] },
+      repoValid: { type: Boolean },
+      repoErrorMessage: { type: String },
       fileList: { type: [String], default: [] },
       keyFileSnippets: { type: Schema.Types.Mixed, default: {} },
       deepAnalysis: { type: Schema.Types.Mixed, default: null }
@@ -173,8 +183,13 @@ const EvidenceSchema = new Schema<IEvidence>(
       },
       axeViolationsCount: { type: Number, default: 0 },
       consoleErrorsCount: { type: Number, default: 0 },
-      failedRequestsCount: { type: Number, default: 0 }
+      failedRequestsCount: { type: Number, default: 0 },
+      metrics: { type: Schema.Types.Mixed },
+      findings: { type: [String], default: [] },
+      consoleErrors: { type: [String], default: [] },
+      screenshots: { desktop: { type: String }, mobile: { type: String } }
     },
+    buildEval: { type: Schema.Types.Mixed, default: null },
     backendEval: {
       tool: { type: String, default: 'Schemathesis + OWASP ZAP + k6' },
       assessmentMode: { type: String },

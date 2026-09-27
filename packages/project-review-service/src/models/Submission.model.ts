@@ -15,8 +15,10 @@ export interface IReviewSubmission extends Document {
   liveSiteUrl?: string;
   apiSpecUrl?: string;
   rawReadmeText?: string;
+  formResponses?: Record<string, string>; // event.formFields[].id -> answer
   status:
     | 'SUBMITTED'
+    | 'QUEUED'
     | 'DISCOVERING'
     | 'SANITIZING'
     | 'ANALYZING'
@@ -27,6 +29,8 @@ export interface IReviewSubmission extends Document {
   flaggedForHumanReview: boolean;
   flagReason?: string;
   currentWorkflowId?: string;
+  /** Held by the worker evaluating this submission (see workflow.runner LEASE_MS). */
+  leaseUntil?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,10 +51,12 @@ const ReviewSubmissionSchema = new Schema<IReviewSubmission>(
     liveSiteUrl: { type: String },
     apiSpecUrl: { type: String },
     rawReadmeText: { type: String },
+    formResponses: { type: Schema.Types.Mixed, default: {} },
     status: {
       type: String,
       enum: [
         'SUBMITTED',
+        'QUEUED',
         'DISCOVERING',
         'SANITIZING',
         'ANALYZING',
@@ -63,7 +69,8 @@ const ReviewSubmissionSchema = new Schema<IReviewSubmission>(
     },
     flaggedForHumanReview: { type: Boolean, default: false },
     flagReason: { type: String },
-    currentWorkflowId: { type: String }
+    currentWorkflowId: { type: String },
+    leaseUntil: { type: Date }
   },
   { timestamps: true }
 );

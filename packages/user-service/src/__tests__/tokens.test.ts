@@ -74,3 +74,63 @@ describe('token trust boundaries', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('GET /api/memberships/overview', () => {
+  const app = createApp();
+  afterEach(() => jest.restoreAllMocks());
+
+  it('is for platform admins only', async () => {
+    const res = await request(app)
+      .get('/api/memberships/overview')
+      .set('Authorization', `Bearer ${signAccessToken({ userId: 't1', role: 'trainer' })}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns recent enrollments with names and learners per course', async () => {
+    const { default: CourseMembershipDao } = await import('../shared/dao/courseMembership.dao.js');
+    jest
+      .spyOn(CourseMembershipDao.prototype, 'findRecentMemberships')
+      .mockResolvedValue([
+        { userId: 'u1', courseId: 'c1', role: 'trainee', assignedAt: new Date('2026-09-01') }
+      ] as never);
+    jest.spyOn(CourseMembershipDao.prototype, 'countLearnersByCourse').mockResolvedValue([
+      { _id: 'c1', count: 3 },
+      { _id: 'c2', count: 1 }
+    ] as never);
+    jest
+      .spyOn(UserProfileDao.prototype, 'findProfilesByUserIds')
+      .mockResolvedValue([{ userId: 'u1', name: 'Alex' }] as never);
+    const res = await request(app)
+      .get('/api/memberships/overview')
+      .set('Authorization', `Bearer ${signAccessToken({ userId: 'a1', role: 'admin' })}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.recent[0]).toMatchObject({
+      name: 'Alex',
+      courseId: 'c1',
+      role: 'trainee'
+    });
+    expect(res.body.data.totalLearnerEnrollments).toBe(4);
+  });
+});
+
+describe('DELETE /api/memberships/courses/:courseId', () => {
+  const app = createApp();
+  afterEach(() => jest.restoreAllMocks());
+
+  it('only the course service can wipe a course, and it removes every membership', async () => {
+    const { default: CourseMembershipDao } = await import('../shared/dao/courseMembership.dao.js');
+    const wipe = jest
+      .spyOn(CourseMembershipDao.prototype, 'removeAllForCourse')
+      .mockResolvedValue({ deletedCount: 3 } as never);
+    const asAdmin = await request(app)
+      .delete('/api/memberships/courses/c1')
+      .set('Authorization', `Bearer ${signAccessToken({ userId: 'a1', role: 'admin' })}`);
+    expect(asAdmin.status).toBe(403);
+    const asService = await request(app)
+      .delete('/api/memberships/courses/c1')
+      .set('Authorization', `Bearer ${serviceToken('course-service', ['memberships:write'])}`);
+    expect(asService.status).toBe(200);
+    expect(asService.body.data.removed).toBe(3);
+    expect(wipe).toHaveBeenCalledWith('c1');
+  });
+});

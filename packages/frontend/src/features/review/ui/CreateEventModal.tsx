@@ -14,7 +14,22 @@ import {
   Check,
   ExternalLink
 } from 'lucide-react';
-import { ProjectScope, Criterion, Requirement, CRITERIA_PRESETS } from '../types';
+import {
+  ProjectScope,
+  Criterion,
+  Requirement,
+  FormField,
+  CRITERIA_PRESETS,
+  IoTest
+} from '../types';
+import {
+  FormFieldsEditor,
+  RequirementsEditor,
+  DeadlineInput,
+  JudgingPromptInput,
+  IoTestsEditor,
+  fromLocalInput
+} from './CustomForm';
 import { reviewApi } from '../api/reviewApi';
 
 interface CreateEventModalProps {
@@ -31,11 +46,16 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [problemStatement, setProblemStatement] = useState('');
+  const [judgingPrompt, setJudgingPrompt] = useState('');
+  const [judgingPromptPublic, setJudgingPromptPublic] = useState(false);
+  const [ioTests, setIoTests] = useState<IoTest[]>([]);
+  const [runCommand, setRunCommand] = useState('');
   const [projectType, setProjectType] = useState<ProjectScope>('FULLSTACK');
   const [requiresLiveUrl, setRequiresLiveUrl] = useState(false);
   const [requiresApiSpec, setRequiresApiSpec] = useState(true);
   const [criteria, setCriteria] = useState<Criterion[]>(CRITERIA_PRESETS.FULLSTACK);
-  const [requirements] = useState<Requirement[]>([
+  const [deadline, setDeadline] = useState('');
+  const [requirements, setRequirements] = useState<Requirement[]>([
     {
       id: 'req-1',
       title: 'Core Functionality',
@@ -43,6 +63,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       mandatory: true
     }
   ]);
+  const [formFields, setFormFields] = useState<FormField[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -107,11 +128,17 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
         name,
         description,
         problemStatement,
+        judgingPrompt,
+        judgingPromptPublic,
+        ioTests: ioTests.filter((t) => t.expected.trim() || t.input.trim()),
+        runCommand,
         projectType,
         requiresLiveUrl,
         requiresApiSpec: projectType === 'FRONTEND' ? false : requiresApiSpec,
         criteria,
-        requirements
+        requirements,
+        formFields,
+        submissionDeadline: fromLocalInput(deadline)
       });
       setCreatedEventId(res._id);
       onCreated(res._id);
@@ -138,6 +165,12 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     setName('');
     setDescription('');
     setProblemStatement('');
+    setJudgingPrompt('');
+    setJudgingPromptPublic(false);
+    setIoTests([]);
+    setRunCommand('');
+    setFormFields([]);
+    setDeadline('');
     onClose();
   };
 
@@ -266,7 +299,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                         : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300'
                     }`}
                   >
-                    <Layers className="w-5 h-5 mb-1 text-purple-600" />
+                    <Layers className="w-5 h-5 mb-1 text-zinc-600" />
                     <span className="font-semibold">Fullstack</span>
                     <span className="text-[10px] text-zinc-500">Full end-to-end audit</span>
                   </button>
@@ -373,6 +406,13 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                     className="w-full bg-white border border-zinc-300 rounded-xl px-4 py-2.5 text-zinc-900 text-sm focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition"
                   />
                 </div>
+
+                <JudgingPromptInput
+                  value={judgingPrompt}
+                  onChange={setJudgingPrompt}
+                  isPublic={judgingPromptPublic}
+                  onPublicChange={setJudgingPromptPublic}
+                />
               </div>
 
               {/* Dynamic Criteria Section */}
@@ -458,6 +498,19 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   ))}
                 </div>
               </div>
+
+              <DeadlineInput value={deadline} onChange={setDeadline} />
+
+              <RequirementsEditor requirements={requirements} onChange={setRequirements} />
+
+              <FormFieldsEditor fields={formFields} onChange={setFormFields} />
+
+              <IoTestsEditor
+                tests={ioTests}
+                onChange={setIoTests}
+                runCommand={runCommand}
+                onRunCommandChange={setRunCommand}
+              />
 
               {/* Footer */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-zinc-200">

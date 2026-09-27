@@ -1,5 +1,6 @@
 import { FrontendEvalResult } from './types.js';
 import logger from '../../shared/config/logger.config.js';
+import { auditLiveSite, checkHost } from './live-site.audit.js';
 
 export class FrontendEvalRunner {
   /**
@@ -20,6 +21,35 @@ export class FrontendEvalRunner {
     // Case 1: Live site URL provided (online inspection)
     if (liveSiteUrl && liveSiteUrl.trim().startsWith('http')) {
       const cleanUrl = liveSiteUrl.trim();
+      let host = '';
+      try {
+        host = new URL(cleanUrl).hostname;
+      } catch {
+        /* invalid URL: isPublicHost('') is false */
+      }
+      // throws on our own resolver trouble -> run fails and can be re-run, student isn't scored 0
+      const verdict = await checkHost(host);
+      if (verdict !== 'public') {
+        return {
+          tool: 'URL safety check',
+          assessmentMode: 'NOT_RUN',
+          isReachable: false,
+          httpStatus: 0,
+          liveError:
+            verdict === 'nxdomain'
+              ? `Live URL domain "${host || liveSiteUrl}" does not exist (DNS lookup found nothing)`
+              : 'Live URL points to a private/internal address, which the evaluator will not open',
+          lighthouse: { performance: 0, accessibility: 0, bestPractices: 0, seo: 0 },
+          axeViolationsCount: 0,
+          consoleErrorsCount: 0,
+          failedRequestsCount: 0
+        };
+      }
+
+      // real browser first; the HTTP probe below only runs where no Chromium is installed
+      const browserResult = await auditLiveSite(cleanUrl);
+      if (browserResult) return browserResult;
+
       try {
         const startTime = Date.now();
         const res = await fetch(cleanUrl, {

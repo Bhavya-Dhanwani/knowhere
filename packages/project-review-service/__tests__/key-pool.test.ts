@@ -88,3 +88,18 @@ describe('Mistral Round-Robin Key Pool Manager', () => {
     expect(sampleKey).toBe('key_scaled_9999');
   });
 });
+
+describe('withModel failover', () => {
+  it('switches the API key on a 429 but never the model', async () => {
+    const pool = new MistralKeyPoolManager(['k1', 'k2', 'k3', 'k4']);
+    const seen: Array<{ key: string; model: string }> = [];
+    const result = await pool.withModel({ temperature: 0 }, async (m: any) => {
+      seen.push({ key: m.apiKey, model: m.model });
+      if (seen.length < 4) throw Object.assign(new Error('Rate limit exceeded'), { status: 429 });
+      return 'graded';
+    });
+    expect(result).toBe('graded');
+    expect(seen.map((s) => s.key)).toEqual(['k1', 'k2', 'k3', 'k4']);
+    expect(new Set(seen.map((s) => s.model))).toEqual(new Set(['mistral-medium-latest']));
+  });
+});

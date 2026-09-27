@@ -6,6 +6,7 @@ metadata:
     name: project-review-deployment
 spec:
   replicas: 1
+  # safe to scale: evaluations hold renewable leases, so any pod can take over orphaned work
   selector:
     matchLabels:
       app: project-review
@@ -21,10 +22,10 @@ spec:
           resources:
             requests:
               cpu: '150m'
-              memory: '200M'
+              memory: '400M'
             limits:
               cpu: '500m'
-              memory: '512M'
+              memory: '1536M' # headless Chromium for live-site audits
           livenessProbe:
             httpGet:
               path: /health
@@ -54,6 +55,17 @@ spec:
                   name: ai-secrets
                   key: MISTRAL_API_KEYS
                   optional: true
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ai-secrets
+                  key: GITHUB_TOKEN
+                  optional: true
+            # builds + tests every submission in the judge's offline sandbox
+            - name: JUDGE_URL
+              value: 'http://judge-service'
+            - name: CHROMIUM_PATH
+              value: '/usr/bin/chromium-browser'
             - name: PORT
               value: '5006'
             - name: NODE_ENV
@@ -63,3 +75,48 @@ spec:
           ports:
             - containerPort: 5006
               name: http
+---
+# This pod opens student-supplied URLs (headless browser, API spec fetch). The app refuses private
+# addresses, but a redirect can still land on one; the network enforces it for real: the pod may
+# reach the public internet, cluster DNS and the judge, and nothing else inside the cluster or the
+# cloud metadata endpoint.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: project-review-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: project-review
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - podSelector:
+            matchLabels:
+              app: judge
+      ports:
+        - port: 5010
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mongodb
+      ports:
+        - port: 27017
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+              - 100.64.0.0/10
+              - 127.0.0.0/8

@@ -19,7 +19,7 @@ export const ApiDocsPage: React.FC = () => {
             spec: {
               url: '/openapi.json'
             },
-            theme: 'purple',
+            theme: 'default',
             pageTitle: 'Knowhere LMS API Reference',
             defaultHttpClient: {
               targetKey: 'js',
@@ -34,7 +34,7 @@ export const ApiDocsPage: React.FC = () => {
         spec: {
           url: '/openapi.json'
         },
-        theme: 'purple',
+        theme: 'default',
         pageTitle: 'Knowhere LMS API Reference',
         defaultHttpClient: {
           targetKey: 'js',

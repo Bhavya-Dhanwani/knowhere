@@ -6,6 +6,7 @@ import {
   checkArbacCanRevoke
 } from '../../shared/middlewares/arbac.middleware.js';
 import CourseMembershipDao from '../../shared/dao/courseMembership.dao.js';
+import UserProfileDao from '../../shared/dao/userProfile.dao.js';
 import sanitizeMembership from '../../shared/sanitizers/membership.sanitizer.js';
 import Ok from '../../shared/responses/Ok.response.js';
 import Created from '../../shared/responses/Created.response.js';
@@ -26,6 +27,51 @@ class MembershipController {
   constructor() {
     this.membershipDao = new CourseMembershipDao();
   }
+
+  // DELETE /api/memberships/courses/:courseId — course-service, when a course is deleted
+  removeCourse = async (req: CourseScopedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user?.userId.startsWith('service:')) {
+        throw new Forbidden('Only the course service can remove a whole course.');
+      }
+      const courseId = getParam(req.params.courseId);
+      const { deletedCount } = await this.membershipDao.removeAllForCourse(courseId);
+      return Ok(res, 'Course memberships removed', { courseId, removed: deletedCount });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // GET /api/memberships/overview — platform admins: newest enrollments + learners per course
+  overview = async (req: CourseScopedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (req.user?.role !== 'admin')
+        throw new Forbidden('Only platform admins can view the overview.');
+      const [recent, perCourse] = await Promise.all([
+        this.membershipDao.findRecentMemberships(8),
+        this.membershipDao.countLearnersByCourse()
+      ]);
+      const names = new Map(
+        (await new UserProfileDao().findProfilesByUserIds(recent.map((m) => m.userId))).map((p) => [
+          p.userId,
+          p.name
+        ])
+      );
+      return Ok(res, 'Enrollment overview', {
+        recent: recent.map((m) => ({
+          userId: m.userId,
+          name: names.get(m.userId) || 'Unknown user',
+          courseId: m.courseId,
+          role: m.role,
+          assignedAt: m.assignedAt
+        })),
+        learnersByCourse: perCourse.map((c) => ({ courseId: c._id, learners: c.count })),
+        totalLearnerEnrollments: perCourse.reduce((n, c) => n + c.count, 0)
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 
   // get caller's own role and permissions in the specified course
   getMyCourseRole = async (req: CourseScopedRequest, res: Response, next: NextFunction) => {

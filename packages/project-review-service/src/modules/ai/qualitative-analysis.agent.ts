@@ -83,10 +83,8 @@ export class QualitativeAnalysisAgent {
 
     // If key pool is available, execute LangChain ChatMistralAI with Round-Robin key rotation
     if (defaultKeyPool.hasKeys()) {
-      const preferredModel = env.MISTRAL_MODEL || 'mistral-medium-latest';
-      const candidateModels = Array.from(
-        new Set([preferredModel, 'mistral-medium-latest', 'codestral-latest', 'open-mistral-7b'])
-      );
+      // one model for everything (failover rotates keys, not models)
+      const candidateModels = [env.MISTRAL_MODEL || 'mistral-medium-latest'];
 
       const systemPrompt = [
         'You are a distinguished Principal Software Architect and Lead Engineering Evaluator in the RE:DESIGN Engine.',
@@ -149,27 +147,23 @@ export class QualitativeAnalysisAgent {
       };
 
       for (const modelName of candidateModels) {
-        const { model, selectedKey } = defaultKeyPool.getChatMistralInstance({
-          modelName,
-          temperature: 0.1,
-          maxRetries: 1
-        });
-
         try {
           logger.info(
             { submissionId, modelName },
             'Invoking LangChain ChatMistralAI for Qualitative Analysis with Round-Robin key'
           );
 
-          const structuredModel = model.withStructuredOutput(RedesignQualitativeOutputSchema);
-          const response = await structuredModel.invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              `Analyze this project repository across the 9 engineering dimensions using the evidence provided below:\n${JSON.stringify(contextSummary, null, 2)}`
-            )
-          ]);
-
-          defaultKeyPool.reportSuccess(selectedKey);
+          // rotates to the next key on rate limits / bad keys / provider errors
+          const response = await defaultKeyPool.withModel({ temperature: 0.1 }, (model) =>
+            model
+              .withStructuredOutput(RedesignQualitativeOutputSchema)
+              .invoke([
+                new SystemMessage(systemPrompt),
+                new HumanMessage(
+                  `Analyze this project repository across the 9 engineering dimensions using the evidence provided below:\n${JSON.stringify(contextSummary, null, 2)}`
+                )
+              ])
+          );
           logger.info(
             { submissionId, modelName },
             'Qualitative AI analysis completed successfully'
@@ -181,10 +175,6 @@ export class QualitativeAnalysisAgent {
             { modelName, err: errMsg },
             'Qualitative AI analysis attempt failed; rotating key or trying fallback model'
           );
-
-          if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('Rate limit')) {
-            defaultKeyPool.reportRateLimit(selectedKey, 30000);
-          }
         }
       }
     }
@@ -204,7 +194,7 @@ export class QualitativeAnalysisAgent {
     const fileCount = context.fileList.length;
     const loc = dm?.linesOfCode.codeLines || fileCount * 40;
     const hasTests = dm?.testMetrics.hasTests ?? false;
-    const isTS = dm?.typeSafety.usesTypeScript ?? false;
+    const isTS = dm?.typeSafety.staticTyping ?? dm?.typeSafety.usesTypeScript ?? false;
     const secretsCount = dm?.securityAndLint.secretLeaksCount || 0;
     const dupPct = dm?.codeDuplication.estimatedDuplicationPercentage || 0;
     const avgComplexity = dm?.cyclomaticComplexity.averagePerFunction || 1.5;

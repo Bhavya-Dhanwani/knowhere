@@ -75,6 +75,102 @@ export interface McqView {
   options: { id: string; text: string; resourceIds: string[] }[];
 }
 
+export const PARAM_TYPES = [
+  'int',
+  'long',
+  'double',
+  'boolean',
+  'string',
+  'int[]',
+  'long[]',
+  'double[]',
+  'boolean[]',
+  'string[]',
+  'int[][]',
+  'string[][]'
+] as const;
+export type ParamType = (typeof PARAM_TYPES)[number];
+
+// LeetCode-style: learners implement this function; inputs are one JSON value per parameter line
+export interface FunctionSignature {
+  functionName: string;
+  params: { name: string; type: ParamType }[];
+  returnType: ParamType;
+}
+
+export interface CodeSubmission {
+  id: string;
+  status: string;
+  language: string;
+  passed: number;
+  total: number;
+  runtimeMs: number;
+  code: string;
+  createdAt: string;
+}
+
+export interface RunCaseResult {
+  input: string;
+  output: string;
+  // null when no expected output is known for a custom case
+  expected: string | null;
+  passed: boolean | null;
+  error?: string;
+}
+
+export interface RunResult {
+  passed: number;
+  total: number;
+  error?: string;
+  runtimeMs: number;
+  cases: RunCaseResult[];
+}
+
+export interface LearnerProfileView {
+  userId: string;
+  name: string;
+  courseTitle: string;
+  totals: {
+    progressPct: number;
+    completedItems: number;
+    totalItems: number;
+    scoreEarned: number;
+    maxScore: number;
+    activeSec: number;
+    activeDays: number;
+    sessions: number;
+    avgSessionMin: number;
+    streakDays: number;
+    lastActive: string | null;
+    studyTime: Record<string, number>;
+    videoCoveragePct: number | null;
+    mcqAccuracyPct: number | null;
+    codeAcceptRatePct: number | null;
+  };
+  notStarted: { title: string; type: string; due?: string }[];
+  signals: string[];
+}
+
+export interface RosterRow {
+  userId: string;
+  name: string;
+  progressPct: number;
+  activeSec: number;
+  lastActive: string | null;
+  signals: string[];
+  risk: 'high' | 'medium' | 'low';
+}
+
+export type CoachInsights =
+  | { mode: 'trainee' | 'learner'; profile: LearnerProfileView }
+  | { mode: 'cohort'; roster: RosterRow[] };
+
+export interface CoachAnswer {
+  mode: string;
+  answer: string;
+  sources: { title: string; kind: string }[];
+}
+
 export interface CodeQuestionView {
   questionId: string;
   title: string;
@@ -85,13 +181,16 @@ export interface CodeQuestionView {
   examples: { input: string; output: string; explanation?: string }[];
   difficulty: 'easy' | 'medium' | 'hard';
   supportedLanguages: string[];
+  signature: FunctionSignature | null;
+  starters: Record<string, string> | null;
   hiddenTestCaseCount: number;
+  sampleCases?: { input: string; output: string }[];
 }
 
 export interface CompleteResult {
   scoreAwarded: number;
   itemMaxScore: number;
-  judge?: { passed: number; total: number; error?: string };
+  judge?: { passed: number; total: number; error?: string; status?: string; runtimeMs?: number };
 }
 
 export interface ResourceView {
@@ -230,24 +329,38 @@ export const contentApi = {
 
   // coding items send the solution; the server judges it against the hidden tests
   // runs code against the public examples on the server (Python / C++ / Java)
-  runCode: (questionId: string, courseId: string, language: string, code: string) =>
+  // runs on the public examples, or on the learner's own inputs (Testcase tab)
+  runCode: (
+    questionId: string,
+    courseId: string,
+    language: string,
+    code: string,
+    inputs?: string[]
+  ) =>
     call(async () =>
-      data<{
-        passed: number;
-        total: number;
-        error?: string;
-        cases: {
-          input: string;
-          expected: string;
-          output: string;
-          passed: boolean;
-          error?: string;
-        }[];
-      }>(
+      data<RunResult>(
         await axiosClient.post(`/course/code-question/${questionId}/run`, {
           courseId,
           language,
-          code
+          code,
+          ...(inputs ? { inputs } : {})
+        })
+      )
+    ),
+
+  // AI coach: behaviour profile / cohort roster, and the personalised chat
+  coachInsights: (courseId: string, learnerId?: string) =>
+    call(async () =>
+      data<CoachInsights>(
+        await axiosClient.get('/course/coach/insights', { params: { courseId, learnerId } })
+      )
+    ),
+
+  submissions: (questionId: string, courseId: string) =>
+    call(async () =>
+      data<CodeSubmission[]>(
+        await axiosClient.get(`/course/code-question/${questionId}/submissions`, {
+          params: { courseId }
         })
       )
     ),
@@ -307,6 +420,7 @@ export const contentApi = {
     supportedLanguages: string[];
     points: number;
     referenceSolution: { language: string; code: string } | null;
+    signature: FunctionSignature | null;
     generateTests: boolean;
   }) =>
     call(async () => {
@@ -369,6 +483,11 @@ export const contentApi = {
   reorderModules: (courseId: string, moduleIds: string[]) =>
     call(async () => {
       await axiosClient.put('/course/reorder-modules', { courseId, moduleIds });
+    }),
+
+  enroll: (courseId: string) =>
+    call(async () => {
+      await axiosClient.post(`/courses/${courseId}/enroll`);
     }),
 
   deleteCourse: (courseId: string) =>

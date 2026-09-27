@@ -5,7 +5,8 @@ import CourseProgressDao from '../../shared/dao/courseProgress.dao.js';
 import CourseDao from '../../shared/dao/course.dao.js';
 import McqAttemptDao from '../../shared/dao/mcqAttempt.dao.js';
 import CodeQuestionDao from '../../shared/dao/codeQuestion.dao.js';
-import { judgeCode, JudgeResult } from '@lms/shared';
+import { judgeCode, JudgeResult, judgeStatus, wrapSolution } from '@lms/shared';
+import CodeSubmission from '../../shared/models/codeSubmission.model.js';
 import env from '../../shared/config/env.config.js';
 import { ICourseDocument } from '../../shared/models/course.model.js';
 import {
@@ -81,18 +82,41 @@ class ProgressController {
         }
         const question = await this.codeQuestionDao.findQuestionById(item.refId);
         if (!question) throw new NotFound('Coding question not found.');
-        const cases = question.testCases.length
-          ? question.testCases
-          : question.examples.map((e) => ({ input: e.input, expectedOutput: e.output }));
+        const cases = [
+          ...question.examples.map((e) => ({ input: e.input, expectedOutput: e.output })),
+          ...question.testCases
+        ];
         const language = String(req.body.language || 'javascript');
         if (!question.supportedLanguages.includes(language)) {
           throw new BadRequest(`This question accepts ${question.supportedLanguages.join(', ')}.`);
         }
-        const verdict = await judgeCode(language, req.body.code, cases, {
+        const program = question.signature
+          ? wrapSolution(question.signature, language, req.body.code)
+          : req.body.code;
+        const verdict = await judgeCode(language, program, cases, {
           runnerUrl: env.JUDGE_URL
         });
+        const status = judgeStatus(verdict);
+        await CodeSubmission.create({
+          userId,
+          questionId: item.refId,
+          courseId,
+          itemId,
+          language,
+          code: req.body.code,
+          status,
+          passed: verdict.passed,
+          total: verdict.total,
+          runtimeMs: verdict.runtimeMs || 0
+        });
         // hidden tests: only the counts and the first failure leave the server
-        judge = { passed: verdict.passed, total: verdict.total, error: hiddenError(verdict.error) };
+        judge = {
+          passed: verdict.passed,
+          total: verdict.total,
+          error: hiddenError(verdict.error),
+          status,
+          runtimeMs: verdict.runtimeMs
+        };
         scoreEarned = judge.total ? Math.round((judge.passed / judge.total) * item.maxScore) : 0;
         // nothing passed: report the verdict without marking the item complete
         if (!judge.passed) {
@@ -175,6 +199,42 @@ class ProgressController {
           percentage: percent(g.totalScoreEarned, courseMaxScore),
           completedCount: g.completedItems.length
         }))
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // GET /api/courses/:courseId/leaderboard: top learners and the caller's standing (members only)
+  getLeaderboard = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const courseId = param(req.params.courseId);
+      const { outline } = await openCourse(req.user!, courseId);
+      const courseMaxScore = outlineMaxScore(outline);
+      const ranked = (await this.progressDao.listGradesByCourse(courseId))
+        .map((g) => ({
+          userId: g.userId,
+          totalScoreEarned: g.totalScoreEarned,
+          percentage: percent(g.totalScoreEarned, courseMaxScore)
+        }))
+        .sort((a, b) => b.totalScoreEarned - a.totalScoreEarned)
+        .map((r, i) => ({ ...r, rank: i + 1 }));
+      const mine = ranked.find((r) => r.userId === req.user!.userId);
+      const behind = mine
+        ? ranked.filter((r) => r.totalScoreEarned < mine.totalScoreEarned).length
+        : 0;
+
+      return Ok(res, 'Leaderboard fetched successfully', {
+        courseId,
+        courseMaxScore,
+        totalStudents: ranked.length,
+        top: ranked.slice(0, 20),
+        me: mine
+          ? {
+              ...mine,
+              aheadOf: ranked.length > 1 ? Math.round((behind / (ranked.length - 1)) * 100) : 100
+            }
+          : null
       });
     } catch (error) {
       next(error);

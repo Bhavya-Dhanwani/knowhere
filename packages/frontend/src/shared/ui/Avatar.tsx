@@ -16,14 +16,12 @@ const sizes = {
   xl: 'h-16 w-16 text-lg'
 };
 
-// deterministic gradient per name so initials avatars stay distinguishable
+// neutral initials avatars (monochrome UI); a slight tone shift keeps neighbours distinguishable
 const gradients = [
-  'from-brand-400 to-brand-700',
-  'from-sky-400 to-cyan-700',
-  'from-emerald-400 to-teal-700',
-  'from-amber-400 to-orange-600',
-  'from-rose-400 to-pink-700',
-  'from-fuchsia-400 to-purple-700'
+  'bg-zinc-100 text-zinc-700',
+  'bg-zinc-200 text-zinc-800',
+  'bg-stone-100 text-stone-700',
+  'bg-neutral-200 text-neutral-800'
 ];
 
 export function initialsOf(name?: string) {
@@ -44,7 +42,7 @@ export const Avatar: React.FC<AvatarProps> = ({ src, name, size = 'md', classNam
   return (
     <span
       className={cn(
-        'relative inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full bg-gradient-to-br font-semibold text-white',
+        'relative inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-semibold ring-1 ring-inset ring-black/5',
         gradients[hash % gradients.length],
         sizes[size],
         className

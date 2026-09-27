@@ -67,10 +67,8 @@ export class MistralScoringAgent {
       return null;
     }
 
-    const preferredModel = env.MISTRAL_MODEL || 'mistral-medium-latest';
-    const candidateModels = Array.from(
-      new Set([preferredModel, 'mistral-medium-latest', 'codestral-latest', 'open-mistral-7b'])
-    );
+    // one model for everything (failover rotates keys, not models)
+    const candidateModels = [env.MISTRAL_MODEL || 'mistral-medium-latest'];
 
     const eventName = eventContext?.name || 'Contest / Project Review';
     const eventDesc = eventContext?.description || '';
@@ -174,7 +172,9 @@ export class MistralScoringAgent {
           liveError: evidence.frontendEval?.liveError,
           lighthouse: evidence.frontendEval?.lighthouse,
           failedRequestsCount: evidence.frontendEval?.failedRequestsCount,
-          consoleErrorsCount: evidence.frontendEval?.consoleErrorsCount
+          consoleErrorsCount: evidence.frontendEval?.consoleErrorsCount,
+          assessmentMode: evidence.frontendEval?.assessmentMode,
+          browserFindings: evidence.frontendEval?.findings
         },
         backendSchemathesis: evidence.backendEval?.schemathesis,
         backendK6: evidence.backendEval?.k6
@@ -183,27 +183,22 @@ export class MistralScoringAgent {
     };
 
     for (const modelName of candidateModels) {
-      const { model, selectedKey } = defaultKeyPool.getChatMistralInstance({
-        modelName,
-        temperature: 0.1,
-        maxRetries: 1
-      });
-
       try {
         logger.info(
           { submissionId, model: modelName },
           'Executing LangChain ChatMistralAI scoring agent'
         );
-        const structuredModel = model.withStructuredOutput(EvaluationResultSchema);
-
-        const result = await structuredModel.invoke([
-          new SystemMessage(systemPrompt),
-          new HumanMessage(
-            `Please evaluate this submission using the tool evidence provided below:\n${JSON.stringify(contextPayload, null, 2)}`
-          )
-        ]);
-
-        defaultKeyPool.reportSuccess(selectedKey);
+        // rotates to the next key on rate limits / bad keys / provider errors
+        const result = await defaultKeyPool.withModel({ temperature: 0.1 }, (model) =>
+          model
+            .withStructuredOutput(EvaluationResultSchema)
+            .invoke([
+              new SystemMessage(systemPrompt),
+              new HumanMessage(
+                `Please evaluate this submission using the tool evidence provided below:\n${JSON.stringify(contextPayload, null, 2)}`
+              )
+            ])
+        );
 
         // Strict Post-Evaluation Integrity Guards:
         if (result && result.criterionScores) {
@@ -253,14 +248,6 @@ export class MistralScoringAgent {
           { model: modelName, err: errorMsg },
           'ChatMistralAI scoring agent invocation failed for model; checking next candidate model'
         );
-
-        if (
-          errorMsg.includes('429') ||
-          errorMsg.includes('quota') ||
-          errorMsg.includes('Rate limit')
-        ) {
-          defaultKeyPool.reportRateLimit(selectedKey, 30000);
-        }
       }
     }
 

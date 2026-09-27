@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { ModalShell } from '../../../shared/ui/ModalShell';
 import {
   X,
@@ -32,8 +33,16 @@ export const NotionExportModal: React.FC<NotionExportModalProps> = ({
   title
 }) => {
   const [activeTab, setActiveTab] = useState<'PREVIEW' | 'MARKDOWN' | 'PUSH'>('PREVIEW');
-  const [loading, setLoading] = useState(false);
-  const [exportData, setExportData] = useState<{ title: string; markdown: string } | null>(null);
+  const exportQuery = useQuery({
+    queryKey: ['review', 'notion-export', type, id],
+    enabled: isOpen && Boolean(id),
+    queryFn: () =>
+      type === 'event'
+        ? reviewApi.getEventNotionExport(id!)
+        : reviewApi.getSubmissionNotionExport(id!)
+  });
+  const loading = exportQuery.isLoading;
+  const exportData: { title: string; markdown: string } | null = exportQuery.data ?? null;
   const [copied, setCopied] = useState(false);
 
   // Notion API Push state
@@ -50,28 +59,9 @@ export const NotionExportModal: React.FC<NotionExportModalProps> = ({
     error?: string;
   } | null>(null);
 
+  // a fresh export clears the previous push result
   useEffect(() => {
-    if (!isOpen || !id) return;
-
-    const fetchExport = async () => {
-      try {
-        setLoading(true);
-        setPushResult(null);
-        if (type === 'event') {
-          const res = await reviewApi.getEventNotionExport(id);
-          setExportData(res);
-        } else {
-          const res = await reviewApi.getSubmissionNotionExport(id);
-          setExportData(res);
-        }
-      } catch (err) {
-        console.error('Failed to load Notion export', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchExport();
+    if (isOpen) setPushResult(null);
   }, [isOpen, type, id]);
 
   if (!isOpen) return null;
@@ -190,7 +180,7 @@ export const NotionExportModal: React.FC<NotionExportModalProps> = ({
                   : 'text-zinc-600 hover:text-zinc-900'
               }`}
             >
-              <FileText className="w-3.5 h-3.5 text-indigo-600" />
+              <FileText className="w-3.5 h-3.5 text-zinc-600" />
               Notion Markdown (.md)
             </button>
             <button
