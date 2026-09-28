@@ -104,7 +104,12 @@ export class KnowhereStack extends Stack {
       clusterName: cluster.clusterName,
       addonName: 'vpc-cni',
       resolveConflicts: 'OVERWRITE',
-      configurationValues: JSON.stringify({ enableNetworkPolicy: 'true' })
+      configurationValues: JSON.stringify({
+        enableNetworkPolicy: 'true',
+        // starter: pod IPs come in /28 blocks, so a small node (t4g.medium: 17 pods by ENI count)
+        // can run the whole app; the node's own cap is set in its NodeConfig below
+        ...(starter ? { env: { ENABLE_PREFIX_DELEGATION: 'true', WARM_PREFIX_TARGET: '1' } } : {})
+      })
     });
     const podsSg = cluster.clusterSecurityGroup;
 
@@ -123,13 +128,25 @@ export class KnowhereStack extends Stack {
         'ID=$(curl -s -H "X-aws-ec2-metadata-token: $T" http://169.254.169.254/latest/meta-data/instance-id)',
         `aws ec2 associate-address --region ${this.region} --allocation-id ${egressIp.attrAllocationId} --instance-id "$ID" --allow-reassociation`,
         '',
+        '--==KNOWHERE==',
+        'Content-Type: application/node.eks.aws',
+        '',
+        '---',
+        'apiVersion: node.eks.aws/v1alpha1',
+        'kind: NodeConfig',
+        'spec:',
+        '  kubelet:',
+        '    config:',
+        // ~21 pods today; 40 leaves room without making kubelet reserve memory for 110
+        '      maxPods: 40',
+        '',
         '--==KNOWHERE==--',
         ''
       ].join('\n');
       const lt = new ec2.LaunchTemplate(this, 'NodeTemplate', {
         userData: ec2.UserData.custom(nodeScript),
         blockDevices: [
-          { deviceName: '/dev/xvda', volume: ec2.BlockDeviceVolume.ebs(40, { encrypted: true }) }
+          { deviceName: '/dev/xvda', volume: ec2.BlockDeviceVolume.ebs(30, { encrypted: true }) }
         ]
       });
       const ng = cluster.addNodegroupCapacity('Nodes', {
@@ -460,7 +477,8 @@ export class KnowhereStack extends Stack {
     const workloads = adaptForEks(manifests, {
       images: imageUris,
       storageWorkloads: ['course-deployment', 'media-deployment'],
-      storageServiceAccount: STORAGE_SA
+      storageServiceAccount: STORAGE_SA,
+      singleReplica: starter
     });
     const edge = starter
       ? caddyManifests(props.domainName)

@@ -1,5 +1,8 @@
 # Deploy manager
 
+**Step-by-step AWS guide** (two accounts: app + S3, IAM policies, secrets): open
+[`deployment-guide.html`](deployment-guide.html) in a browser.
+
 One tool to deploy Knowhere to **AWS, Google Cloud, Azure or a local cluster**. It keeps a full
 local history, can roll back to any earlier deployment, and has a web UI with live logs.
 

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, copyFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, copyFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -80,4 +80,11 @@ export async function worktree(commit) {
   const secrets = path.join(REPO, 'k8s', 'secrets.yml');
   if (existsSync(secrets)) copyFileSync(secrets, path.join(dir, 'k8s', 'secrets.yml'));
   return dir;
+}
+
+// removes that copy again when the job ends (and, without a commit, from every worktree)
+export function dropSecrets(commit) {
+  const root = path.join(STATE, 'worktrees');
+  const dirs = commit ? [commit.slice(0, 12)] : readdirSync(root);
+  for (const d of dirs) rmSync(path.join(root, d, 'k8s', 'secrets.yml'), { force: true });
 }

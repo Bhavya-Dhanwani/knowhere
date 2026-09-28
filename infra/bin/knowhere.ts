@@ -22,7 +22,7 @@ const common = {
   mediaRegion: ctx('mediaRegion') || undefined
 };
 const plan = ctx('plan') || 'standard';
-const spot = String(ctx('spot')) === 'yes' || ctx('spot') === true;
+const spot = ['yes', 'true'].includes(String(ctx('spot')).toLowerCase());
 
 // one stack name for every plan: switching plans is a redeploy of the same environment
 if (plan === 'lite') {
@@ -48,11 +48,11 @@ if (plan === 'lite') {
 }
 
 // media buckets in a separate account: `cdk deploy KnowhereMedia` with that account's credentials
-// (-c mediaAccount=<B> -c appAccount=<A>), then deploy Knowhere with the app account's
-if (ctx('mediaAccount') && ctx('appAccount')) {
+// (-c mediaAccount=<B>, plus -c appAccount=<A> when the app runs on AWS), then deploy the app
+if (ctx('mediaAccount')) {
   new KnowhereMediaStack(app, 'KnowhereMedia', {
     env: { account: ctx('mediaAccount'), region: ctx('mediaRegion') || env.region },
-    appAccount: ctx('appAccount'),
+    appAccount: ctx('appAccount') || undefined,
     appOrigin: ctx('domainName') ? `https://${ctx('domainName')}` : '*'
   });
 }

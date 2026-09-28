@@ -13,7 +13,8 @@ dist
 !**/.env.example
 k8s/secrets.yml
 .dev-keys.json
-# large local folders
+# large local folders (deploy/.state holds full repo copies, secrets included)
 infra
+deploy
 graphify-out
 ui-e2e-shots

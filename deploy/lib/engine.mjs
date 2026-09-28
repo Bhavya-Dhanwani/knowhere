@@ -1,7 +1,7 @@
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { PROVIDERS } from '../providers/index.mjs';
 import { bus, has, run } from './run.mjs';
-import { artifacts, load, logFile, newId, snapshot, update, worktree } from './state.mjs';
+import { artifacts, dropSecrets, load, logFile, newId, snapshot, update, worktree } from './state.mjs';
 
 // ponytail: one job at a time across all environments; parallel deploys to different clouds
 // would need a lock per environment instead
@@ -64,6 +64,7 @@ async function execute(id, job) {
   const patch = (fields) =>
     update((s) => Object.assign(s.deployments.find((d) => d.id === id), fields));
 
+  let source;
   try {
     if (!provider) throw new Error(`Unknown platform "${job.provider}".`);
     const missing = [];
@@ -96,7 +97,6 @@ async function execute(id, job) {
     }
 
     // source: a fresh snapshot of the working tree, or the one recorded by the target deployment
-    let source;
     if (job.rollbackOf) source = { commit: job.rollbackOf.commit, head: job.rollbackOf.head, dirty: job.rollbackOf.dirty };
     else if (job.kind === 'destroy') source = { commit: envBefore?.commit };
     else source = await snapshot(id);
@@ -149,6 +149,9 @@ async function execute(id, job) {
   } catch (error) {
     patch({ status: 'failed', error: error.message, finishedAt: new Date().toISOString() });
     note(`FAILED: ${error.message}`);
+  } finally {
+    // the plaintext secrets copy only lives for the duration of the job
+    dropSecrets(source?.commit);
   }
 }
 

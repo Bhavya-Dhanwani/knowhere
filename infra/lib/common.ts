@@ -42,7 +42,8 @@ export function buildImages(scope: Stack, repoRoot: string, arch: CommonProps['a
       file,
       platform,
       // .dockerignore keeps .env files, k8s/secrets.yml and infra/ out of the context
-      exclude: ['infra', '**/node_modules', '.git', 'graphify-out', 'ui-e2e-shots']
+      // deploy/.state holds the deploy manager's repo copies (with k8s/secrets.yml): never ship it
+      exclude: ['infra', 'deploy', '**/node_modules', '.git', 'graphify-out', 'ui-e2e-shots']
     });
   }
   return images;

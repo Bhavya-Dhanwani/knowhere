@@ -50,7 +50,8 @@ export class KnowhereLiteStack extends Stack {
       ...adaptForEks(manifests, {
         images: placeholders,
         storageWorkloads: [],
-        storageServiceAccount: ''
+        storageServiceAccount: '',
+        singleReplica: true
       }),
       ...caddyManifests(props.domainName)
     ];

@@ -67,11 +67,11 @@ export const PLANS = [
     provider: 'aws',
     name: 'EKS Starter',
     tagline: 'Real EKS, trimmed to one spot node',
-    monthly: 110,
+    monthly: 109,
     breakdown: [
       ['EKS control plane', 73],
       ['1 × t4g.xlarge spot node (4 vCPU, 16 GB)', 28],
-      ['40 GB disk', 3.65],
+      ['30 GB disk', 2.75],
       ['Static public IP', 3.65],
       ['Secrets Manager', 2]
     ],
@@ -80,7 +80,7 @@ export const PLANS = [
     reliability: 'Spot node: can be reclaimed; EKS starts a new node (~5 minutes of downtime)',
     scaling: 'Node group can grow to 2 nodes; raise the limit later without redesigning',
     limitations: [
-      'EKS itself costs $73 of the $110, leaving little for compute',
+      'EKS itself costs $73 of the $109, leaving little for compute',
       'One node: no failover while a node is replaced',
       'No NAT gateway: nodes sit in a public subnet (locked down by a security group)',
       'Same code path as EKS Production: growing later is a settings change'
@@ -88,6 +88,39 @@ export const PLANS = [
     bestFor: 'Teams that need EKS specifically (skills, compliance) on a small budget',
     setupMinutes: 30,
     cfg: { plan: 'starter', spot: 'yes', instanceType: 't4g.xlarge', arch: 'arm64', nodeCount: '1' }
+  },
+  {
+    id: 'aws-eks-lean',
+    provider: 'aws',
+    name: 'EKS Lean',
+    tagline: 'Always-on EKS under $100: one small spot node',
+    monthly: 89,
+    breakdown: [
+      ['EKS control plane', 73],
+      ['1 × t4g.medium spot node (2 vCPU, 4 GB)', 7],
+      ['30 GB disk', 2.75],
+      ['Static public IP', 3.65],
+      ['Secrets Manager', 2],
+      ['Container images (ECR)', 0.5]
+    ],
+    specs: { kubernetes: 'Amazon EKS (managed)', capacity: '2 vCPU · 4 GB', nodes: '1' },
+    runs: [
+      'All services (one copy each), Redis, judge and LiveKit voice in the cluster',
+      'Caddy for HTTPS (no load balancer)',
+      'Media in S3'
+    ],
+    reliability: 'Spot node: can be reclaimed; EKS starts a new node (~5 minutes of downtime)',
+    scaling: 'None in practice: sized for a handful of users. Switch to EKS Starter to grow',
+    limitations: [
+      'Sized for about 5 people at a time; 4 GB is tight',
+      'Several heavy code runs at once can run the node out of memory (pods restart)',
+      'Each deploy restarts every service briefly (no room for a second copy)',
+      'Only ~$11/month headroom under $100; watch data transfer beyond 100 GB/month',
+      'EKS itself is $73 of the $89: the control plane is billed even when idle'
+    ],
+    bestFor: 'A small group (4–5 people, 1–2 h a day) that needs EKS on a $100 budget',
+    setupMinutes: 30,
+    cfg: { plan: 'starter', spot: 'yes', instanceType: 't4g.medium', arch: 'arm64', nodeCount: '1' }
   },
   {
     id: 'aws-eks-production',

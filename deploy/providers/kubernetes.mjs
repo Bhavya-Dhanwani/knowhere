@@ -33,14 +33,48 @@ function imageOverride({ imageName, tag }) {
 }
 
 // writes <worktree>/deploy-overlay and applies it to the environment's cluster
-export async function applyStack(ctx, { builds, kubeContext, publicUrl, voiceUrl, tolerateSpot }) {
+export async function applyStack(ctx, { builds, kubeContext, publicUrl, voiceUrl, tolerateSpot, externalS3 }) {
   const dir = path.join(ctx.cwd, 'deploy-overlay');
   mkdirSync(dir, { recursive: true });
   if (!existsSync(path.join(ctx.cwd, 'k8s', 'secrets.yml'))) {
     throw new Error('k8s/secrets.yml is missing: the cluster needs its secrets (see README).');
   }
   const patches = [];
-  if (publicUrl) {
+  if (externalS3) {
+    // media in AWS S3 (the storage account): no MinIO, and the services talk to S3 itself.
+    // Keys, region and bucket names come from media-secrets in k8s/secrets.yml.
+    const drop = (apiVersion, kind, name) =>
+      `$patch: delete
+apiVersion: ${apiVersion}
+kind: ${kind}
+metadata:
+  name: ${name}
+`;
+    const files = {
+      'no-minio-data.yaml': drop('v1', 'PersistentVolumeClaim', 'minio-data'),
+      'no-minio.yaml': drop('apps/v1', 'Deployment', 'minio'),
+      'no-minio-svc.yaml': drop('v1', 'Service', 'minio'),
+      'real-s3.yaml': `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: course-deployment
+spec:
+  template:
+    spec:
+      containers:
+        - name: course-main
+          env:
+            - name: S3_ENDPOINT
+              value: ''
+            - name: S3_PUBLIC_ENDPOINT
+              value: ''
+`
+    };
+    for (const [file, body] of Object.entries(files)) {
+      writeFileSync(path.join(dir, file), body);
+      patches.push(`  - path: ${file}`);
+    }
+  } else if (publicUrl) {
     // presigned upload/download URLs are signed for the address browsers use
     writeFileSync(
       path.join(dir, 'public-url.yaml'),
@@ -166,7 +200,8 @@ export function kubernetesDeploy({ registry, push, kubeContext, tolerateSpot = (
       kubeContext: context,
       publicUrl: publicUrl || 'http://localhost:3000',
       voiceUrl: ctx.cfg.voiceUrl,
-      tolerateSpot: tolerateSpot(ctx)
+      tolerateSpot: tolerateSpot(ctx),
+      externalS3: ctx.cfg.mediaInS3 === 'yes'
     });
     return { kubeContext: context, images: builds, outputs: { appUrl: publicUrl || 'http://localhost:3000' } };
   };

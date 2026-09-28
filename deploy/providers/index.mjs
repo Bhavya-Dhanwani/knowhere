@@ -68,7 +68,14 @@ const aws = {
     });
     if (await aws.mediaIdentity(ctx)) {
       const region = ctx.cfg.mediaRegion || ctx.cfg.region;
-      await ctx.run('npx', ['cdk', 'bootstrap', `aws://${ctx.cfg.mediaAccount}/${region}`], {
+      // the media stack is only buckets: CloudFormation in that account may touch S3 and nothing else
+      await ctx.run('npx', [
+        'cdk',
+        'bootstrap',
+        `aws://${ctx.cfg.mediaAccount}/${region}`,
+        '--cloudformation-execution-policies',
+        'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+      ], {
         cwd: infra,
         env: aws.mediaEnv(ctx.cfg)
       });
@@ -147,7 +154,8 @@ const gcp = {
     { key: 'nodes', label: 'Nodes (per zone for regional)', default: '2' },
     { key: 'spot', label: 'Spot nodes (yes | no)', default: 'no' },
     { key: 'publicUrl', label: 'Public URL (blank = load balancer IP)' },
-    { key: 'voiceUrl', label: 'Voice URL, e.g. wss://voice.example.com' }
+    { key: 'voiceUrl', label: 'Voice URL, e.g. wss://voice.example.com' },
+    { key: 'mediaInS3', label: 'Media in your AWS storage account (S3) instead of in-cluster MinIO (yes | no)', default: 'no' }
   ],
   async identity(cfg, x) {
     const account = (await x.run('gcloud', ['config', 'get-value', 'account'], { quiet: true })).trim();
@@ -213,7 +221,8 @@ const azure = {
     { key: 'spot', label: 'Spot app nodes (yes | no)', default: 'no' },
     { key: 'systemSize', label: 'System node VM size (spot plans)', default: 'Standard_B2s' },
     { key: 'publicUrl', label: 'Public URL (blank = load balancer IP)' },
-    { key: 'voiceUrl', label: 'Voice URL, e.g. wss://voice.example.com' }
+    { key: 'voiceUrl', label: 'Voice URL, e.g. wss://voice.example.com' },
+    { key: 'mediaInS3', label: 'Media in your AWS storage account (S3) instead of in-cluster MinIO (yes | no)', default: 'no' }
   ],
   async identity(_cfg, x) {
     const a = json(await x.run('az', ['account', 'show', '--output', 'json'], { quiet: true }));

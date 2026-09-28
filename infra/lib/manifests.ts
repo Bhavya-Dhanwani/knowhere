@@ -60,12 +60,22 @@ export function adaptForEks(
     // workloads that read/write S3 through an IRSA service account
     storageWorkloads: string[];
     storageServiceAccount: string;
+    // one node: a second copy of a service adds no availability, only memory
+    singleReplica?: boolean;
   }
 ): Manifest[] {
   return manifests.map((original) => {
     const m = structuredClone(original);
     const pod = m.kind === 'Deployment' ? m.spec?.template?.spec : undefined;
     if (!pod) return m;
+    if (opts.singleReplica) {
+      m.spec.replicas = 1;
+      // no room for a second copy on a small node: stop the old pod, then start the new one
+      m.spec.strategy = {
+        type: 'RollingUpdate',
+        rollingUpdate: { maxSurge: 0, maxUnavailable: 1 }
+      };
+    }
     for (const c of pod.containers || []) {
       if (opts.images[c.image]) {
         c.image = opts.images[c.image];

@@ -49,7 +49,10 @@ Settings (`cdk.json` context or `-c key=value`): `region`, `arch` (`arm64` | `am
 To keep uploaded media in account **B** while the app runs in account **A**:
 
 ```bash
-# 1. account B (its own credentials): the buckets
+# 1. account B (its own credentials): once, a bootstrap that lets CloudFormation touch only S3
+npx cdk bootstrap aws://<B>/ap-south-1 --profile account-b \
+  --cloudformation-execution-policies arn:aws:iam::aws:policy/AmazonS3FullAccess
+#    then the buckets
 npx cdk deploy KnowhereMedia --profile account-b \
   -c mediaAccount=<B> -c appAccount=<A> -c domainName=lms.example.com
 # 2. account A: the app, pointed at B's buckets
@@ -65,6 +68,10 @@ profile really is account B, bootstraps B the first time, and deploys both stack
   (`Knowhere-ClusterStorageSaRole*`), not the whole account. That role is the one the course and
   media services use, so uploads, downloads and presigned links work unchanged.
 - **Tearing down:** destroying the app keeps B's buckets and your content.
+- **App on GCP/Azure, storage still in B:** deploy `KnowhereMedia` alone (`-c mediaAccount=<B>`, no
+  `appAccount`), create an IAM user in B limited to the two buckets, put its key in `media-secrets`,
+  and set _Media in your AWS storage account_ = `yes` in the deploy manager. Details and exact
+  policies: `deploy/deployment-guide.html`.
 
 ## After deploy
 

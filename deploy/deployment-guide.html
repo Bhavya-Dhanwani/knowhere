@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Knowhere Deployment Guide</title>
+<meta name="description" content="Step by step, one account at a time: media storage in an AWS account for the long run, the app on AWS, Google Cloud or Azure, with least-access permissions." />
+<style>
+  :root {
+    --bg: #fafaf9; --card: #ffffff; --ink: #18181b; --muted: #71717a; --line: #e4e4e7;
+    --code-bg: #f4f4f5; --accent: #0f766e; --accent-soft: #ccfbf1;
+    --warn: #92400e; --warn-bg: #fffbeb; --warn-line: #fde68a;
+    --ok: #166534; --ok-bg: #f0fdf4; --ok-line: #bbf7d0;
+    --bad: #991b1b; --bad-bg: #fef2f2; --bad-line: #fecaca;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0c0c0e; --card: #151518; --ink: #f4f4f5; --muted: #a1a1aa; --line: #27272a;
+      --code-bg: #1d1d21; --accent: #2dd4bf; --accent-soft: #134e4a;
+      --warn: #fcd34d; --warn-bg: #1f1705; --warn-line: #713f12;
+      --ok: #86efac; --ok-bg: #052e16; --ok-line: #14532d;
+      --bad: #fca5a5; --bad-bg: #2a0a0a; --bad-line: #7f1d1d;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0c0c0e; --card: #151518; --ink: #f4f4f5; --muted: #a1a1aa; --line: #27272a;
+    --code-bg: #1d1d21; --accent: #2dd4bf; --accent-soft: #134e4a;
+    --warn: #fcd34d; --warn-bg: #1f1705; --warn-line: #713f12;
+    --ok: #86efac; --ok-bg: #052e16; --ok-line: #14532d;
+    --bad: #fca5a5; --bad-bg: #2a0a0a; --bad-line: #7f1d1d;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 16px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); }
+  [hidden] { display: none !important; }
+  code, pre { font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace; font-size: 13px; }
+  :not(pre) > code { background: var(--code-bg); padding: 1px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+  .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 40px; max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+  nav.toc { position: sticky; top: 24px; align-self: start; font-size: 13.5px; }
+  nav.toc b { display: block; margin: 14px 0 6px; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  nav.toc b:first-child { margin-top: 0; }
+  nav.toc ol { margin: 0; padding-left: 20px; }
+  nav.toc li { margin: 5px 0; }
+  nav.toc a { color: var(--ink); text-decoration: none; }
+  nav.toc a:hover { color: var(--accent); }
+  header h1 { font-size: 32px; line-height: 1.2; letter-spacing: -.02em; margin: 0 0 8px; }
+  header p { color: var(--muted); margin: 0; max-width: 72ch; }
+  h2 { font-size: 22px; letter-spacing: -.01em; margin: 48px 0 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+  h2 .n { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 14px; margin-right: 10px; vertical-align: 3px; }
+  .part { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 56px 0 -40px; }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  p, li { max-width: 80ch; }
+  ol.steps > li { margin: 8px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin: 16px 0; }
+  .grid2 { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .card h3 { margin-top: 0; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .note, .warn, .ok, .bad, .done { border: 1px solid; border-radius: 12px; padding: 12px 16px; margin: 14px 0; }
+  .note { background: var(--card); border-color: var(--line); }
+  .warn { background: var(--warn-bg); border-color: var(--warn-line); }
+  .warn > b:first-child { color: var(--warn); }
+  .ok { background: var(--ok-bg); border-color: var(--ok-line); }
+  .ok > b:first-child { color: var(--ok); }
+  .bad { background: var(--bad-bg); border-color: var(--bad-line); }
+  .done { background: var(--ok-bg); border-color: var(--ok-line); border-width: 2px; }
+  .code { position: relative; margin: 12px 0; }
+  .code pre { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; overflow-x: auto; white-space: pre; line-height: 1.55; }
+  .code .lbl { font-size: 12px; color: var(--muted); margin-bottom: 4px; padding-right: 110px; }
+  .copy { position: absolute; top: 26px; right: 8px; font: 12px/1 ui-sans-serif, system-ui, sans-serif; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .copy:hover { border-color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); margin: 12px 0; }
+  th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  .vars { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .vars.one { grid-template-columns: minmax(0, 1fr); max-width: 420px; }
+  .vars label { font-size: 12.5px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .vars input { width: 100%; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: 14px ui-monospace, Consolas, monospace; }
+  .vars input:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+  .muted { color: var(--muted); }
+  .picker { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 14px; }
+  .picker button { font: 600 14px ui-sans-serif, system-ui, sans-serif; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  .picker button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .console { counter-reset: c; list-style: none; padding: 0; margin: 12px 0; }
+  .console > li { counter-increment: c; position: relative; padding: 10px 14px 10px 50px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); margin: 8px 0; }
+  .console > li::before { content: counter(c); position: absolute; left: 14px; top: 10px; width: 24px; height: 24px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 700 13px/24px ui-sans-serif, system-ui, sans-serif; text-align: center; }
+  .ui { display: inline-block; padding: 0 7px; border-radius: 6px; border: 1px solid var(--line); background: var(--code-bg); font-weight: 600; font-size: 13.5px; }
+  .type { font-family: ui-monospace, Consolas, monospace; font-size: 13px; background: var(--accent-soft); color: var(--accent); padding: 1px 7px; border-radius: 6px; overflow-wrap: anywhere; }
+  kbd { font: 12px ui-monospace, Consolas, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; background: var(--card); }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13.5px; }
+  .flow span { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; }
+  .flow i { color: var(--muted); font-style: normal; }
+  .themebtn { float: right; font-size: 12px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: minmax(0, 1fr); padding: 20px 16px 60px; gap: 8px; }
+    nav.toc { position: static; border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; background: var(--card); }
+    .grid2, .vars { grid-template-columns: minmax(0, 1fr); }
+    header h1 { font-size: 26px; }
+  }
+  @media print { nav.toc, .copy, .themebtn, .picker { display: none; } .layout { display: block; } }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="Contents">
+    <b>Start</b>
+    <ol>
+      <li><a href="#overview">The two accounts</a></li>
+      <li><a href="#pick">Choose the app cloud</a></li>
+      <li><a href="#prereq">Before you start</a></li>
+    </ol>
+    <b>Browser, one account at a time</b>
+    <ol start="4">
+      <li><a href="#storage">Storage account (AWS)</a></li>
+      <li><a href="#app">App account</a></li>
+    </ol>
+    <b>On your PC</b>
+    <ol start="6">
+      <li><a href="#signin">CLI sign-in</a></li>
+      <li><a href="#storage-setup">Create the storage</a></li>
+      <li><a href="#secrets-file">Prepare your secrets</a></li>
+      <li><a href="#deploy">Deploy with the UI</a></li>
+      <li><a href="#after">After the deploy</a></li>
+    </ol>
+    <b>Reference</b>
+    <ol start="11">
+      <li><a href="#dayto">Updates, rollback, teardown</a></li>
+      <li><a href="#secrets">Where secrets live</a></li>
+      <li><a href="#trouble">Troubleshooting</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header>
+      <button class="themebtn" id="themeBtn" type="button">Toggle theme</button>
+      <h1>Deploying Knowhere</h1>
+      <p>Media lives in <b>one AWS storage account</b> for the long run. The app runs in a <b>second account</b> on AWS, Google Cloud or Azure. You finish all the browser work in one account, sign out, do the other, then do the rest from your PC. Every user gets only the access it needs.</p>
+    </header>
+
+    <!-- ============================================================ 1 -->
+    <h2 id="overview"><span class="n">1</span>The two accounts</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>Storage account (AWS) <span class="tag">cents / month</span></h3>
+        <ul>
+          <li>Two private, encrypted S3 buckets: raw uploads and transcoded videos</li>
+          <li>Set up once. It stays the same whichever cloud runs the app</li>
+          <li>Kept when you tear the app down, so your content survives</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>App account <span class="tag" id="appTag"></span></h3>
+        <ul data-cloud="aws">
+          <li><b>EKS Lean</b>: EKS with one t4g.medium spot node, about <b>$89/month</b> (≈34 days on $100)</li>
+          <li>Reaches the buckets through an IAM role: no storage keys at all</li>
+        </ul>
+        <ul data-cloud="gcp" hidden>
+          <li><b>GKE</b>, sized by the plan you pick (<b>GKE Spot ≈ $105/month</b>)</li>
+          <li>Reaches the buckets with a key that can only touch those two buckets</li>
+        </ul>
+        <ul data-cloud="azure" hidden>
+          <li><b>AKS</b>, sized by the plan you pick (<b>AKS Spot ≈ $101/month</b>)</li>
+          <li>Reaches the buckets with a key that can only touch those two buckets</li>
+        </ul>
+      </div>
+    </div>
+    <div class="flow" aria-label="Order of work">
+      <span>Storage account in the browser</span><i>→</i><span>sign out</span><i>→</i><span>App account in the browser</span><i>→</i><span>sign out</span><i>→</i><span>Your PC: CLI, secrets, Deploy</span>
+    </div>
+    <div class="ok"><b>The deploy creates all infrastructure</b>: buckets, cluster, registry, secrets store, roles. Don't create any of it in a console: the names are fixed, and an existing one makes the deploy fail. In the browser you only create <b>users, policies, keys and budgets</b>.</div>
+    <div class="warn"><b>AWS "Free plan" accounts</b> (the account menu shows credits and days remaining) are closed when the free period ends or the credits run out, unless upgraded to the paid plan. <b>Upgrade the storage account before that date</b>, or the buckets and your media go with it. New accounts can show "verification in progress" for up to 2 days; deploys fail until it finishes, but the IAM work in parts 4 and 5 already works.</div>
+
+    <!-- ============================================================ 2 -->
+    <h2 id="pick"><span class="n">2</span>Choose the app cloud</h2>
+    <p>The guide follows your choice. Account IDs are typed in later, in each account's own part. Everything you type is saved only in this browser.</p>
+    <div class="picker" role="group" aria-label="Cloud that runs the app">
+      <button type="button" data-pick="aws" aria-pressed="true">App on AWS (EKS)</button>
+      <button type="button" data-pick="gcp" aria-pressed="false">App on Google Cloud (GKE)</button>
+      <button type="button" data-pick="azure" aria-pressed="false">App on Azure (AKS)</button>
+    </div>
+    <div class="card vars">
+      <div><label for="v-R">AWS region (storage<span data-cloud="aws"> and app</span>)</label><input id="v-R" data-var="REGION" placeholder="ap-south-1" /></div>
+      <div><label for="v-D">App domain (optional)</label><input id="v-D" data-var="DOMAIN" placeholder="lms.example.com" /></div>
+    </div>
+
+    <!-- ============================================================ 3 -->
+    <h2 id="prereq"><span class="n">3</span>Before you start</h2>
+    <ol class="steps">
+      <li><b>Docker Desktop is running.</b> Images are built on this machine; close heavy apps during the build.</li>
+      <li><b>Node 22 + pnpm</b>, and <code>pnpm install</code> has been run in the repo.</li>
+      <li><b>AWS CLI v2</b> (<code>aws --version</code>). The storage account always needs it.</li>
+      <li data-cloud="gcp" hidden><b>Google Cloud CLI</b> (<code>gcloud version</code>) with <code>gcloud components install gke-gcloud-auth-plugin</code>, plus <b>skaffold</b> and <b>kubectl</b>.</li>
+      <li data-cloud="azure" hidden><b>Azure CLI</b> (<code>az version</code>), plus <b>skaffold</b> and <b>kubectl</b>.</li>
+      <li><b>MongoDB Atlas</b> ready (production connection strings go in <code>k8s/secrets.yml</code>).</li>
+      <li><b>Optional: a domain.</b> It's needed for voice/video, because browsers only allow the camera and microphone over HTTPS.</li>
+      <li><b>MFA on every root / owner login.</b> Never deploy with those logins.</li>
+    </ol>
+
+    <!-- ============================================================ 4 STORAGE -->
+    <p class="part">In the browser · account 1 of 2</p>
+    <h2 id="storage"><span class="n">4</span>Storage account (AWS): everything in one sitting</h2>
+    <p>Sign in to the <b>storage account</b> in the AWS console. Search <b>IAM</b> in the top search bar and open it. Everything in this part happens there, plus Budgets at the end.</p>
+
+    <h3>4.1 Your storage account ID</h3>
+    <p>IAM left menu → <span class="ui">Roles</span> → click any role (e.g. <b>AccountFullAccessRole</b>) → the <b>Summary</b> box shows its <b>ARN</b>: <code>arn:aws:iam::<b>123456789012</b>:role/…</code>. The 12 digits after <code>arn:aws:iam::</code> are the account ID. <span class="muted">(If your IAM menu has a <span class="ui">Dashboard</span>, its <b>AWS Account</b> box shows it too.)</span> Type it here so the policies below are complete:</p>
+    <div class="card vars one"><div><label for="v-B">Storage account ID (12 digits)</label><input id="v-B" data-var="B" placeholder="444455556666" inputmode="numeric" /></div></div>
+
+    <h3>4.2 Create the policy <code>KnowhereCdkToolkit</code></h3>
+    <p class="muted">It lets the deploy set up the CDK toolkit (a staging bucket, a registry, <code>cdk-*</code> roles, a version parameter) and the Knowhere storage stack, and nothing else. <code>AmazonS3FullAccess</code> alone can't do that.</p>
+    <ol class="console">
+      <li>Click <span class="ui">Copy</span> on the policy below.</li>
+      <li>IAM left menu → <span class="ui">Policies</span> → orange <span class="ui">Create policy</span>.</li>
+      <li><b>Policy editor</b> → click <span class="ui">JSON</span> (next to <i>Visual</i>). Click in the editor, <kbd>Ctrl</kbd>+<kbd>A</kbd>, <kbd>Delete</kbd>, <kbd>Ctrl</kbd>+<kbd>V</kbd>. No red errors → <span class="ui">Next</span>.</li>
+      <li>Policy name <span class="type">KnowhereCdkToolkit</span> → <span class="ui">Create policy</span>.</li>
+    </ol>
+    <div class="code"><div class="lbl">Policy KnowhereCdkToolkit (storage account)</div><button class="copy" type="button">Copy</button><pre data-tpl>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CdkStacks",
+      "Effect": "Allow",
+      "Action": "cloudformation:*",
+      "Resource": [
+        "arn:aws:cloudformation:{{REGION}}:{{B}}:stack/CDKToolkit/*",
+        "arn:aws:cloudformation:{{REGION}}:{{B}}:stack/KnowhereMedia/*"
+      ]
+    },
+    {
+      "Sid": "CdkRead",
+      "Effect": "Allow",
+      "Action": ["cloudformation:DescribeStacks", "cloudformation:GetTemplateSummary", "cloudformation:ValidateTemplate"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CdkToolkitRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:TagRole", "iam:UntagRole",
+        "iam:UpdateAssumeRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy",
+        "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": "arn:aws:iam::{{B}}:role/cdk-*"
+    },
+    {
+      "Sid": "CdkToolkitVersion",
+      "Effect": "Allow",
+      "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:PutParameter", "ssm:DeleteParameter", "ssm:AddTagsToResource"],
+      "Resource": "arn:aws:ssm:{{REGION}}:{{B}}:parameter/cdk-bootstrap/*"
+    },
+    {
+      "Sid": "CdkToolkitRegistry",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:CreateRepository", "ecr:DeleteRepository", "ecr:DescribeRepositories", "ecr:SetRepositoryPolicy",
+        "ecr:GetRepositoryPolicy", "ecr:PutLifecyclePolicy", "ecr:PutImageTagMutability",
+        "ecr:PutImageScanningConfiguration", "ecr:TagResource", "ecr:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ecr:{{REGION}}:{{B}}:repository/cdk-*"
+    },
+    {
+      "Sid": "UseCdkRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::{{B}}:role/cdk-*"
+    }
+  ]
+}</pre></div>
+
+    <div data-cloud="gcp azure" hidden>
+      <h3>4.3 Create the policy <code>KnowhereAppStorage</code> (for the app on <span class="cloudname"></span>)</h3>
+      <p class="muted">The app's own key uses it. It reaches only the two Knowhere buckets, so even a leaked key can't touch anything else.</p>
+      <ol class="console">
+        <li><span class="ui">Copy</span> the policy below → <span class="ui">Policies</span> → <span class="ui">Create policy</span> → <span class="ui">JSON</span> → clear the editor, paste → <span class="ui">Next</span>.</li>
+        <li>Policy name <span class="type">KnowhereAppStorage</span> → <span class="ui">Create policy</span>.</li>
+      </ol>
+      <div class="code"><div class="lbl">Policy KnowhereAppStorage (storage account)</div><button class="copy" type="button">Copy</button><pre data-tpl>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "KnowhereBuckets",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": [
+        "arn:aws:s3:::knowhere-raw-{{B}}-{{REGION}}",
+        "arn:aws:s3:::knowhere-transcoded-{{B}}-{{REGION}}"
+      ]
+    },
+    {
+      "Sid": "KnowhereObjects",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"],
+      "Resource": [
+        "arn:aws:s3:::knowhere-raw-{{B}}-{{REGION}}/*",
+        "arn:aws:s3:::knowhere-transcoded-{{B}}-{{REGION}}/*"
+      ]
+    }
+  ]
+}</pre></div>
+    </div>
+
+    <h3><span class="sn" data-aws="4.3" data-other="4.4"></span> Create the user <code>knowhere-media-deployer</code> (both policies in one go)</h3>
+    <ol class="console">
+      <li>IAM left menu → <span class="ui">IAM users</span> (or <span class="ui">Users</span>) → orange <span class="ui">Create user</span>.</li>
+      <li>User name <span class="type">knowhere-media-deployer</span>. Leave <i>Provide user access to the AWS Management Console</i> <b>unticked</b> → <span class="ui">Next</span>.</li>
+      <li><b>Set permissions</b> → <span class="ui">Attach policies directly</span>. Leave <b>Filter by Type</b> on <i>All types</i>.</li>
+      <li>Search <span class="type">AmazonS3FullAccess</span> → tick it. Clear the search, type <span class="type">KnowhereCdkToolkit</span> → tick it too (earlier ticks stay) → <span class="ui">Next</span>.</li>
+      <li><b>Review and create</b> lists both policies → <span class="ui">Create user</span>.</li>
+    </ol>
+
+    <h3><span class="sn" data-aws="4.4" data-other="4.5"></span> Access key for <code>knowhere-media-deployer</code></h3>
+    <ol class="console">
+      <li><span class="ui">IAM users</span> → <b>knowhere-media-deployer</b> → <span class="ui">Security credentials</span> tab.</li>
+      <li><b>Access keys</b> → <span class="ui">Create access key</span> → use case <span class="ui">Command Line Interface (CLI)</span> → tick <i>I understand the above recommendation…</i> → <span class="ui">Next</span> → <span class="ui">Create access key</span>.</li>
+      <li><span class="ui">Download .csv file</span> (the secret is shown only once). Rename it to <span class="type">storage-deployer.csv</span> → <span class="ui">Done</span>.</li>
+    </ol>
+
+    <div data-cloud="gcp azure" hidden>
+      <h3>4.6 Create the user <code>knowhere-app-storage</code> and its key</h3>
+      <ol class="console">
+        <li><span class="ui">IAM users</span> → <span class="ui">Create user</span> → name <span class="type">knowhere-app-storage</span>, console access <b>unticked</b> → <span class="ui">Next</span>.</li>
+        <li><span class="ui">Attach policies directly</span> → search <span class="type">KnowhereAppStorage</span> → tick <b>only</b> that one → <span class="ui">Next</span> → <span class="ui">Create user</span>.</li>
+        <li>Open the user → <span class="ui">Security credentials</span> → <span class="ui">Create access key</span> → use case <span class="ui">Application running outside AWS</span> → <span class="ui">Next</span> → <span class="ui">Create access key</span> → <span class="ui">Download .csv file</span>, renamed to <span class="type">app-storage.csv</span>. It goes into <code>k8s/secrets.yml</code> in part 8.</li>
+      </ol>
+    </div>
+
+    <h3><span class="sn" data-aws="4.5" data-other="4.7"></span> Budget alert</h3>
+    <ol class="console">
+      <li>Top search bar → <span class="ui">Budgets</span> → <span class="ui">Create budget</span>.</li>
+      <li><span class="ui">Use a template (simplified)</span> → <span class="ui">Monthly cost budget</span> → name <span class="type">knowhere-storage</span>, amount <span class="type">10</span>, your email → <span class="ui">Create budget</span>. It emails you as spending approaches the amount.</li>
+    </ol>
+
+    <div class="done">✓ <b>Storage account done.</b> You have <b>storage-deployer.csv</b><span data-cloud="gcp azure" hidden> and <b>app-storage.csv</b></span>, and the storage account ID is typed in above. <b>Sign out</b> (top right → Sign out) and continue with the app account.</div>
+
+    <!-- ============================================================ 5 APP -->
+    <p class="part">In the browser · account 2 of 2</p>
+    <h2 id="app"><span class="n">5</span>App account: everything in one sitting (least access)</h2>
+
+    <!-- ---------------- AWS ---------------- -->
+    <div data-cloud="aws">
+      <p>Sign in to the <b>app account</b> in the AWS console → search <b>IAM</b> → open it.</p>
+      <div class="note"><b>How least access works here.</b> The deploy user can only run the one-time CDK setup and then hand off to the <code>cdk-*</code> roles that setup creates. CloudFormation builds EKS, the VPC and the EC2 resources through its own role, so this user never gets EKS or EC2 rights. Besides that it only gets <code>eks:DescribeCluster</code> (for kubectl) and write access to the <code>knowhere/*</code> secrets.</div>
+
+      <h3>5.1 Your app account ID and user name</h3>
+      <p>IAM left menu → <span class="ui">Roles</span> → click any role (e.g. <b>AccountFullAccessRole</b>) → the <b>Summary</b> box shows its <b>ARN</b>: <code>arn:aws:iam::<b>123456789012</b>:role/…</code>. The 12 digits after <code>arn:aws:iam::</code> are the account ID. <span class="muted">(If your IAM menu has a <span class="ui">Dashboard</span>, its <b>AWS Account</b> box shows it too.)</span></p>
+      <div class="card vars">
+        <div><label for="v-A">App account ID (12 digits)</label><input id="v-A" data-var="A" placeholder="111122223333" inputmode="numeric" /></div>
+        <div><label for="v-UA">Deploy user name</label><input id="v-UA" data-var="USER_A" placeholder="knowhere-deployer" /></div>
+      </div>
+
+      <h3>5.2 Create the policy <code>KnowhereCdkDeploy</code></h3>
+      <ol class="console">
+        <li><span class="ui">Copy</span> the policy below.</li>
+        <li><span class="ui">Policies</span> → <span class="ui">Create policy</span> → <span class="ui">JSON</span> → click in the editor, <kbd>Ctrl</kbd>+<kbd>A</kbd>, <kbd>Delete</kbd>, <kbd>Ctrl</kbd>+<kbd>V</kbd> → no red errors → <span class="ui">Next</span>.</li>
+        <li>Policy name <span class="type">KnowhereCdkDeploy</span> → <span class="ui">Create policy</span>.</li>
+      </ol>
+      <div class="code"><div class="lbl">Policy KnowhereCdkDeploy (app account)</div><button class="copy" type="button">Copy</button><pre data-tpl>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CdkToolkitStack",
+      "Effect": "Allow",
+      "Action": "cloudformation:*",
+      "Resource": "arn:aws:cloudformation:{{REGION}}:{{A}}:stack/CDKToolkit/*"
+    },
+    {
+      "Sid": "CdkRead",
+      "Effect": "Allow",
+      "Action": ["cloudformation:DescribeStacks", "cloudformation:GetTemplateSummary", "cloudformation:ValidateTemplate"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CdkToolkitRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:TagRole", "iam:UntagRole",
+        "iam:UpdateAssumeRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy",
+        "iam:AttachRolePolicy", "iam:DetachRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies"
+      ],
+      "Resource": "arn:aws:iam::{{A}}:role/cdk-*"
+    },
+    {
+      "Sid": "CdkToolkitVersion",
+      "Effect": "Allow",
+      "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:PutParameter", "ssm:DeleteParameter", "ssm:AddTagsToResource"],
+      "Resource": "arn:aws:ssm:{{REGION}}:{{A}}:parameter/cdk-bootstrap/*"
+    },
+    {
+      "Sid": "CdkToolkitRegistry",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:CreateRepository", "ecr:DeleteRepository", "ecr:DescribeRepositories", "ecr:SetRepositoryPolicy",
+        "ecr:GetRepositoryPolicy", "ecr:PutLifecyclePolicy", "ecr:PutImageTagMutability",
+        "ecr:PutImageScanningConfiguration", "ecr:TagResource", "ecr:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ecr:{{REGION}}:{{A}}:repository/cdk-*"
+    },
+    {
+      "Sid": "CdkStagingBucket",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": ["arn:aws:s3:::cdk-*", "arn:aws:s3:::cdk-*/*"]
+    },
+    {
+      "Sid": "UseCdkRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::{{A}}:role/cdk-*"
+    },
+    {
+      "Sid": "Kubectl",
+      "Effect": "Allow",
+      "Action": "eks:DescribeCluster",
+      "Resource": "arn:aws:eks:{{REGION}}:{{A}}:cluster/knowhere"
+    },
+    {
+      "Sid": "PushSecrets",
+      "Effect": "Allow",
+      "Action": ["secretsmanager:PutSecretValue", "secretsmanager:DescribeSecret"],
+      "Resource": "arn:aws:secretsmanager:{{REGION}}:{{A}}:secret:knowhere/*"
+    }
+  ]
+}</pre></div>
+
+      <h3>5.3 Create the user and attach the policy</h3>
+      <ol class="console">
+        <li><span class="ui">IAM users</span> → <span class="ui">Create user</span> → name <span class="type" data-tpl>{{USER_A}}</span>, console access <b>unticked</b> → <span class="ui">Next</span>.</li>
+        <li><span class="ui">Attach policies directly</span> → search <span class="type">KnowhereCdkDeploy</span> → tick it (nothing else) → <span class="ui">Next</span> → <span class="ui">Create user</span>.</li>
+        <li>Open the user. In the <b>Summary</b> box, copy the <b>ARN</b> (<code data-tpl>arn:aws:iam::{{A}}:user/{{USER_A}}</code>). The deploy form needs it in part 9.</li>
+      </ol>
+
+      <h3>5.4 Access key</h3>
+      <ol class="console">
+        <li>Same user → <span class="ui">Security credentials</span> → <span class="ui">Create access key</span> → <span class="ui">Command Line Interface (CLI)</span> → tick the confirmation → <span class="ui">Next</span> → <span class="ui">Create access key</span>.</li>
+        <li><span class="ui">Download .csv file</span>, renamed to <span class="type">app-deployer.csv</span> → <span class="ui">Done</span>.</li>
+      </ol>
+
+      <h3>5.5 Budget alert</h3>
+      <ol class="console">
+        <li><span class="ui">Budgets</span> → <span class="ui">Create budget</span> → <span class="ui">Use a template (simplified)</span> → <span class="ui">Monthly cost budget</span> → name <span class="type">knowhere-app</span>, amount <span class="type">100</span>, your email → <span class="ui">Create budget</span>.</li>
+      </ol>
+      <div class="warn"><b>If the very first deploy stops with <code>AccessDenied</code> during "bootstrap"</b> (AWS sometimes adds a permission to its toolkit), attach the AWS managed policy <code>AdministratorAccess</code> to this user for that one run, then remove it. Every later deploy works with <code>KnowhereCdkDeploy</code> alone.</div>
+      <div class="done">✓ <b>App account done.</b> You have <b>app-deployer.csv</b>, the user's <b>ARN</b>, and the app account ID typed in above. <b>Sign out.</b> The rest happens on your PC.</div>
+    </div>
+
+    <!-- ---------------- GCP ---------------- -->
+    <div data-cloud="gcp" hidden>
+      <p>Sign in to <b>console.cloud.google.com</b> and select your project in the project picker at the top. Least access here means a <b>service account</b>: a separate deploy identity with just four roles, instead of your own Owner login.</p>
+      <h3>5.1 Your project ID</h3>
+      <div class="card vars one"><div><label for="v-P">Google Cloud project ID</label><input id="v-P" data-var="PROJECT" placeholder="knowhere-prod-123456" /></div></div>
+      <h3>5.2 Create the service account <code>knowhere-deployer</code> with its roles</h3>
+      <ol class="console">
+        <li>Menu ☰ → <span class="ui">IAM &amp; Admin</span> → <span class="ui">Service Accounts</span> → <span class="ui">+ Create service account</span>.</li>
+        <li>Service account name <span class="type">knowhere-deployer</span> → <span class="ui">Create and continue</span>.</li>
+        <li><b>Grant this service account access to project</b>: <span class="ui">Select a role</span> → pick <b>Kubernetes Engine Admin</b>. Then <span class="ui">+ Add another role</span> for each of <b>Artifact Registry Administrator</b>, <b>Service Usage Admin</b> and <b>Service Account User</b>.</li>
+        <li><span class="ui">Continue</span> → <span class="ui">Done</span>.</li>
+      </ol>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Role (as shown in the console)</th><th>Role ID</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Kubernetes Engine Admin</td><td><code>roles/container.admin</code></td><td>Create the GKE cluster and deploy to it</td></tr>
+          <tr><td>Artifact Registry Administrator</td><td><code>roles/artifactregistry.admin</code></td><td>Create the image registry and push images</td></tr>
+          <tr><td>Service Usage Admin</td><td><code>roles/serviceusage.serviceUsageAdmin</code></td><td>Switch on the GKE and Artifact Registry APIs</td></tr>
+          <tr><td>Service Account User</td><td><code>roles/iam.serviceAccountUser</code></td><td>Let the nodes run as the default compute service account</td></tr>
+        </tbody>
+      </table></div>
+      <h3>5.3 Key file</h3>
+      <ol class="console">
+        <li>Click <b>knowhere-deployer</b> in the list → <span class="ui">Keys</span> tab → <span class="ui">Add key</span> → <span class="ui">Create new key</span> → <span class="ui">JSON</span> → <span class="ui">Create</span>. A <code>.json</code> file downloads.</li>
+        <li>Move it <b>outside the repo</b>, e.g. <span class="type">C:\keys\knowhere-deployer.json</span>.</li>
+      </ol>
+      <h3>5.4 Budget alert</h3>
+      <ol class="console">
+        <li>Menu ☰ → <span class="ui">Billing</span> → <span class="ui">Budgets &amp; alerts</span> → <span class="ui">Create budget</span> → scope: your project → amount → keep the 50% / 90% / 100% thresholds → <span class="ui">Finish</span>.</li>
+      </ol>
+      <div class="note">During the free trial at most <b>8 vCPUs</b> run at once, so choose a plan within that. If creating the key is blocked by an organisation policy, use your own Owner login instead (<code>gcloud auth login</code> in part 6).</div>
+      <div class="done">✓ <b>App account done.</b> You have the key <b>.json</b> (outside the repo) and the project ID typed in above. <b>Sign out.</b></div>
+    </div>
+
+    <!-- ---------------- Azure ---------------- -->
+    <div data-cloud="azure" hidden>
+      <p>Sign in to <b>portal.azure.com</b>. Least access here means an <b>app registration</b> (a service principal): a separate deploy identity with two roles, instead of your own Owner login.</p>
+      <h3>5.1 Your subscription ID</h3>
+      <p>Search <b>Subscriptions</b> → your subscription → copy the <b>Subscription ID</b>:</p>
+      <div class="card vars one"><div><label for="v-S">Azure subscription ID</label><input id="v-S" data-var="SUB" placeholder="00000000-0000-0000-0000-000000000000" /></div></div>
+      <h3>5.2 Create the app registration <code>knowhere-deployer</code> and a secret</h3>
+      <ol class="console">
+        <li>Search <span class="ui">Microsoft Entra ID</span> → <span class="ui">App registrations</span> → <span class="ui">+ New registration</span> → name <span class="type">knowhere-deployer</span> → <span class="ui">Register</span>.</li>
+        <li>On its <b>Overview</b>, note the <b>Application (client) ID</b> and the <b>Directory (tenant) ID</b>.</li>
+        <li><span class="ui">Certificates &amp; secrets</span> → <span class="ui">Client secrets</span> → <span class="ui">+ New client secret</span> → <span class="ui">Add</span>. Copy the <b>Value</b> right away: it's shown only once.</li>
+      </ol>
+      <h3>5.3 Give it two roles on the subscription</h3>
+      <ol class="console">
+        <li><span class="ui">Subscriptions</span> → your subscription → <span class="ui">Access control (IAM)</span> → <span class="ui">+ Add</span> → <span class="ui">Add role assignment</span>.</li>
+        <li><b>Role</b> → tab <span class="ui">Privileged administrator roles</span> → <b>Contributor</b> → <span class="ui">Next</span> → <b>Members</b>: <i>User, group, or service principal</i> → <span class="ui">+ Select members</span> → search <b>knowhere-deployer</b> → <span class="ui">Select</span> → <span class="ui">Review + assign</span>.</li>
+        <li>Again <span class="ui">+ Add</span> → <span class="ui">Add role assignment</span> → <span class="ui">Privileged administrator roles</span> → <b>Role Based Access Control Administrator</b> → Members: <b>knowhere-deployer</b> → <span class="ui">Conditions</span> tab: <i>Allow user to assign all roles except privileged administrator roles Owner, UAA, RBAC (Recommended)</i> → <span class="ui">Review + assign</span>.</li>
+      </ol>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Role</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Contributor</td><td>Resource group, AKS, the container registry, resource provider registration</td></tr>
+          <tr><td>Role Based Access Control Administrator (recommended condition)</td><td>The deploy gives the cluster <b>AcrPull</b> on your registry (<code>--attach-acr</code>). The condition stops it from granting admin roles.</td></tr>
+        </tbody>
+      </table></div>
+      <h3>5.4 Budget alert</h3>
+      <ol class="console">
+        <li>Search <span class="ui">Cost Management</span> → <span class="ui">Budgets</span> → <span class="ui">+ Add</span> → amount → alerts at 50% / 90% with your email → <span class="ui">Create</span>.</li>
+      </ol>
+      <div class="note">Free-trial subscriptions have a low vCPU quota (often 4 per region) and may not allow spot VMs. If a deploy fails on quota, upgrade to pay-as-you-go; the remaining credit stays.</div>
+      <div class="done">✓ <b>App account done.</b> You have the client ID, tenant ID and client secret, and the subscription ID typed in above. <b>Sign out.</b></div>
+    </div>
+
+    <!-- ============================================================ 6 PC -->
+    <p class="part">On your PC</p>
+    <h2 id="signin"><span class="n">6</span>CLI sign-in</h2>
+    <p>Open <b>PowerShell</b> (not a chat, not a browser). <code>aws configure</code> asks four questions: <b>Access key ID</b> and <b>Secret access key</b> (from the CSV), region <code data-tpl>{{REGION}}</code>, and output <code>json</code>.</p>
+    <div class="code"><div class="lbl">Storage account (storage-deployer.csv)</div><button class="copy" type="button">Copy</button><pre data-tpl>aws configure --profile knowhere-media
+aws sts get-caller-identity --profile knowhere-media    # must show {{B}}</pre></div>
+    <div class="code" data-cloud="aws"><div class="lbl">App account (app-deployer.csv)</div><button class="copy" type="button">Copy</button><pre data-tpl>aws configure --profile knowhere-app
+aws sts get-caller-identity --profile knowhere-app      # must show {{A}}</pre></div>
+    <div class="code" data-cloud="gcp" hidden><div class="lbl">Google Cloud: the service account key</div><button class="copy" type="button">Copy</button><pre data-tpl>gcloud auth activate-service-account --key-file=C:\keys\knowhere-deployer.json
+gcloud config set account knowhere-deployer@{{PROJECT}}.iam.gserviceaccount.com
+gcloud config set project {{PROJECT}}
+gcloud config get-value account    # must show knowhere-deployer@{{PROJECT}}.iam.gserviceaccount.com</pre></div>
+    <div class="code" data-cloud="azure" hidden><div class="lbl">Azure: the app registration (put in your client ID, secret and tenant ID)</div><button class="copy" type="button">Copy</button><pre data-tpl>az login --service-principal --username &lt;client-id&gt; --password &lt;client-secret&gt; --tenant &lt;tenant-id&gt;
+az account set --subscription {{SUB}}
+az account show --query "{user:user.name, subscription:id}"</pre></div>
+    <div class="warn"><b>Keys never go into a chat, a ticket or the repo.</b> Once sign-in works, delete the downloaded CSVs<span data-cloud="gcp" hidden> (keep the JSON key outside the repo)</span>.</div>
+
+    <!-- ============================================================ 7 -->
+    <h2 id="storage-setup"><span class="n">7</span>Create the storage</h2>
+    <div data-cloud="aws"><div class="ok"><b>App on AWS: nothing to do here.</b> The first deploy (part 9) sets up the storage account (S3-only) and creates the buckets itself.</div></div>
+    <div data-cloud="gcp azure" hidden>
+      <p>Run this <b>once</b>, from the repo. The buckets then stay for as long as the storage account exists.</p>
+      <div class="code"><div class="lbl">PowerShell or Git Bash, repo root</div><button class="copy" type="button">Copy</button><pre data-tpl>cd infra
+npm install
+npx cdk bootstrap aws://{{B}}/{{REGION}} --profile knowhere-media --cloudformation-execution-policies arn:aws:iam::aws:policy/AmazonS3FullAccess
+npx cdk deploy KnowhereMedia --profile knowhere-media --require-approval never -c mediaAccount={{B}} -c region={{REGION}} {{DOMAIN_FLAG}}</pre></div>
+      <p>It ends by printing the two bucket names: <code data-tpl>knowhere-raw-{{B}}-{{REGION}}</code> and <code data-tpl>knowhere-transcoded-{{B}}-{{REGION}}</code>.</p>
+    </div>
+
+    <!-- ============================================================ 8 -->
+    <h2 id="secrets-file"><span class="n">8</span>Prepare your secrets</h2>
+    <p><code>k8s/secrets.yml</code> holds every app secret. It's gitignored and never enters images or the CDK output. Check it has your <b>production</b> values:</p>
+    <ul>
+      <li>MongoDB Atlas connection strings (not the <code>*_dev</code> databases)</li>
+      <li>JWT / refresh-token and service-token secrets: long random values. Production refuses placeholders.</li>
+      <li>Mistral API keys and mail (SMTP) settings</li>
+    </ul>
+    <div data-cloud="aws"><p class="muted">Leave the storage keys in <code>media-secrets</code> empty. On AWS the stack fills in the bucket names, Redis URL and LiveKit keys, and the services reach S3 through an IAM role.</p></div>
+    <div data-cloud="gcp azure" hidden>
+      <p>Point <code>media-secrets</code> at the storage account with the key from <b>app-storage.csv</b>:</p>
+      <div class="code"><div class="lbl">k8s/secrets.yml: the media-secrets part</div><button class="copy" type="button">Copy</button><pre data-tpl>apiVersion: v1
+kind: Secret
+metadata:
+  name: media-secrets
+type: Opaque
+stringData:
+  AWS_REGION: '{{REGION}}'
+  AWS_ACCESS_KEY_ID: '&lt;from app-storage.csv&gt;'
+  AWS_SECRET_ACCESS_KEY: '&lt;from app-storage.csv&gt;'
+  S3_RAW_BUCKET: 'knowhere-raw-{{B}}-{{REGION}}'
+  S3_TRANSCODED_BUCKET: 'knowhere-transcoded-{{B}}-{{REGION}}'
+  CLOUDFRONT_DOMAIN: ''</pre></div>
+    </div>
+
+    <!-- ============================================================ 9 -->
+    <h2 id="deploy"><span class="n">9</span>Deploy with the deploy manager UI</h2>
+    <ol class="steps">
+      <li>In the repo run <code>pnpm deployer</code>. Open the printed link <code>http://127.0.0.1:4545/#token=…</code> exactly: the token is required, and the UI only listens on your own machine.</li>
+      <li data-cloud="aws"><b>Plans &amp; pricing</b> → <b>AWS</b> → <b>EKS Lean → Use this plan</b>. It fills in <code>plan = starter</code>, <code>spot = yes</code>, <code>instanceType = t4g.medium</code>, <code>arch = arm64</code> and <code>nodeCount = 1</code>.</li>
+      <li data-cloud="gcp" hidden><b>Plans &amp; pricing</b> → <b>Google Cloud</b> → a plan (e.g. <b>GKE Spot</b>) → <b>Use this plan</b>.</li>
+      <li data-cloud="azure" hidden><b>Plans &amp; pricing</b> → <b>Azure</b> → a plan (e.g. <b>AKS Spot</b>) → <b>Use this plan</b>.</li>
+      <li>Fill in the rest of <b>New deployment</b>:
+        <div class="tablewrap" data-cloud="aws"><table>
+          <thead><tr><th>Field</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Region</td><td><code data-tpl>{{REGION}}</code></td></tr>
+            <tr><td>AWS CLI profile</td><td><code>knowhere-app</code></td></tr>
+            <tr><td>IAM ARN to get kubectl admin</td><td><code data-tpl>arn:aws:iam::{{A}}:user/{{USER_A}}</code></td></tr>
+            <tr><td>S3 in another AWS account: its account ID</td><td><code data-tpl>{{B}}</code></td></tr>
+            <tr><td>AWS CLI profile for that account</td><td><code>knowhere-media</code></td></tr>
+            <tr><td>Region of the media buckets</td><td>blank</td></tr>
+            <tr><td>App domain / hosted zone ID / zone name</td><td>optional: <code data-tpl>{{DOMAIN_OR_EXAMPLE}}</code> and its Route 53 zone</td></tr>
+          </tbody>
+        </table></div>
+        <div class="tablewrap" data-cloud="gcp" hidden><table>
+          <thead><tr><th>Field</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Project ID</td><td><code data-tpl>{{PROJECT}}</code></td></tr>
+            <tr><td>Cluster / zone / region / machine / nodes / spot</td><td>filled by the plan</td></tr>
+            <tr><td><b>Media in your AWS storage account (S3)</b></td><td><code>yes</code></td></tr>
+            <tr><td>Public URL / Voice URL</td><td>blank = the load balancer IP. With a domain: <code data-tpl>https://{{DOMAIN_OR_EXAMPLE}}</code> / <code data-tpl>wss://voice.{{DOMAIN_OR_EXAMPLE}}</code></td></tr>
+          </tbody>
+        </table></div>
+        <div class="tablewrap" data-cloud="azure" hidden><table>
+          <thead><tr><th>Field</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Location / resource group / tier / VM sizes / nodes / spot</td><td>filled by the plan</td></tr>
+            <tr><td><b>Media in your AWS storage account (S3)</b></td><td><code>yes</code></td></tr>
+            <tr><td>Public URL / Voice URL</td><td>blank = the load balancer IP. With a domain: <code data-tpl>https://{{DOMAIN_OR_EXAMPLE}}</code> / <code data-tpl>wss://voice.{{DOMAIN_OR_EXAMPLE}}</code></td></tr>
+          </tbody>
+        </table></div>
+      </li>
+      <li>Click <b>Deploy</b> and follow the log panel. The first deploy takes about <b>30–40 minutes</b>: identity checks, setup, <span data-cloud="aws">storage buckets, </span>11 image builds, then the cluster and the app.</li>
+      <li>When it says <b>deploy succeeded</b>, the <b>Environments</b> card shows the app URL<span data-cloud="aws"> and <b>AtlasAllowlistIp</b></span>.</li>
+    </ol>
+
+    <!-- ============================================================ 10 -->
+    <h2 id="after"><span class="n">10</span>Right after the first deploy</h2>
+    <ol class="steps">
+      <li data-cloud="aws"><b>Push your secrets</b> (it prints names and key counts only):
+        <div class="code"><div class="lbl">PowerShell, repo root</div><button class="copy" type="button">Copy</button><pre data-tpl>$env:AWS_PROFILE='knowhere-app'; $env:AWS_REGION='{{REGION}}'; node infra/scripts/push-secrets.mjs</pre></div>
+        The pods pick them up within a few minutes (watch <b>Logs &amp; pods</b>).</li>
+      <li data-cloud="gcp azure" hidden><b>Secrets are already in place</b>: the deploy applied <code>k8s/secrets.yml</code> to the cluster.</li>
+      <li data-cloud="aws"><b>MongoDB Atlas → Network Access → Add IP Address</b>: the <b>AtlasAllowlistIp</b> output. It's static and survives node replacements.</li>
+      <li data-cloud="gcp azure" hidden><b>MongoDB Atlas → Network Access</b>: these nodes have no fixed outgoing IP. Either allow <code>0.0.0.0/0</code> and rely on a strong database password (Atlas always uses TLS), or add the IPs from <code>kubectl get nodes -o wide</code> and update them after node replacements.</li>
+      <li>Open the app URL and sign up. To make yourself the platform admin: Atlas → <b>Browse Collections</b> → the production auth database → <code>users</code> → your email → set <code>role</code> to <code>"admin"</code>, then sign out and back in.</li>
+      <li>Test an upload: it should appear in the <code data-tpl>knowhere-raw-{{B}}-{{REGION}}</code> bucket in the storage account.</li>
+    </ol>
+
+    <!-- ============================================================ 11 -->
+    <h2 id="dayto"><span class="n">11</span>Updates, rollback and teardown</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>You want to…</th><th>In the deploy manager</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Ship new code</td><td>Same form, <b>Deploy</b> again</td><td>Only changed images rebuild.</td></tr>
+        <tr><td>Undo a bad release</td><td><b>History → Roll back here</b></td><td>Redeploys that exact snapshot.</td></tr>
+        <tr data-cloud="aws"><td>Change secrets</td><td>Edit <code>k8s/secrets.yml</code>, run <code>push-secrets.mjs</code></td><td>No redeploy needed.</td></tr>
+        <tr data-cloud="gcp azure" hidden><td>Change secrets</td><td>Edit <code>k8s/secrets.yml</code>, <b>Deploy</b></td><td>The deploy re-applies the file.</td></tr>
+        <tr><td>Move the app to another cloud</td><td>Deploy there, then <b>Destroy</b> the old one</td><td>The media stays in the storage account.</td></tr>
+        <tr><td>Stop all app spending</td><td><b>Environments → Destroy</b></td><td>The storage buckets and your media are kept.</td></tr>
+      </tbody>
+    </table></div>
+
+    <!-- ============================================================ 12 -->
+    <h2 id="secrets"><span class="n">12</span>Where your secrets live, and are they safe?</h2>
+    <p><b>Yes, for this setup.</b> Nothing is in git or the images. In the cloud they are encrypted, and only the app and you can read them. Your PC holds the plaintext originals, so that's the part to protect.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Where</th><th>What</th><th>Protection</th></tr></thead>
+      <tbody>
+        <tr><td><b>Your PC</b>: <code>k8s/secrets.yml</code>, <code>packages/*/.env</code>, <code>.dev-keys.json</code></td><td>Plaintext originals</td><td>Gitignored (none tracked, none in history), excluded from images and CDK output. Keep BitLocker on.</td></tr>
+        <tr><td><b>Your PC</b>: <code>%USERPROFILE%\.aws\credentials</code><span data-cloud="gcp" hidden>, <code>C:\keys\knowhere-deployer.json</code></span><span data-cloud="azure" hidden>, the az login cache</span></td><td>Deploy credentials</td><td>Readable only by your Windows user. Each identity has least access. Rotate keys every few months.</td></tr>
+        <tr><td><b>Deploy manager</b>: <code>deploy/.state/</code></td><td>History, logs</td><td>No secret values in logs. The temporary <code>secrets.yml</code> copy is deleted after each job. The UI is localhost-only, behind a token.</td></tr>
+        <tr data-cloud="aws"><td><b>App account</b>: Secrets Manager <code>knowhere/*</code></td><td>App secrets</td><td>KMS-encrypted. Readable only by the External Secrets role and admins.</td></tr>
+        <tr><td><b>Inside the cluster</b></td><td>Secrets the pods read</td><td>Encrypted at rest by <span data-cloud="aws">EKS</span><span data-cloud="gcp" hidden>GKE</span><span data-cloud="azure" hidden>AKS</span>. Cluster admins only.</td></tr>
+        <tr data-cloud="aws"><td><b>Storage account</b></td><td>Nothing</td><td>The app uses an IAM role: no storage keys exist.</td></tr>
+        <tr data-cloud="gcp azure" hidden><td><b>Storage key</b> (<code>knowhere-app-storage</code>)</td><td>In <code>secrets.yml</code> and the cluster</td><td>Reaches only the two Knowhere buckets. To rotate: new key → update <code>secrets.yml</code> → Deploy → delete the old key.</td></tr>
+      </tbody>
+    </table></div>
+
+    <!-- ============================================================ 13 -->
+    <h2 id="trouble"><span class="n">13</span>Troubleshooting</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td>Copy says "Fill in the account ID first"</td><td>A policy still has a placeholder: type the ID in that part's box (4.1 or 5.1).</td></tr>
+        <tr><td>Red errors in the policy editor ("invalid ARN")</td><td>Same cause: an ID was missing when you copied. Fill it in, copy again, paste over.</td></tr>
+        <tr><td>"Add permissions" shows a list of AWS policies</td><td>That screen only attaches existing policies. Create the policy first under <b>Policies</b> (4.2 / 5.2), then find it there (<b>Filter by Type → Customer managed</b> helps).</td></tr>
+        <tr><td><code>AccessDenied</code> during the first bootstrap</td><td>Attach <code>AdministratorAccess</code> to that deploy user for one run, then remove it.</td></tr>
+        <tr><td>"Account verification in progress"</td><td>New AWS accounts: wait (up to 2 days), then deploy again.</td></tr>
+        <tr data-cloud="aws"><td>"The media profile … is account X, not Y"</td><td>Run <code>aws configure --profile knowhere-media</code> again with <b>storage-deployer.csv</b>.</td></tr>
+        <tr data-cloud="gcp" hidden><td>Pods in <code>ImagePullBackOff</code></td><td>Grant <b>Artifact Registry Reader</b> to the <i>Compute Engine default service account</i> (IAM → <code>&lt;project-number&gt;-compute@developer.gserviceaccount.com</code>).</td></tr>
+        <tr data-cloud="azure" hidden><td><code>AuthorizationFailed</code> on <code>--attach-acr</code></td><td>The Role Based Access Control Administrator assignment (5.3) is missing.</td></tr>
+        <tr data-cloud="gcp azure" hidden><td>Uploads fail (AccessDenied / CORS)</td><td>Check <code>media-secrets</code> and that <b>knowhere-app-storage</b> has <b>KnowhereAppStorage</b>. With a domain, the storage setup's <code>-c domainName</code> must match.</td></tr>
+        <tr><td>Build fails / PC runs out of memory</td><td>Close apps, give Docker Desktop more memory, then Deploy again.</td></tr>
+        <tr data-cloud="aws"><td>"No Spot capacity" / pods <code>Pending</code></td><td>Wait, or <b>spot = no</b> (+$9/month). Short on memory: <code>instanceType = t4g.large</code> (+$7/month).</td></tr>
+        <tr><td>MongoDB timeouts</td><td>The Atlas IP Access List doesn't include the app yet (part 10).</td></tr>
+        <tr><td>Anything else</td><td>Copy the error from the log panel and ask. It shows the exact failing command.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="muted" style="margin-top:32px">Prices are approximate list prices for Indian regions, excluding S3 usage, data transfer, MongoDB Atlas and Mistral. Free-trial terms are set by each cloud and can change.</p>
+  </main>
+</div>
+
+<script>
+  const DEFAULTS = {
+    A: '<APP_ACCOUNT_ID>', B: '<STORAGE_ACCOUNT_ID>', USER_A: 'knowhere-deployer', REGION: 'ap-south-1',
+    PROJECT: '<PROJECT_ID>', SUB: '<SUBSCRIPTION_ID>', DOMAIN: ''
+  };
+  const BOX = { APP_ACCOUNT_ID: 'v-A', STORAGE_ACCOUNT_ID: 'v-B', PROJECT_ID: 'v-P', SUBSCRIPTION_ID: 'v-S' };
+  const CLOUD_NAMES = { aws: 'AWS', gcp: 'Google Cloud', azure: 'Azure' };
+  const TAGS = { aws: '~$89 / month (EKS Lean)', gcp: 'free trial: $300 / 90 days', azure: 'free trial: $200 / 30 days' };
+  const store = {
+    get(k) { try { return localStorage.getItem('kh-guide:' + k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem('kh-guide:' + k, v); } catch { /* storage unavailable */ } }
+  };
+
+  // text templates: {{A}} {{B}} ... filled from the inputs (textContent only, never HTML)
+  const blocks = [...document.querySelectorAll('[data-tpl]')].map((el) => ({ el, tpl: el.textContent }));
+  const inputs = [...document.querySelectorAll('input[data-var]')];
+  function render() {
+    const v = {};
+    for (const i of inputs) v[i.dataset.var] = i.value.trim() || DEFAULTS[i.dataset.var];
+    v.DOMAIN_FLAG = v.DOMAIN ? `-c domainName=${v.DOMAIN}` : '';
+    v.DOMAIN_OR_EXAMPLE = v.DOMAIN || 'lms.example.com';
+    for (const b of blocks) b.el.textContent = b.tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => v[k] ?? '').replace(/ +$/gm, '');
+  }
+  for (const i of inputs) {
+    i.value = store.get(i.dataset.var) || '';
+    i.addEventListener('input', () => { store.set(i.dataset.var, i.value.trim()); render(); });
+  }
+
+  // app cloud picker: shows only that cloud's parts; storage step numbers shift when the
+  // extra KnowhereAppStorage steps (GCP/Azure) are shown
+  function pick(cloud) {
+    for (const b of document.querySelectorAll('[data-pick]')) b.setAttribute('aria-pressed', String(b.dataset.pick === cloud));
+    for (const el of document.querySelectorAll('[data-cloud]')) el.hidden = !el.dataset.cloud.split(' ').includes(cloud);
+    for (const el of document.querySelectorAll('.cloudname')) el.textContent = CLOUD_NAMES[cloud];
+    for (const el of document.querySelectorAll('.sn')) el.textContent = cloud === 'aws' ? el.dataset.aws : el.dataset.other;
+    document.getElementById('appTag').textContent = TAGS[cloud];
+    store.set('cloud', cloud);
+  }
+  for (const b of document.querySelectorAll('[data-pick]')) b.addEventListener('click', () => pick(b.dataset.pick));
+  pick(['aws', 'gcp', 'azure'].includes(store.get('cloud')) ? store.get('cloud') : 'aws');
+  render();
+
+  for (const btn of document.querySelectorAll('.copy')) {
+    btn.addEventListener('click', async () => {
+      const text = btn.parentElement.querySelector('pre').textContent;
+      // never copy a policy or command that still has an unfilled ID in it
+      const missing = text.match(/<(APP_ACCOUNT_ID|STORAGE_ACCOUNT_ID|PROJECT_ID|SUBSCRIPTION_ID)>/);
+      if (missing) {
+        const box = document.getElementById(BOX[missing[1]]);
+        btn.textContent = 'Fill in the account ID first';
+        box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => box.focus(), 400);
+        setTimeout(() => (btn.textContent = 'Copy'), 2500);
+        return;
+      }
+      try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; }
+      catch { btn.textContent = 'Select & copy'; }
+      setTimeout(() => (btn.textContent = 'Copy'), 1500);
+    });
+  }
+
+  const root = document.documentElement;
+  const saved = store.get('theme');
+  if (saved) root.dataset.theme = saved;
+  document.getElementById('themeBtn').addEventListener('click', () => {
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+    store.set('theme', root.dataset.theme);
+  });
+</script>
+</body>
+</html>

@@ -7,8 +7,9 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 // app account's storage role (the EKS service account used by course/media services) gets in.
 
 export interface MediaStackProps extends StackProps {
-  // the account running the app (EKS)
-  appAccount: string;
+  // the AWS account running the app (EKS). Unset when the app runs on GCP/Azure: it then uses an
+  // IAM user of this account whose own policy grants the buckets (see deploy/deployment-guide.html)
+  appAccount?: string;
   // browsers upload / stream from this origin (presigned URLs, cross-origin)
   appOrigin: string;
 }
@@ -43,6 +44,8 @@ export class KnowhereMediaStack extends Stack {
           }
         ]
       });
+      new CfnOutput(this, `${kind}BucketName`, { value: bucket.bucketName });
+      if (!props.appAccount) continue;
       const onlyStorageRole = {
         ArnLike: { 'aws:PrincipalArn': storageRoleArnPattern(props.appAccount) }
       };
@@ -62,7 +65,6 @@ export class KnowhereMediaStack extends Stack {
           conditions: onlyStorageRole
         })
       );
-      new CfnOutput(this, `${kind}BucketName`, { value: bucket.bucketName });
     }
   }
 }
