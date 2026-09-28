@@ -1,7 +1,8 @@
 import Course, {
   ICourseDocument,
   ICourseModuleEntry,
-  ICourseSettings
+  ICourseSettings,
+  ICourseCertificate
 } from '../models/course.model.js';
 
 class CourseDao {
@@ -19,6 +20,7 @@ class CourseDao {
     tags?: string[];
     modules?: ICourseModuleEntry[];
     settings?: Partial<ICourseSettings>;
+    certificate?: ICourseCertificate;
   }): Promise<ICourseDocument> {
     return await this.CourseModel.create(data);
   }

@@ -1,5 +1,6 @@
 import { body, param } from 'express-validator';
 import { JUDGE_LANGUAGES, signatureError } from '@lms/shared';
+import { certificateSignerValidators } from '../../shared/utils/certificateSigner.validator.js';
 import validateErrors from '../../shared/utils/validateErrors.util.js';
 
 export const uploadResourceValidators = [
@@ -147,6 +148,7 @@ export const createCourseValidators = [
     .optional()
     .isIn(['draft', 'published', 'archived'])
     .withMessage('status must be draft, published, or archived'),
+  ...certificateSignerValidators(true),
   validateErrors
 ];
 

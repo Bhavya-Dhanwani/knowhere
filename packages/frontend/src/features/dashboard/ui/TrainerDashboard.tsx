@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useSelector } from 'react-redux';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { BookOpen, Plus, Target, Users } from 'lucide-react';
+import { Award, BookOpen, Plus, Target, Users } from 'lucide-react';
 import { RootState } from '../../../app/store';
 import { lmsApi } from '../../../shared/api/lms';
 import { firstName } from '../../../shared/lib/format';
@@ -22,10 +22,12 @@ import { EmptyState } from '../../../shared/ui/EmptyState';
 import { Skeleton } from '../../../shared/ui/Skeleton';
 import { Dropdown } from '../../../shared/ui/Dropdown';
 import { CreateCourseModal } from '../../admin/ui/CreateCourseModal';
+import { IssueCertificatesDialog } from '../../certificate/ui/IssueCertificatesDialog';
 
 export const TrainerDashboard: React.FC = () => {
   const user = useSelector((s: RootState) => s.auth.user);
   const [creating, setCreating] = useState(false);
+  const [issuingFor, setIssuingFor] = useState<{ id: string; title: string } | null>(null);
   const navigate = useNavigate();
 
   const profile = useQuery({ queryKey: ['me', 'profile'], queryFn: lmsApi.myProfile });
@@ -145,10 +147,10 @@ export const TrainerDashboard: React.FC = () => {
           ) : teaching.length ? (
             <ul className="space-y-1">
               {teaching.map((c, i) => (
-                <li key={c.id}>
+                <li key={c.id} className="flex items-center gap-1">
                   <Link
                     to={`/admin/course/${c.id}`}
-                    className="block rounded-xl px-2 py-2.5 transition hover:bg-zinc-50"
+                    className="block min-w-0 flex-1 rounded-xl px-2 py-2.5 transition hover:bg-zinc-50"
                   >
                     <span className="flex items-center gap-2">
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
@@ -170,6 +172,15 @@ export const TrainerDashboard: React.FC = () => {
                       </span>
                     </span>
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => setIssuingFor(c)}
+                    title="Issue certificates"
+                    aria-label={`Issue certificates for ${c.title}`}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900"
+                  >
+                    <Award className="h-4 w-4" />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -197,6 +208,7 @@ export const TrainerDashboard: React.FC = () => {
         </Panel>
       </div>
 
+      <IssueCertificatesDialog course={issuingFor} onClose={() => setIssuingFor(null)} />
       <CreateCourseModal
         open={creating}
         onClose={() => setCreating(false)}

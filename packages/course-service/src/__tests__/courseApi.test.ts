@@ -372,6 +372,10 @@ describe('Course API Endpoints (/api/course/...) Integration Tests', () => {
           description: 'Become a fullstack engineer',
           modules: [],
           status: 'draft',
+          certificate: {
+            signerName: 'Dr. Priya Sharma',
+            signature: 'data:image/png;base64,iVBORw0KGgo='
+          },
           settings: {
             allowLateEnrollment: true,
             defaultModuleDurationDays: 7,

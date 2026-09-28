@@ -84,6 +84,14 @@ export const router = createBrowserRouter([
     )
   },
   { path: '/docs', lazy: lazyPage(() => import('../features/docs/ui/ApiDocsPage'), 'ApiDocsPage') },
+  // public certificate verification (the QR code on every certificate opens /verify/<id>)
+  ...['/verify', '/verify/:code'].map((path) => ({
+    path,
+    lazy: lazyPage(
+      () => import('../features/certificate/ui/VerifyCertificatePage'),
+      'VerifyCertificatePage'
+    )
+  })),
   // shareable profiles: domain.com/<username> (static routes always win over this one)
   {
     path: '/:username',

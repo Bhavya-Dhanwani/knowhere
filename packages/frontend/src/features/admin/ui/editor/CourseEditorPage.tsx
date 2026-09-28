@@ -6,6 +6,8 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  Award,
+  BadgeCheck,
   Boxes,
   CalendarClock,
   Eye,
@@ -31,6 +33,8 @@ import { contentApi } from '../../../course/api/contentApi';
 import { structureKey, useCourseStructure } from '../../../course/hooks/useCourseContent';
 import { ITEM_META } from '../../../course/ui/itemMeta';
 import { CourseMembersModal } from '../CourseMembersModal';
+import { CertificateSignerDialog } from '../../../certificate/ui/CertificateSignerDialog';
+import { IssueCertificatesDialog } from '../../../certificate/ui/IssueCertificatesDialog';
 import { OrderedPicker } from '../library/pickers';
 import { libraryKey } from '../library/LibraryDialogs';
 
@@ -108,6 +112,13 @@ export const CourseEditorPage: React.FC = () => {
   const { data, isLoading, error } = useCourseStructure(courseId);
   const [membersOpen, setMembersOpen] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [signing, setSigning] = useState(false);
+  const [issuing, setIssuing] = useState(false);
+  // who signs this course's certificates (the course structure doesn't carry it)
+  const signer = useQuery({
+    queryKey: ['course', courseId],
+    queryFn: () => lmsApi.getCourse(courseId)
+  });
   const [rescheduling, setRescheduling] = useState<{
     id: string;
     title: string;
@@ -209,6 +220,26 @@ export const CourseEditorPage: React.FC = () => {
                 <Users className="h-4 w-4" /> Members
               </Button>
             ) : null}
+            <Button
+              variant="outline"
+              onClick={() => setSigning(true)}
+              title={
+                signer.data?.certificate
+                  ? `Certificates signed by ${signer.data.certificate.signerName}`
+                  : 'No signature yet: learners cannot get certificates'
+              }
+            >
+              <Award className="h-4 w-4" /> Signature
+              {signer.data && !signer.data.certificate ? (
+                <span
+                  className="h-2 w-2 rounded-full bg-amber-500"
+                  aria-label="signature missing"
+                />
+              ) : null}
+            </Button>
+            <Button variant="outline" onClick={() => setIssuing(true)}>
+              <BadgeCheck className="h-4 w-4" /> Issue certificates
+            </Button>
             <Link to={`/course/${course.id}`}>
               <Button variant="outline">
                 <Eye className="h-4 w-4" /> Preview
@@ -363,6 +394,10 @@ export const CourseEditorPage: React.FC = () => {
         attached={modules.map((m) => m.id)}
         reschedule={rescheduling}
       />
+      <IssueCertificatesDialog course={issuing ? course : null} onClose={() => setIssuing(false)} />
+      {signing && signer.data ? (
+        <CertificateSignerDialog course={signer.data} onClose={() => setSigning(false)} />
+      ) : null}
       {isAdmin ? (
         <CourseMembersModal
           course={membersOpen ? course : null}

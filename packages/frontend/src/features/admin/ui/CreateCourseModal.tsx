@@ -6,6 +6,7 @@ import { Button } from '../../../shared/ui/Button';
 import { FormError } from '../../auth/ui/AuthControls';
 import { lmsApi, Course, CourseStatus } from '../../../shared/api/lms';
 import { cn } from '../../../shared/lib/cn';
+import { SignerFields } from '../../certificate/ui/SignaturePad';
 
 export const CreateCourseModal: React.FC<{
   open: boolean;
@@ -16,13 +17,20 @@ export const CreateCourseModal: React.FC<{
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<CourseStatus>('draft');
+  // who signs every completion certificate of this course (required)
+  const [signerName, setSignerName] = useState('');
+  const [signature, setSignature] = useState<string | null>(null);
 
   const m = useMutation({
     mutationFn: () =>
       lmsApi.createCourse({
         title: title.trim(),
         description: description.trim(),
-        status
+        status,
+        certificate: {
+          signerName: signerName.trim(),
+          signature: signature!
+        }
       }),
     onSuccess: (course) => {
       qc.invalidateQueries({ queryKey: ['courses'] });
@@ -30,11 +38,13 @@ export const CreateCourseModal: React.FC<{
       setTitle('');
       setDescription('');
       setStatus('draft');
+      setSignature(null);
+      setSignerName('');
       onClose();
     }
   });
 
-  const valid = title.trim().length >= 3;
+  const valid = title.trim().length >= 3 && signerName.trim().length >= 2 && !!signature;
 
   return (
     <Modal
@@ -110,6 +120,21 @@ export const CreateCourseModal: React.FC<{
               </button>
             ))}
           </div>
+        </fieldset>
+        <fieldset className="space-y-3">
+          <legend className="mb-1.5 text-[13px] font-medium text-zinc-700">
+            Certificate signature
+            <span className="block text-xs font-normal text-zinc-500">
+              Required. Printed on every completion certificate of this course, with a QR code to
+              verify it.
+            </span>
+          </legend>
+          <SignerFields
+            name={signerName}
+            onName={setSignerName}
+            signature={signature}
+            onSignature={setSignature}
+          />
         </fieldset>
       </form>
     </Modal>

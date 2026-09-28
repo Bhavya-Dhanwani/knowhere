@@ -35,6 +35,8 @@ export const RESERVED_USERNAMES = new Set([
   'u',
   'user',
   'users',
+  'verify',
+  'certificates',
   'www',
   'lms-raw-media',
   'lms-transcoded-media',

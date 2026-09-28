@@ -10,6 +10,11 @@ function sanitizeCourse(course: Record<string, unknown> | null | undefined) {
     status: c.status,
     tags: c.tags,
     moduleCount: Array.isArray(c.modules) ? c.modules.length : 0,
+    certificate: c.certificate
+      ? {
+          signerName: (c.certificate as { signerName: string }).signerName
+        }
+      : null,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt
   };

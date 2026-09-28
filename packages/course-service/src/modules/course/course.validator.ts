@@ -1,6 +1,7 @@
 // Importing modules
 import { body, param } from 'express-validator';
 import validateErrors from '../../shared/utils/validateErrors.util.js';
+import { certificateSignerValidators } from '../../shared/utils/certificateSigner.validator.js';
 
 export const createCourseValidators = [
   body('title')
@@ -30,6 +31,8 @@ export const updateCourseValidators = [
     .optional()
     .isIn(['draft', 'published', 'archived'])
     .withMessage('Status must be one of: draft, published, archived'),
+
+  ...certificateSignerValidators(false),
 
   validateErrors
 ];

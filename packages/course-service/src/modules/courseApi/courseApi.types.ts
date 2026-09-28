@@ -106,6 +106,7 @@ export interface CreateCourseBody {
   description?: string;
   modules?: string[];
   status?: 'draft' | 'published' | 'archived';
+  certificate: { signerName: string; signature: string };
   settings?: {
     allowLateEnrollment?: boolean;
     defaultModuleDurationDays?: number;

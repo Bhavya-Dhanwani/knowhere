@@ -11,6 +11,7 @@ import { cn } from '../../../shared/lib/cn';
 import { contentApi, flattenItems } from '../api/contentApi';
 import { structureKey, useCourseStructure } from '../hooks/useCourseContent';
 import { CourseOutline } from './CourseOutline';
+import { CourseCertificatePanel } from '../../certificate/ui/CourseCertificatePanel';
 
 const compact = (n: number) =>
   n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 1 : 2).replace(/\.?0+$/, '')}k` : String(n);
@@ -174,6 +175,9 @@ export const CoursePage: React.FC = () => {
               ) : null}
             </div>
           )}
+          {data.enrolled && !isStaff ? (
+            <CourseCertificatePanel courseId={course.id} completedCount={stats.completedCount} />
+          ) : null}
         </section>
 
         {/* modules */}

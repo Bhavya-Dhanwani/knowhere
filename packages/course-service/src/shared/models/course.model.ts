@@ -19,6 +19,12 @@ export interface ICourseSettings {
   progressionThreshold: number;
 }
 
+// who signs the course's completion certificates; captured when the course is created
+export interface ICourseCertificate {
+  signerName: string;
+  signature: string; // PNG data URL
+}
+
 export interface ICourseDocument extends Document {
   _id: Types.ObjectId;
   title: string;
@@ -28,6 +34,7 @@ export interface ICourseDocument extends Document {
   tags: string[];
   modules: ICourseModuleEntry[];
   settings: ICourseSettings;
+  certificate?: ICourseCertificate;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -98,6 +105,13 @@ const courseSchema = new Schema<ICourseDocument>(
     modules: {
       type: [courseModuleEntrySchema],
       default: []
+    },
+    certificate: {
+      type: new Schema<ICourseCertificate>(
+        { signerName: String, signature: String },
+        { _id: false }
+      ),
+      default: undefined
     },
     settings: {
       type: courseSettingsSchema,

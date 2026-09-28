@@ -15,8 +15,46 @@ export interface Course {
   status: CourseStatus;
   tags: string[];
   moduleCount: number;
+  // who signs the completion certificates (the image itself is not listed)
+  certificate?: { signerName: string } | null;
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface CertificateSigner {
+  signerName: string;
+  signature: string; // PNG data URL
+}
+
+// an issued certificate, exactly as the public verification page shows it
+export interface IssuedCertificate {
+  code: string;
+  learnerName: string;
+  courseTitle: string;
+  signerName: string;
+  signature: string;
+  percentage: number;
+  completedAt: string;
+  issuedAt: string;
+}
+
+// staff view of one learner of a course
+export interface CertificateLearner {
+  userId: string;
+  name: string;
+  totalItems: number;
+  completedItems: number;
+  complete: boolean;
+  percentage: number;
+  certificate: IssuedCertificate | null;
+}
+
+export interface CertificateStatus {
+  eligible: boolean;
+  hasSigner: boolean;
+  totalItems: number;
+  completedItems: number;
+  certificate: IssuedCertificate | null;
 }
 
 export interface PlatformUser {
@@ -133,6 +171,7 @@ const toCourse = (c: Raw): Course => ({
   status: (c.status as CourseStatus) || 'draft',
   tags: (c.tags as string[]) || [],
   moduleCount: Number(c.moduleCount || 0),
+  certificate: (c.certificate as Course['certificate']) || null,
   createdAt: String(c.createdAt || ''),
   updatedAt: c.updatedAt ? String(c.updatedAt) : undefined
 });
@@ -168,6 +207,7 @@ export const lmsApi = {
     description?: string;
     status?: CourseStatus;
     modules?: string[];
+    certificate?: CertificateSigner;
   }) =>
     call(async () => {
       const { courseId } = data<{ courseId: string }>(await axiosClient.post('/course', input));
@@ -176,8 +216,48 @@ export const lmsApi = {
 
   updateCourse: (
     id: string,
-    input: Partial<{ title: string; description: string; status: CourseStatus }>
+    input: Partial<{
+      title: string;
+      description: string;
+      status: CourseStatus;
+      certificate: CertificateSigner;
+    }>
   ) => call(async () => toCourse(data<Raw>(await axiosClient.put(`/courses/${id}`, input)))),
+
+  // ---- certificates (course-service)
+  certificateStatus: (courseId: string) =>
+    call(async () =>
+      data<CertificateStatus>(await axiosClient.get(`/courses/${courseId}/certificate`))
+    ),
+
+  claimCertificate: (courseId: string) =>
+    call(async () =>
+      data<IssuedCertificate>(await axiosClient.post(`/courses/${courseId}/certificate`))
+    ),
+
+  // staff: every learner of the course, with completion and certificate
+  courseCertificates: (courseId: string) =>
+    call(async () =>
+      data<{ hasSigner: boolean; signerName: string | null; learners: CertificateLearner[] }>(
+        await axiosClient.get(`/courses/${courseId}/certificates`)
+      )
+    ),
+
+  // staff: issue to many learners at once; learners who already have one are skipped
+  issueCertificates: (courseId: string, userIds: string[]) =>
+    call(async () =>
+      data<{ issued: string[]; skipped: { userId: string; reason: string }[] }>(
+        await axiosClient.post(`/courses/${courseId}/certificates/issue`, { userIds })
+      )
+    ),
+
+  // public: works signed out (the QR code on a printed certificate lands here)
+  verifyCertificate: (code: string) =>
+    call(async () =>
+      data<IssuedCertificate>(
+        await axiosClient.get(`/courses/certificates/verify/${encodeURIComponent(code)}`)
+      )
+    ),
 
   myProgress: (courseId: string) =>
     call(async () => {

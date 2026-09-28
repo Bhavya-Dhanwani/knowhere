@@ -5,6 +5,7 @@ import courseRouter from '../../modules/course/course.router.js';
 import progressRouter from '../../modules/progress/progress.router.js';
 import courseApiRouter from '../../modules/courseApi/courseApi.router.js';
 import coachRouter from '../../modules/coach/coach.router.js';
+import certificateRouter from '../../modules/certificate/certificate.router.js';
 
 // making the router
 const router = express.Router();
@@ -13,6 +14,8 @@ const router = express.Router();
 router.use('/health', healthRouter);
 router.use('/course/coach', coachRouter);
 router.use('/course', courseApiRouter);
+// before the course routers: /courses/certificates/... must not be read as a course id
+router.use('/courses', certificateRouter);
 router.use('/courses', progressRouter);
 router.use('/courses', courseRouter);
 

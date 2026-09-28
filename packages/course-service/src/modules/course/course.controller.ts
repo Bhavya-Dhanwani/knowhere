@@ -12,6 +12,7 @@ import {
   openCourse,
   requireCourse
 } from '../../services/access.service.js';
+import { pickSigner } from '../../shared/utils/certificateSigner.validator.js';
 import Ok from '../../shared/responses/Ok.response.js';
 
 const param = (v: string | string[]) => (Array.isArray(v) ? v[0] : v);
@@ -25,11 +26,12 @@ class CourseController {
     try {
       const course = await requireCourse(param(req.params.id));
       await assertCanManageCourse(req.user!, course);
-      const { title, description, status } = req.body;
+      const { title, description, status, certificate } = req.body;
       const updated = await this.courseDao.updateCourseById(course._id.toString(), {
         ...(title !== undefined && { title }),
         ...(description !== undefined && { description }),
-        ...(status !== undefined && { status })
+        ...(status !== undefined && { status }),
+        ...(certificate !== undefined && { certificate: pickSigner(certificate) })
       });
       return Ok(res, 'Course updated successfully', sanitizeCourse(updated!.toObject()));
     } catch (error) {

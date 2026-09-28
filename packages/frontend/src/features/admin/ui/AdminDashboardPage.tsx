@@ -4,6 +4,7 @@ import { useSelector } from 'react-redux';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Archive,
+  Award,
   BookOpen,
   Eye,
   MoreHorizontal,
@@ -38,6 +39,7 @@ import { CourseCover } from '../../../shared/ui/CourseCover';
 import { timeAgo } from '../../../shared/lib/format';
 import { CreateCourseModal } from './CreateCourseModal';
 import { CourseMembersModal } from './CourseMembersModal';
+import { IssueCertificatesDialog } from '../../certificate/ui/IssueCertificatesDialog';
 
 type Section = 'overview' | 'courses' | 'people';
 
@@ -382,6 +384,7 @@ const CoursesSection: React.FC<{ courses?: Course[]; loading: boolean; error: un
   const [filter, setFilter] = useState<'all' | CourseStatus>('all');
   const [query, setQuery] = useState('');
   const [membersOf, setMembersOf] = useState<Course | null>(null);
+  const [certificatesOf, setCertificatesOf] = useState<Course | null>(null);
 
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: CourseStatus }) =>
@@ -458,6 +461,9 @@ const CoursesSection: React.FC<{ courses?: Course[]; loading: boolean; error: un
                   <Button size="sm" variant="outline" onClick={() => setMembersOf(c)}>
                     <Users className="h-3.5 w-3.5" /> Members
                   </Button>
+                  <Button size="sm" variant="outline" onClick={() => setCertificatesOf(c)}>
+                    <Award className="h-3.5 w-3.5" /> Certificates
+                  </Button>
                   <Link to={`/admin/course/${c.id}`}>
                     <Button size="sm" variant="outline">
                       <PenLine className="h-3.5 w-3.5" /> Edit
@@ -485,6 +491,7 @@ const CoursesSection: React.FC<{ courses?: Course[]; loading: boolean; error: un
         <p className="text-sm text-red-600">{(setStatus.error as Error).message}</p>
       ) : null}
       <CourseMembersModal course={membersOf} onClose={() => setMembersOf(null)} />
+      <IssueCertificatesDialog course={certificatesOf} onClose={() => setCertificatesOf(null)} />
     </div>
   );
 };

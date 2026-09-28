@@ -41,6 +41,7 @@ import Forbidden from '../../shared/errors/Forbidden.error.js';
 import Unauthorized from '../../shared/errors/Unauthorized.error.js';
 import logger from '../../shared/config/logger.config.js';
 import env from '../../shared/config/env.config.js';
+import { pickSigner } from '../../shared/utils/certificateSigner.validator.js';
 import {
   assertCanManageCourse,
   assertContentAccess,
@@ -402,7 +403,7 @@ class CourseApiController {
   // 6. POST /api/course — modules optional; each starts released now (schedule later via add-module)
   createCourse = async (req: CreateCourseRequest, res: Response, next: NextFunction) => {
     try {
-      const { title, description, modules = [], status, settings } = req.body;
+      const { title, description, modules = [], status, settings, certificate } = req.body;
 
       if (modules.length) {
         assertAllFound('module', modules, await this.moduleDao.findModulesByIds(modules));
@@ -414,6 +415,7 @@ class CourseApiController {
         description: description || '',
         instructorId: req.user!.userId,
         status: status || 'draft',
+        certificate: pickSigner(certificate),
         modules: modules.map((modId, idx) => ({
           moduleId: new Types.ObjectId(modId),
           order: idx + 1,
