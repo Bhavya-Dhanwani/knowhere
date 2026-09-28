@@ -1,0 +1,26 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/knowhere.ts",
+  "context": {
+    "region": "ap-south-1",
+    "arch": "arm64",
+    "domainName": "",
+    "hostedZoneId": "",
+    "hostedZoneName": "",
+    "adminPrincipalArn": "",
+    "nodeInstanceType": "m7g.large",
+    "nodeCount": 3,
+    "judgeInstanceType": "c7g.xlarge",
+    "livekitInstanceType": "c7g.large",
+    "mediaAccount": "",
+    "mediaRegion": "",
+    "appAccount": "",
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+    "@aws-cdk/core:target-partitions": ["aws"],
+    "plan": "standard",
+    "spot": "no",
+    "instanceType": ""
+  },
+  "watch": {
+    "exclude": ["cdk.out", "node_modules"]
+  }
+}

@@ -7,3 +7,13 @@ dist
 .gemini
 *.log
 .pnpm-store
+# secrets never enter a build context (or CDK's cdk.out asset staging)
+**/.env
+**/.env.*
+!**/.env.example
+k8s/secrets.yml
+.dev-keys.json
+# large local folders
+infra
+graphify-out
+ui-e2e-shots

@@ -31,16 +31,19 @@ class UserProfileDao {
     return await this.UserProfileModel.find({ userId: { $in: userIds } });
   }
 
-  async upsertProfile(
-    userId: string,
-    updateData: {
-      name?: string;
-      email?: string;
-      avatar?: string;
-      bio?: string;
-      phone?: string;
-    }
-  ) {
+  async findProfileByUsername(username: string) {
+    return await this.UserProfileModel.findOne({ username: username.toLowerCase() });
+  }
+
+  async usernameTaken(username: string, exceptUserId?: string) {
+    const hit = await this.UserProfileModel.exists({
+      username: username.toLowerCase(),
+      ...(exceptUserId ? { userId: { $ne: exceptUserId } } : {})
+    });
+    return Boolean(hit);
+  }
+
+  async upsertProfile(userId: string, updateData: Record<string, unknown>) {
     return await this.UserProfileModel.findOneAndUpdate(
       { userId },
       { $set: updateData },

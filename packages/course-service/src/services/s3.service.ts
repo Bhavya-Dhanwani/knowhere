@@ -25,10 +25,15 @@ const clientFor = (endpoint?: string) =>
   new S3Client({
     region: env.AWS_REGION,
     ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
-    credentials: {
-      accessKeyId: env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: env.AWS_SECRET_ACCESS_KEY
-    }
+    // no static keys (e.g. EKS with IRSA): the SDK's default chain uses the pod's IAM role
+    ...(env.AWS_ACCESS_KEY_ID
+      ? {
+          credentials: {
+            accessKeyId: env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: env.AWS_SECRET_ACCESS_KEY
+          }
+        }
+      : {})
   });
 
 class S3Service {

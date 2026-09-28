@@ -21,3 +21,23 @@ eval_logs/
 .dev-keys.json.*.tmp
 # graphify: machine-local cache
 graphify-out/cache/
+
+# credentials that must never be committed (keys, certs, cloud and cluster credentials)
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+kubeconfig
+*.kubeconfig
+.aws/
+.azure/
+.gcloud/
+*service-account*.json
+*-sa.json
+*credentials*.json
+# CDK context caches account ids and lookups; deploy manager state holds history and logs
+cdk.context.json
+deploy/.state/
+# browser-test screenshots can show real data
+ui-e2e-shots/

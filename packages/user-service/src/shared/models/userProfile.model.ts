@@ -41,7 +41,52 @@ const userProfileSchema = new mongoose.Schema(
     phone: {
       type: String,
       default: ''
-    }
+    },
+
+    // shareable profile at domain.com/<username>
+    username: { type: String, trim: true, lowercase: true, unique: true, sparse: true },
+    // platform role, kept in sync from the access token (shown on the public profile)
+    role: { type: String, enum: ['trainee', 'trainer', 'admin'], default: 'trainee' },
+    // public: anyone with the link; members: signed-in users; private: only the owner
+    visibility: { type: String, enum: ['public', 'members', 'private'], default: 'public' },
+    headline: { type: String, default: '', maxlength: 120 },
+    location: { type: String, default: '', maxlength: 80 },
+    links: [{ _id: false, label: String, url: String }],
+    skills: [String],
+    interests: [String],
+    qualifications: [
+      {
+        _id: false,
+        degree: String,
+        field: String,
+        institution: String,
+        startYear: Number,
+        endYear: Number,
+        grade: String
+      }
+    ],
+    experience: [
+      {
+        _id: false,
+        title: String,
+        organization: String,
+        location: String,
+        // YYYY-MM; an empty endDate means "present"
+        startDate: String,
+        endDate: String,
+        description: String
+      }
+    ],
+    certificates: [
+      {
+        _id: false,
+        name: String,
+        issuer: String,
+        issuedOn: String,
+        credentialId: String,
+        url: String
+      }
+    ]
   },
   {
     timestamps: true

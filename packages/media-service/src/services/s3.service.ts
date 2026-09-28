@@ -9,10 +9,15 @@ class S3Service {
   constructor() {
     this.s3Client = new S3Client({
       region: env.AWS_REGION,
-      credentials: {
-        accessKeyId: env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: env.AWS_SECRET_ACCESS_KEY
-      }
+      // no static keys (e.g. EKS with IRSA): the SDK's default chain uses the pod's IAM role
+      ...(env.AWS_ACCESS_KEY_ID
+        ? {
+            credentials: {
+              accessKeyId: env.AWS_ACCESS_KEY_ID,
+              secretAccessKey: env.AWS_SECRET_ACCESS_KEY
+            }
+          }
+        : {})
     });
   }
 

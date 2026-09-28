@@ -58,13 +58,61 @@ export interface CourseGrades {
   }[];
 }
 
+export interface Qualification {
+  degree: string;
+  field?: string;
+  institution: string;
+  startYear?: number;
+  endYear?: number;
+  grade?: string;
+}
+export interface Experience {
+  title: string;
+  organization: string;
+  location?: string;
+  startDate?: string; // YYYY-MM
+  endDate?: string; // YYYY-MM, empty = present
+  description?: string;
+}
+export interface Certificate {
+  name: string;
+  issuer?: string;
+  issuedOn?: string; // YYYY-MM
+  credentialId?: string;
+  url?: string;
+}
+export interface ProfileLink {
+  label: string;
+  url: string;
+}
+
+// the professional profile: editable by its owner, shareable at domain.com/<username>
 export interface Profile {
   userId: string;
   name: string;
   email: string;
   avatar?: string;
   bio?: string;
+  phone?: string;
+  username?: string;
+  role?: BackendRole;
+  visibility?: 'public' | 'members' | 'private';
+  headline?: string;
+  location?: string;
+  links?: ProfileLink[];
+  skills?: string[];
+  interests?: string[];
+  qualifications?: Qualification[];
+  experience?: Experience[];
+  certificates?: Certificate[];
 }
+
+export type PublicProfile = Omit<Profile, 'userId' | 'email' | 'phone' | 'visibility'> & {
+  username: string;
+  memberSince?: string;
+  isOwner: boolean;
+  stats: { learning: number; teaching: number };
+};
 
 type Raw = Record<string, unknown>;
 const data = <T>(res: { data?: { data?: T } }): T => res.data?.data as T;
@@ -181,6 +229,22 @@ export const lmsApi = {
         memberships: (d?.courses || []).map(toMembership)
       };
     }),
+
+  updateMyProfile: (patch: Partial<Profile>) =>
+    call(async () => data<Profile>(await axiosClient.put('/profile/me', patch))),
+
+  usernameAvailable: (u: string) =>
+    call(async () =>
+      data<{ username: string; available: boolean; reason: string | null }>(
+        await axiosClient.get('/profile/username-available', { params: { u } })
+      )
+    ),
+
+  // the shareable page; signed-in viewers send their token (members-only profiles)
+  publicProfile: (username: string) =>
+    call(async () =>
+      data<PublicProfile>(await axiosClient.get(`/profiles/u/${encodeURIComponent(username)}`))
+    ),
 
   getProfile: (userId: string) =>
     call(async () => data<Profile>(await axiosClient.get(`/profiles/${userId}`))),

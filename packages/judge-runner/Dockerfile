@@ -13,10 +13,10 @@ RUN apt-get update \
     libgtest-dev libgmock-dev catch2 doctest-dev \
     ca-certificates curl libcurl4 \
  # mongod only (for tests of MERN/Python apps; runs inside the offline sandbox on localhost)
- && case "$TARGETARCH" in \
+ && case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
       amd64) MONGO=mongodb-linux-x86_64-debian12-7.0.14 ;; \
       arm64) MONGO=mongodb-linux-aarch64-ubuntu2204-7.0.14 ;; \
-      *) echo "unsupported arch $TARGETARCH" && exit 1 ;; \
+      *) echo "unsupported arch ${TARGETARCH:-$(dpkg --print-architecture)}" && exit 1 ;; \
     esac \
  && curl -fsSL "https://fastdl.mongodb.org/linux/$MONGO.tgz" | tar -xz -C /tmp \
  && install -m 0755 "/tmp/$MONGO/bin/mongod" /usr/local/bin/mongod \

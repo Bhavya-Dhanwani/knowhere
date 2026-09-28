@@ -1,0 +1,26 @@
+{
+  "name": "knowhere-infra",
+  "private": true,
+  "version": "1.0.0",
+  "description": "AWS CDK: EKS (web services), EC2 (LiveKit voice + sandboxed judge), ElastiCache, S3, ECR, Secrets Manager",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy",
+    "destroy": "cdk destroy"
+  },
+  "dependencies": {
+    "@aws-cdk/lambda-layer-kubectl-v35": "^2.2.2",
+    "aws-cdk-lib": "^2.271.0",
+    "constructs": "^10.8.1",
+    "js-yaml": "^4.3.2"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.20.4",
+    "aws-cdk": "^2.1143.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}

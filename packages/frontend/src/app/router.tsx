@@ -84,6 +84,11 @@ export const router = createBrowserRouter([
     )
   },
   { path: '/docs', lazy: lazyPage(() => import('../features/docs/ui/ApiDocsPage'), 'ApiDocsPage') },
+  // shareable profiles: domain.com/<username> (static routes always win over this one)
+  {
+    path: '/:username',
+    lazy: lazyPage(() => import('../features/profile/ui/PublicProfilePage'), 'PublicProfilePage')
+  },
   {
     element: <AppShell />,
     loader: requireAuth,
@@ -98,6 +103,13 @@ export const router = createBrowserRouter([
       },
       // legacy lesson URLs from the old viewer land on the course overview
       { path: '/course/:id/submodule/*', loader: ({ params }) => redirect(`/course/${params.id}`) },
+      {
+        path: '/profile',
+        lazy: lazyPage(
+          () => import('../features/profile/ui/ProfileEditorPage'),
+          'ProfileEditorPage'
+        )
+      },
       {
         path: '/coach',
         lazy: lazyPage(() => import('../features/coach/ui/CoachPage'), 'CoachPage')

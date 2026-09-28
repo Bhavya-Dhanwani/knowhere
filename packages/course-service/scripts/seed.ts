@@ -338,6 +338,85 @@ const PEOPLE = [
 ] as const;
 type PersonKey = (typeof PEOPLE)[number]['key'];
 
+// professional profiles (qualifications, experience, skills, certificates) for the demo accounts
+const PROFILE_DETAILS: Partial<Record<PersonKey, Record<string, unknown>>> = {
+  sarah: {
+    headline: 'Lead instructor · Distributed systems & Kubernetes',
+    location: 'Bengaluru, India',
+    skills: ['Kubernetes', 'Go', 'System design', 'Distributed systems', 'AWS', 'Kafka'],
+    interests: ['Consensus algorithms', 'Mentoring', 'Site reliability'],
+    links: [{ label: 'GitHub', url: 'https://github.com/' }],
+    qualifications: [
+      {
+        degree: 'M.Tech',
+        field: 'Computer Science',
+        institution: 'IIT Bombay',
+        startYear: 2012,
+        endYear: 2014
+      }
+    ],
+    experience: [
+      {
+        title: 'Staff Engineer',
+        organization: 'CloudScale',
+        startDate: '2019-04',
+        endDate: '2024-06',
+        description: 'Led the platform team running 400+ services on Kubernetes.'
+      },
+      { title: 'Lead Instructor', organization: 'Knowhere', startDate: '2024-07', endDate: '' }
+    ],
+    certificates: [
+      { name: 'Certified Kubernetes Administrator', issuer: 'CNCF', issuedOn: '2022-03' },
+      {
+        name: 'AWS Solutions Architect – Professional',
+        issuer: 'Amazon Web Services',
+        issuedOn: '2023-01'
+      }
+    ]
+  },
+  arjun: {
+    headline: 'Frontend architect · React, TypeScript, design systems',
+    location: 'Pune, India',
+    skills: ['React', 'TypeScript', 'Design systems', 'Accessibility', 'Performance'],
+    interests: ['Web platform', 'Motion design'],
+    experience: [
+      { title: 'Frontend Architect', organization: 'PixelWorks', startDate: '2020-02', endDate: '' }
+    ],
+    certificates: [{ name: 'Web Accessibility Specialist', issuer: 'IAAP', issuedOn: '2021-09' }]
+  },
+  alex: {
+    headline: 'Full-stack learner · distributed systems',
+    location: 'Mumbai, India',
+    skills: ['JavaScript', 'Node.js', 'React', 'MongoDB', 'Docker'],
+    interests: ['Distributed systems', 'Open source', 'Competitive programming'],
+    links: [{ label: 'GitHub', url: 'https://github.com/' }],
+    qualifications: [
+      {
+        degree: 'B.Tech',
+        field: 'Information Technology',
+        institution: 'VJTI Mumbai',
+        startYear: 2021,
+        endYear: 2025
+      }
+    ],
+    experience: [
+      {
+        title: 'Software Engineering Intern',
+        organization: 'FinStack',
+        startDate: '2024-05',
+        endDate: '2024-08',
+        description: 'Built a payments reconciliation service in Node.js.'
+      }
+    ],
+    certificates: [{ name: 'MongoDB Associate Developer', issuer: 'MongoDB', issuedOn: '2024-11' }]
+  },
+  sophia: {
+    headline: 'Competitive programmer · backend enthusiast',
+    skills: ['C++', 'Algorithms', 'Python', 'PostgreSQL'],
+    interests: ['Graph algorithms', 'Databases']
+  }
+};
+
 async function main() {
   const ids = {} as Record<PersonKey, string>;
 
@@ -954,7 +1033,18 @@ async function main() {
     for (const p of PEOPLE) {
       await UserProfile.findOneAndUpdate(
         { userId: ids[p.key] },
-        { userId: ids[p.key], name: p.name, email: p.email, bio: p.bio, avatar: '' },
+        {
+          userId: ids[p.key],
+          name: p.name,
+          email: p.email,
+          bio: p.bio,
+          avatar: '',
+          role: p.role,
+          visibility: 'public',
+          // shareable at /<username>, e.g. /alex-rivera
+          username: p.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          ...(PROFILE_DETAILS[p.key] || {})
+        },
         { upsert: true }
       );
     }

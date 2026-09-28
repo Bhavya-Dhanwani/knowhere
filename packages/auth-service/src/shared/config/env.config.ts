@@ -45,4 +45,13 @@ const env = parsedEnv.data;
 // access-token keys: dev defaults locally, required in production
 assertKeysConfigured('issuer');
 
+// the refresh secret signs every session: never run production on the public dev placeholder
+if (
+  env.NODE_ENV === 'production' &&
+  (!process.env.REFRESH_TOKEN_SECRET ||
+    env.REFRESH_TOKEN_SECRET === envConstants.REFRESH_TOKEN_SECRET)
+) {
+  throw new Error('REFRESH_TOKEN_SECRET must be set to a real secret in production.');
+}
+
 export default env;

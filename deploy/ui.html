@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Deploy Manager</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#18181b; --muted:#71717a; --line:#e4e4e7; --soft:#f4f4f5; --ok:#047857; --okbg:#ecfdf5; --bad:#b91c1c; --badbg:#fef2f2; --run:#1d4ed8; --runbg:#eff6ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:12px; padding:12px 20px; background:#ffffffe6; backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
+  header b { font-size:15px; } .logo { width:28px; height:28px; border-radius:8px; background:var(--ink); color:#fff; display:grid; place-items:center; font-weight:700; }
+  main { display:grid; grid-template-columns: 380px minmax(0,1fr); gap:16px; padding:16px 20px; max-width:1500px; margin:0 auto; }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; }
+  .card h2 { margin:0; padding:12px 16px; font-size:14px; border-bottom:1px solid var(--line); background:#fafafa; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .pad { padding:14px 16px; } .stack > * + * { margin-top:12px; }
+  label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+  input, select { width:100%; height:36px; border:1px solid var(--line); border-radius:10px; padding:0 10px; font:inherit; background:#fff; color:var(--ink); }
+  input:focus, select:focus { outline:none; border-color:#a1a1aa; }
+  button { height:32px; border-radius:9px; border:1px solid var(--line); background:#fff; color:var(--ink); padding:0 12px; font:inherit; font-weight:500; cursor:pointer; }
+  button:hover { background:var(--soft); } button.primary { background:var(--ink); color:#fff; border-color:var(--ink); } button.primary:hover { background:#27272a; }
+  button.danger { color:var(--bad); } button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; background:var(--soft); color:var(--muted); }
+  .succeeded,.live { background:var(--okbg); color:var(--ok); } .failed,.destroyed,.interrupted { background:var(--badbg); color:var(--bad); } .running { background:var(--runbg); color:var(--run); }
+  .muted { color:var(--muted); } .mono { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; }
+  .env { border:1px solid var(--line); border-radius:12px; padding:12px; } .env + .env { margin-top:10px; }
+  .env .t { font-weight:600; } .env a { color:var(--ink); }
+  table { width:100%; border-collapse:collapse; } th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; color:var(--muted); font-weight:500; background:#fafafa; } tr.sel td { background:#fafafa; }
+  .scroll { max-height:340px; overflow:auto; }
+  pre { margin:0; padding:12px 16px; height:420px; overflow:auto; background:#0c0c0e; color:#e4e4e7; font:12px/1.5 ui-monospace,Consolas,monospace; white-space:pre-wrap; word-break:break-word; }
+  .tabs button { border:none; background:transparent; height:28px; } .tabs button.on { background:#fff; border:1px solid var(--line); }
+  .warn { background:#fffbeb; color:#92400e; border:1px solid #fde68a; border-radius:10px; padding:8px 10px; font-size:12px; }
+  .pods td { padding:6px 12px; }
+  .plans-wrap { max-width:1500px; margin:0 auto; padding:16px 20px 0; }
+  .plans { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
+  .plan { display:flex; flex-direction:column; gap:10px; background:#fff; border:1px solid var(--line); border-radius:16px; padding:16px; }
+  .plan.chosen { border-color:var(--ink); box-shadow:0 0 0 1px var(--ink); }
+  .plan .price { font-size:26px; font-weight:700; letter-spacing:-.02em; } .plan .price small { font-size:13px; font-weight:500; color:var(--muted); }
+  .plan h3 { margin:0; font-size:16px; } .plan p { margin:0; }
+  .plan ul { margin:0; padding-left:18px; } .plan li { margin:2px 0; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:13px; } .kv dt { color:var(--muted); } .kv dd { margin:0; }
+  .lim li { color:#92400e; } .runs li { color:#3f3f46; }
+  details summary { cursor:pointer; color:var(--muted); font-size:12px; }
+  .chip { height:28px; border-radius:999px; padding:0 12px; } .chip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .cmp td, .cmp th { white-space:nowrap; } .cmp td.wrap { white-space:normal; min-width:180px; }
+  .yes { color:var(--ok); font-weight:600; } .no { color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">K</div><b>Knowhere deploy manager</b>
+  <span id="running" class="badge"></span>
+  <span class="muted" style="margin-left:auto" id="clock"></span>
+</header>
+<div class="plans-wrap stack">
+  <section class="card">
+    <h2>Plans &amp; pricing <span class="muted" style="font-weight:400" id="pricingNote"></span></h2>
+    <div class="pad stack">
+      <div class="row">
+        <span class="row" id="cloudChips"></span>
+        <span class="muted" style="margin-left:auto">Budget ≤ $</span>
+        <input id="budget" type="number" min="0" placeholder="any" style="width:110px" />
+        <span class="muted">/ month</span>
+      </div>
+      <div class="plans" id="plans"></div>
+    </div>
+  </section>
+  <section class="card">
+    <h2>Compare plans <span class="muted" style="font-weight:400">cheapest first</span></h2>
+    <div class="scroll" style="max-height:none"><table class="cmp"><thead><tr><th>Plan</th><th>Cloud</th><th>$/month</th><th>Kubernetes</th><th>Capacity</th><th>Nodes</th><th>Spot</th><th>Survives a node failure</th><th>First deploy</th><th>Best for</th><th></th></tr></thead><tbody id="compare"></tbody></table></div>
+  </section>
+</div>
+<main>
+  <div class="stack">
+    <section class="card">
+      <h2>New deployment <span class="badge" id="chosenPlan" style="display:none"></span></h2>
+      <div class="pad stack">
+        <div><label for="platform">Platform</label><select id="platform"></select></div>
+        <div id="missing"></div>
+        <div id="fields" class="stack"></div>
+        <button class="primary" id="deployBtn">Deploy</button>
+        <p class="muted" style="margin:0;font-size:12px">The first deploy of an environment, or a deploy with different credentials than last time, provisions everything from scratch.</p>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Environments</h2>
+      <div class="pad" id="envs"></div>
+    </section>
+  </div>
+
+  <div class="stack" style="min-width:0">
+    <section class="card">
+      <h2>History <span class="muted" style="font-weight:400">every deploy, rollback and teardown</span></h2>
+      <div class="scroll">
+        <table><thead><tr><th>When</th><th>Environment</th><th>Action</th><th>Status</th><th>Source</th><th>Took</th><th></th></tr></thead><tbody id="history"></tbody></table>
+      </div>
+    </section>
+    <section class="card">
+      <h2>
+        <span class="row tabs"><button id="tabDeploy" class="on">Deployment log</button><button id="tabApp">Application logs</button></span>
+        <span class="muted mono" id="logTitle"></span>
+      </h2>
+      <div id="appBar" class="pad row" style="display:none;border-bottom:1px solid var(--line)">
+        <select id="appEnv" style="max-width:320px"></select>
+        <select id="appTarget" style="max-width:320px"></select>
+        <button id="appGo">Stream</button><button id="podsBtn">Pods</button>
+      </div>
+      <div id="pods" style="display:none" class="scroll"></div>
+      <pre id="log">Select a deployment to see its log.</pre>
+    </section>
+  </div>
+</main>
+<script>
+// token from the URL fragment (never sent to the server in requests for the page)
+const token = (location.hash.match(/token=([a-f0-9]+)/) || [])[1] || sessionStorage.getItem('deployToken') || '';
+if (token) { sessionStorage.setItem('deployToken', token); history.replaceState(null, '', location.pathname); }
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => { const e = document.createElement(tag); Object.assign(e, props); kids.forEach((k) => e.append(k)); return e; };
+const api = async (path, body) => {
+  const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'x-deploy-token': token, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
+};
+const ago = (t) => { if (!t) return ''; const s = (Date.now() - new Date(t)) / 1000; return s < 60 ? `${s|0}s ago` : s < 3600 ? `${(s/60)|0}m ago` : s < 86400 ? `${(s/3600)|0}h ago` : new Date(t).toLocaleString(); };
+const took = (d) => d.finishedAt ? `${Math.round((new Date(d.finishedAt) - new Date(d.startedAt)) / 1000)}s` : '';
+let state = { providers: [], deployments: [], environments: {}, plans: [] }, stream, selected;
+let cloud = 'all', chosenPlan = null;
+const CLOUD = { aws: 'AWS', gcp: 'Google Cloud', azure: 'Azure', local: 'Local' };
+const survives = (p) => /Survives|absorbed|SLA/.test(p.reliability);
+const spotty = (p) => p.cfg.spot === 'yes';
+function visiblePlans() {
+  const max = Number($('budget').value) || Infinity;
+  return state.plans.filter((p) => (cloud === 'all' || p.provider === cloud) && p.monthly <= max).sort((a, b) => a.monthly - b.monthly);
+}
+function usePlan(p) {
+  chosenPlan = p; $('platform').value = p.provider; renderForm();
+  for (const [k, v] of Object.entries(p.cfg)) { const input = $(`f-${k}`); if (input) input.value = v; }
+  $('chosenPlan').style.display = ''; $('chosenPlan').textContent = `${p.name} · ~$${p.monthly}/mo`;
+  renderPlans(); document.querySelector('main').scrollIntoView({ behavior: 'smooth' });
+}
+function renderPlans() {
+  const plans = visiblePlans();
+  $('plans').replaceChildren(...(plans.length ? plans.map((p) => el('article', { className: `plan ${chosenPlan?.id === p.id ? 'chosen' : ''}` },
+    el('div', { className: 'row' }, el('span', { className: 'badge', textContent: CLOUD[p.provider] }), ...(spotty(p) ? [el('span', { className: 'badge running', textContent: 'spot' })] : []), ...(survives(p) ? [el('span', { className: 'badge succeeded', textContent: 'high availability' })] : [])),
+    el('h3', { textContent: p.name }), el('p', { className: 'muted', textContent: p.tagline }),
+    el('div', { className: 'price' }, `$${p.monthly}`, el('small', { textContent: ' / month (approx.)' })),
+    el('dl', { className: 'kv' }, ...[['Kubernetes', p.specs.kubernetes], ['Capacity', p.specs.capacity], ['Nodes', p.specs.nodes], ['Reliability', p.reliability], ['Scaling', p.scaling], ['Best for', p.bestFor], ['First deploy', `~${p.setupMinutes} min`]].flatMap(([k, v]) => [el('dt', { textContent: k }), el('dd', { textContent: v })])),
+    el('div', {}, el('strong', { textContent: 'What runs where' }), el('ul', { className: 'runs' }, ...p.runs.map((r) => el('li', { textContent: r })))),
+    el('div', {}, el('strong', { textContent: 'Limitations' }), el('ul', { className: 'lim' }, ...p.limitations.map((r) => el('li', { textContent: r })))),
+    el('details', {}, el('summary', { textContent: 'Cost breakdown' }), el('table', {}, el('tbody', {}, ...p.breakdown.map(([item, cost]) => el('tr', {}, el('td', { textContent: item }), el('td', { style: 'text-align:right', className: 'mono', textContent: `$${cost}` }))), el('tr', {}, el('td', {}, el('b', { textContent: 'Total' })), el('td', { style: 'text-align:right', className: 'mono', textContent: `$${p.monthly}` }))))),
+    el('button', { className: 'primary', textContent: chosenPlan?.id === p.id ? 'Selected ✓' : 'Use this plan', onclick: () => usePlan(p) })
+  )) : [el('p', { className: 'muted', textContent: 'No plan fits that budget. Raise it, or check the Local plan.' })]));
+  $('compare').replaceChildren(...plans.map((p) => el('tr', { className: chosenPlan?.id === p.id ? 'sel' : '' },
+    el('td', {}, el('b', { textContent: p.name })), el('td', { textContent: CLOUD[p.provider] }), el('td', { className: 'mono', textContent: `$${p.monthly}` }),
+    el('td', { textContent: p.specs.kubernetes }), el('td', { textContent: p.specs.capacity }), el('td', { textContent: p.specs.nodes }),
+    el('td', { className: spotty(p) ? 'yes' : 'no', textContent: spotty(p) ? 'yes' : 'no' }), el('td', { className: survives(p) ? 'yes' : 'no', textContent: survives(p) ? 'yes' : 'no' }),
+    el('td', { textContent: `~${p.setupMinutes} min` }), el('td', { className: 'wrap', textContent: p.bestFor }),
+    el('td', {}, el('button', { textContent: 'Use', onclick: () => usePlan(p) })))));
+}
+function renderChips() {
+  $('cloudChips').replaceChildren(...['all', 'aws', 'gcp', 'azure', 'local'].map((c) => el('button', { className: `chip ${cloud === c ? 'on' : ''}`, textContent: c === 'all' ? 'All clouds' : CLOUD[c], onclick: () => { cloud = c; renderChips(); renderPlans(); } })));
+}
+
+function renderForm() {
+  const p = state.providers.find((x) => x.id === $('platform').value) || state.providers[0];
+  if (!p) return;
+  $('missing').replaceChildren(...(p.missing.length ? [el('div', { className: 'warn', textContent: `Not installed here: ${p.missing.join(', ')}` })] : []));
+  const saved = JSON.parse(localStorage.getItem(`cfg:${p.id}`) || '{}');
+  $('fields').replaceChildren(...p.fields.map((f) => el('div', {}, el('label', { textContent: f.label + (f.required ? ' *' : ''), htmlFor: `f-${f.key}` }), el('input', { id: `f-${f.key}`, value: saved[f.key] ?? f.default ?? '', placeholder: f.default || '' }))));
+}
+function renderEnvs() {
+  const envs = Object.values(state.environments);
+  $('envs').replaceChildren(...(envs.length ? envs.map((e) => {
+    const url = e.outputs?.AppUrl || e.outputs?.appUrl;
+    return el('div', { className: 'env' },
+      el('div', { className: 'row' }, el('span', { className: 't', textContent: e.label }), el('span', { className: `badge ${e.status}`, textContent: e.status })),
+      el('div', { className: 'mono muted', textContent: e.envId }),
+      ...(e.cfg?.planId ? [el('div', { style: 'font-size:12px' }, 'Plan: ', el('b', { textContent: (state.plans.find((p) => p.id === e.cfg.planId) || {}).name || e.cfg.planId }))] : []),
+      el('div', { className: 'muted', style: 'font-size:12px', textContent: `as ${e.identity?.display || '?'} · updated ${ago(e.updatedAt)}` }),
+      ...(url && /^https?:\/\//.test(url) ? [el('a', { href: url, target: '_blank', rel: 'noopener', textContent: url, className: 'mono' })] : []),
+      el('div', { className: 'row', style: 'margin-top:8px' },
+        el('button', { textContent: 'Logs & pods', disabled: !e.kubeContext || e.status === 'destroyed', onclick: () => { showApp(); $('appEnv').value = e.envId; loadTargets(); } }),
+        el('button', { className: 'danger', textContent: 'Destroy', disabled: e.status === 'destroyed' || !!state.running, onclick: async () => {
+          if (!confirm(`Tear down everything in ${e.envId}? This deletes the cloud resources.`)) return;
+          try { openLog((await api('/api/destroy', { envId: e.envId })).id); refresh(); } catch (err) { alert(err.message); } } })));
+  }) : [el('p', { className: 'muted', style: 'margin:0', textContent: 'Nothing deployed yet.' })]));
+  $('appEnv').replaceChildren(...envs.filter((e) => e.kubeContext && e.status !== 'destroyed').map((e) => el('option', { value: e.envId, textContent: `${e.label} · ${e.envId}` })));
+}
+function renderHistory() {
+  const live = new Set(Object.values(state.environments).map((e) => e.current));
+  $('history').replaceChildren(...state.deployments.map((d) => el('tr', { className: d.id === selected ? 'sel' : '' },
+    el('td', { title: d.startedAt, textContent: ago(d.startedAt) }),
+    el('td', { className: 'mono', textContent: d.envId || d.provider }),
+    el('td', { textContent: d.kind + (d.rollbackOf ? ` → ${d.rollbackOf}` : '') }),
+    el('td', {}, el('span', { className: `badge ${d.status}`, textContent: d.status + (live.has(d.id) ? ' · live' : ''), title: d.error || '' })),
+    el('td', { className: 'mono', textContent: (d.commit || '').slice(0, 10) + (d.dirty ? ' *' : ''), title: d.dirty ? 'includes uncommitted changes' : '' }),
+    el('td', { textContent: took(d) }),
+    el('td', { className: 'row' },
+      el('button', { textContent: 'Log', onclick: () => openLog(d.id) }),
+      ...(d.status === 'succeeded' && d.kind !== 'destroy' && !live.has(d.id) ? [el('button', { textContent: 'Roll back here', disabled: !!state.running, onclick: async () => {
+        if (!confirm(`Redeploy the exact version from ${d.id} to ${d.envId}?`)) return;
+        try { openLog((await api('/api/rollback', { id: d.id })).id); refresh(); } catch (err) { alert(err.message); } } })] : [])))));
+}
+function openLog(id) {
+  showDeployLog(); selected = id; stream?.close(); $('log').textContent = ''; $('logTitle').textContent = id;
+  stream = new EventSource(`/api/logs?id=${encodeURIComponent(id)}&token=${token}`);
+  stream.addEventListener('log', (e) => { const log = $('log'); const end = log.scrollTop + log.clientHeight >= log.scrollHeight - 30; log.textContent += JSON.parse(e.data); if (end) log.scrollTop = log.scrollHeight; });
+  stream.addEventListener('end', () => { stream.close(); refresh(); });
+  renderHistory();
+}
+function showDeployLog() { $('tabDeploy').classList.add('on'); $('tabApp').classList.remove('on'); $('appBar').style.display = 'none'; $('pods').style.display = 'none'; }
+function showApp() { $('tabApp').classList.add('on'); $('tabDeploy').classList.remove('on'); $('appBar').style.display = 'flex'; }
+async function loadTargets() {
+  const env = $('appEnv').value; if (!env) return;
+  try {
+    const { pods, deployments } = await api(`/api/pods?env=${encodeURIComponent(env)}`);
+    $('appTarget').replaceChildren(...deployments.map((d) => el('option', { value: `deployment/${d}`, textContent: d })), ...pods.map((p) => el('option', { value: `pod/${p.name}`, textContent: `pod ${p.name}` })));
+    $('pods').replaceChildren(el('table', { className: 'pods' }, el('tbody', {}, ...pods.map((p) => el('tr', {},
+      el('td', { className: 'mono', textContent: p.name }), el('td', {}, el('span', { className: `badge ${p.ready ? 'succeeded' : p.phase === 'Pending' ? 'running' : 'failed'}`, textContent: p.ready ? 'ready' : p.phase })),
+      el('td', { className: 'muted', textContent: `${p.restarts} restarts` }), el('td', { className: 'muted', textContent: ago(p.startedAt) }))))));
+  } catch (err) { $('log').textContent = err.message; }
+}
+function streamApp() {
+  const env = $('appEnv').value, target = $('appTarget').value; if (!env || !target) return;
+  stream?.close(); $('log').textContent = ''; $('logTitle').textContent = target;
+  stream = new EventSource(`/api/app-logs?env=${encodeURIComponent(env)}&target=${encodeURIComponent(target)}&token=${token}`);
+  stream.addEventListener('log', (e) => { const log = $('log'); log.textContent += JSON.parse(e.data); if (log.textContent.length > 400000) log.textContent = log.textContent.slice(-300000); log.scrollTop = log.scrollHeight; });
+  stream.addEventListener('end', () => stream.close());
+}
+async function refresh() {
+  try {
+    state = await api('/api/state');
+    if (!$('platform').options.length) { $('platform').replaceChildren(...state.providers.map((p) => el('option', { value: p.id, textContent: p.label }))); renderForm(); renderChips(); renderPlans(); $('pricingNote').textContent = state.pricingNote; }
+    $('running').textContent = state.running ? `running ${state.running}` : 'idle'; $('running').className = `badge ${state.running ? 'running' : ''}`;
+    $('deployBtn').disabled = !!state.running;
+    renderEnvs(); renderHistory();
+  } catch (err) { $('log').textContent = `${err.message}\nOpen the exact URL printed by "node deploy/cli.mjs ui" (it carries the access token).`; }
+}
+$('platform').onchange = () => { chosenPlan = null; $('chosenPlan').style.display = 'none'; renderForm(); renderPlans(); };
+$('budget').oninput = renderPlans;
+$('deployBtn').onclick = async () => {
+  const p = $('platform').value, prov = state.providers.find((x) => x.id === p);
+  const cfg = Object.fromEntries(prov.fields.map((f) => [f.key, $(`f-${f.key}`).value.trim()]));
+  if (chosenPlan && chosenPlan.provider === p) cfg.planId = chosenPlan.id;
+  const missing = prov.fields.filter((f) => f.required && !cfg[f.key]); if (missing.length) return alert(`Fill in: ${missing.map((f) => f.label).join(', ')}`);
+  localStorage.setItem(`cfg:${p}`, JSON.stringify(cfg));
+  try { openLog((await api('/api/deploy', { provider: p, cfg })).id); refresh(); } catch (err) { alert(err.message); }
+};
+$('tabDeploy').onclick = () => { showDeployLog(); if (selected) openLog(selected); };
+$('tabApp').onclick = () => { showApp(); loadTargets(); };
+$('appEnv').onchange = loadTargets; $('appGo').onclick = streamApp;
+$('podsBtn').onclick = () => { const s = $('pods').style; s.display = s.display === 'none' ? 'block' : 'none'; loadTargets(); };
+refresh(); setInterval(refresh, 5000); setInterval(() => { $('clock').textContent = new Date().toLocaleTimeString(); }, 1000);
+</script>
+</body>
+</html>

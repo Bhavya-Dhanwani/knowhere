@@ -13,6 +13,8 @@ RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @lms/frontend build
 # --- runtime stage ---
 FROM nginx:alpine
 COPY --from=build /app/packages/frontend/dist /usr/share/nginx/html
-COPY packages/frontend/nginx.conf /etc/nginx/conf.d/default.conf
+# rendered at start by the image's envsubst entrypoint (only ${NGINX_*} variables are set)
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
+COPY packages/frontend/nginx.conf /etc/nginx/templates/default.conf.template
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

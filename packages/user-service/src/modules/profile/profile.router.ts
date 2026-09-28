@@ -33,6 +33,20 @@ router.get('/', serviceOrUserAuth('profiles:read'), profileController.listProfil
 router.put('/me', authMiddleware, updateProfileValidators, profileController.updateMe);
 
 /*
+    @route GET /api/profile/username-available?u=
+    @desc Is this username free and valid (profile editor)
+    @access Private
+*/
+router.get('/username-available', authMiddleware, profileController.usernameAvailable);
+
+/*
+    @route GET /api/profiles/u/:username
+    @desc Shareable profile (domain.com/<username>); no sign-in needed for public profiles
+    @access Public / signed-in, per the owner's visibility setting
+*/
+router.get('/u/:username', profileController.publicByUsername);
+
+/*
     @route GET /api/users/profile/:userId
     @desc Get user profile by userId
     @access Private

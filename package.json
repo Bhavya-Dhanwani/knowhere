@@ -15,7 +15,8 @@
     "seed": "pnpm --filter @lms/course-service exec tsx scripts/seed.ts",
     "prepare": "husky",
     "docs:api": "pnpm --filter @lms/auth-service exec tsx ../../scripts/gen-openapi.mts",
-    "keys": "node scripts/gen-keys.mjs"
+    "keys": "node scripts/gen-keys.mjs",
+    "deployer": "node deploy/cli.mjs ui"
   },
   "devDependencies": {
     "@secretlint/secretlint-rule-preset-recommend": "^9.0.0",

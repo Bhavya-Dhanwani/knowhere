@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { useSelector } from 'react-redux';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronDown, LogOut, Menu, Search, X } from 'lucide-react';
+import { ChevronDown, ExternalLink, LogOut, Menu, Search, UserRound, X } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { lmsApi } from '../api/lms';
 import { RootState } from '../../app/store';
 import { useLogout } from '../../features/auth/hooks/useLogout';
 import { ROLE_LABEL, homePathFor, roleOf } from '../lib/roles';
@@ -120,6 +122,9 @@ const UserMenu: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   const user = useSelector((s: RootState) => s.auth.user);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // the same cached query the dashboards use; it also assigns a username on first load
+  const username = useQuery({ queryKey: ['me', 'profile'], queryFn: lmsApi.myProfile }).data
+    ?.profile?.username;
 
   useEffect(() => {
     if (!open) return;
@@ -163,6 +168,22 @@ const UserMenu: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
                 {ROLE_LABEL[roleOf(user)]}
               </p>
             </div>
+            <Link
+              to="/profile"
+              onClick={() => setOpen(false)}
+              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50"
+            >
+              <UserRound className="h-4 w-4" /> My profile
+            </Link>
+            {username ? (
+              <Link
+                to={`/${username}`}
+                onClick={() => setOpen(false)}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50"
+              >
+                <ExternalLink className="h-4 w-4" /> Public profile
+              </Link>
+            ) : null}
             <button
               onClick={onLogout}
               className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-red-600 transition hover:bg-red-50"
