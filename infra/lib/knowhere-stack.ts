@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { CfnOutput, Fn, Size, Stack, StackProps, Tags } from 'aws-cdk-lib';
+import { CfnOutput, CfnResource, Fn, Size, Stack, StackProps, Tags } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as eks from 'aws-cdk-lib/aws-eks';
@@ -545,6 +545,20 @@ export class KnowhereStack extends Stack {
     app.node.addDependency(secrets, storageSa);
     // the ALB controller must exist before the ingress is created
     if (cluster.albController) app.node.addDependency(cluster.albController);
+    // apply Kubernetes resources one at a time (App last): new accounts have a tiny Lambda
+    // concurrency quota, and parallel kubectl calls fail with "TooManyRequestsException: Rate Exceeded"
+    const k8s = this.node
+      .findAll()
+      .filter(
+        (c): c is CfnResource =>
+          c instanceof CfnResource &&
+          !c.node.path.startsWith(app.node.path + '/') &&
+          /^Custom::AWSCDK-EKS-(KubernetesResource|HelmChart|KubernetesPatch|KubernetesObjectValue)$/.test(
+            c.cfnResourceType
+          )
+      );
+    k8s.reduce((prev, c) => (c.node.addDependency(prev), c));
+    app.node.addDependency(...k8s);
 
     /* ------------------------------------------------------------------ outputs */
     new CfnOutput(this, 'Plan', {
