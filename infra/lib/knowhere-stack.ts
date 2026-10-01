@@ -367,9 +367,11 @@ export class KnowhereStack extends Stack {
       version: '2.11.0',
       release: 'external-secrets',
       namespace: 'external-secrets',
-      values: { installCRDs: true, serviceAccount: { create: false, name: 'external-secrets' } }
+      values: { installCRDs: true, serviceAccount: { create: false, name: 'external-secrets' } },
+      // the SecretStore below is checked by this chart's webhook, so its pods must be running
+      wait: true
     });
-    eso.node.addDependency(esoSa);
+    eso.node.addDependency(esoSa, cluster.node.findChild('NodegroupNodes'));
 
     const store = cluster.addManifest('SecretStore', {
       apiVersion: 'external-secrets.io/v1',
