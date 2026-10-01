@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { App } from 'aws-cdk-lib';
+import { App, DefaultStackSynthesizer } from 'aws-cdk-lib';
 import { KnowhereStack } from '../lib/knowhere-stack';
 import { KnowhereLiteStack } from '../lib/lite-stack';
 import { KnowhereMediaStack } from '../lib/media-stack';
@@ -52,6 +52,9 @@ if (plan === 'lite') {
 if (ctx('mediaAccount')) {
   new KnowhereMediaStack(app, 'KnowhereMedia', {
     env: { account: ctx('mediaAccount'), region: ctx('mediaRegion') || env.region },
+    // that account is bootstrapped with an S3-only CloudFormation role (deploy/providers), which
+    // cannot read the /cdk-bootstrap/*/version SSM parameter the default version check needs
+    synthesizer: new DefaultStackSynthesizer({ generateBootstrapVersionRule: false }),
     appAccount: ctx('appAccount') || undefined,
     appOrigin: ctx('domainName') ? `https://${ctx('domainName')}` : '*'
   });

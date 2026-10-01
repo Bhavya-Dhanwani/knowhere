@@ -7,3 +7,12 @@ allowBuilds:
   esbuild: true
   mongodb-memory-server: set this to true or false
   unrs-resolver: true
+
+# security patches for transitive deps (pnpm audit in .husky/pre-commit)
+overrides:
+  fast-uri: ^3.1.8
+  brace-expansion@1: ^1.1.21
+  brace-expansion@2: ^2.1.7
+  brace-expansion@5: ^5.0.12
+  dompurify: ^3.4.16
+  morgan: ^1.12.1

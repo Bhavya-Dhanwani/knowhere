@@ -20,22 +20,32 @@ const aws = {
     { key: 'instanceType', label: 'Server / node type (blank = plan default)' },
     { key: 'region', label: 'Region', default: 'ap-south-1', required: true },
     { key: 'profile', label: 'AWS CLI profile (blank = default)' },
-    { key: 'domainName', label: 'App domain, e.g. lms.example.com' },
-    { key: 'hostedZoneId', label: 'Route 53 hosted zone ID' },
-    { key: 'hostedZoneName', label: 'Hosted zone name, e.g. example.com' },
-    { key: 'adminPrincipalArn', label: 'IAM ARN to get kubectl admin' },
+    { key: 'domainName', label: 'App domain, e.g. lms.example.com', pattern: /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i, hint: 'a host name like lms.example.com (no https://, no path, not an ARN)' },
+    { key: 'hostedZoneId', label: 'Route 53 hosted zone ID', pattern: /^Z[A-Z0-9]{5,}$/, hint: 'a Route 53 zone ID like Z0123456789ABCDEFGHIJ' },
+    { key: 'hostedZoneName', label: 'Hosted zone name, e.g. example.com', pattern: /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i, hint: 'a domain like example.com' },
+    { key: 'adminPrincipalArn', label: 'IAM ARN to get kubectl admin', pattern: /^arn:aws:iam::\d{12}:(user|role)\/[\w+=,.@\/-]+$/, hint: 'an IAM user or role ARN like arn:aws:iam::123456789012:user/me' },
     { key: 'arch', label: 'CPU architecture (arm64 | amd64)', default: 'arm64' },
-    { key: 'nodeCount', label: 'EKS nodes', default: '3' },
-    { key: 'mediaAccount', label: 'S3 in another AWS account: its account ID (blank = same account)' },
+    { key: 'nodeCount', label: 'EKS nodes', default: '3', pattern: /^[1-9]\d?$/, hint: 'a number from 1 to 99' },
+    { key: 'mediaAccount', label: 'S3 in another AWS account: its account ID (blank = same account)', pattern: /^\d{12}$/, hint: 'a 12-digit AWS account ID' },
     { key: 'mediaProfile', label: 'AWS CLI profile for that account' },
     { key: 'mediaRegion', label: 'Region of the media buckets (blank = same region)' }
   ],
   env: (cfg) => (cfg.profile ? { AWS_PROFILE: cfg.profile } : {}),
   mediaEnv: (cfg) => (cfg.mediaProfile ? { AWS_PROFILE: cfg.mediaProfile } : {}),
+  // `aws sts get-caller-identity` for a profile, with a readable error when it has no keys
+  async whoami(run, profile, field) {
+    try {
+      return json(await run('aws', ['sts', 'get-caller-identity', '--output', 'json'], { quiet: true, env: profile ? { AWS_PROFILE: profile } : {} }));
+    } catch (error) {
+      if (!/NoCredentials|Unable to locate credentials|could not be found/i.test(error.message)) throw error;
+      throw new Error(
+        `No AWS keys for profile "${profile || 'default'}". Put the profile name in "${field}" ` +
+          `(check with: aws configure list-profiles), or create it with: aws configure --profile <name>`
+      );
+    }
+  },
   async identity(cfg, x) {
-    const id = json(
-      await x.run('aws', ['sts', 'get-caller-identity', '--output', 'json'], { quiet: true, env: aws.env(cfg) })
-    );
+    const id = await aws.whoami(x.run, cfg.profile, 'AWS CLI profile');
     return { account: id.Account, principal: id.Arn, display: `${id.Arn} (account ${id.Account})` };
   },
   envId: (i, cfg) => `aws:${i.account}:${cfg.region}`,
@@ -49,9 +59,7 @@ const aws = {
   // media buckets in another account: that account's credentials must really be that account
   async mediaIdentity(ctx) {
     if (!ctx.cfg.mediaAccount || ctx.cfg.mediaAccount === ctx.identity.account) return null;
-    const id = json(
-      await ctx.run('aws', ['sts', 'get-caller-identity', '--output', 'json'], { quiet: true, env: aws.mediaEnv(ctx.cfg) })
-    );
+    const id = await aws.whoami(ctx.run, ctx.cfg.mediaProfile, 'AWS CLI profile for that account');
     if (id.Account !== ctx.cfg.mediaAccount) {
       throw new Error(
         `The media profile "${ctx.cfg.mediaProfile || 'default'}" is account ${id.Account}, not ${ctx.cfg.mediaAccount}.`

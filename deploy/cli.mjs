@@ -173,6 +173,15 @@ function serve(port) {
         send(res, 400, { error: error.message });
       }
     })
+    .on('error', (error) => {
+      if (error.code !== 'EADDRINUSE') throw error;
+      console.error(
+        `Port ${port} is already in use, most likely by a deploy manager that is still running.\n` +
+          `Close that terminal (or stop that node process), or start this one on another port:\n` +
+          `  node deploy/cli.mjs ui ${port + 1}`
+      );
+      process.exit(1);
+    })
     .listen(port, '127.0.0.1', () => {
       console.log(`Knowhere deploy manager: http://127.0.0.1:${port}/#token=${token}`);
     });

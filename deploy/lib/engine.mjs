@@ -155,7 +155,24 @@ async function execute(id, job) {
   }
 }
 
+/**
+ * Rejects a config before anything runs: required fields present, and every filled field in the
+ * shape it must have (a value in the wrong box, e.g. an IAM ARN as the domain, would otherwise
+ * deploy and break things quietly: that domain becomes the S3 buckets' CORS origin).
+ */
+export function checkConfig(provider, cfg) {
+  const p = PROVIDERS[provider];
+  if (!p) throw new Error(`Unknown provider "${provider}".`);
+  const problems = p.fields.flatMap((f) => {
+    const v = String(cfg[f.key] ?? '').trim();
+    if (!v) return f.required ? [`${f.label}: required`] : [];
+    return f.pattern && !f.pattern.test(v) ? [`${f.label}: "${v}" is not ${f.hint || 'valid'}`] : [];
+  });
+  if (problems.length) throw new Error(`Fix these settings first:\n- ${problems.join('\n- ')}`);
+}
+
 export function deploy(provider, cfg) {
+  checkConfig(provider, cfg);
   return start({ kind: 'deploy', provider, cfg });
 }
 

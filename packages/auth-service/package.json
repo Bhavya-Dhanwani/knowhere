@@ -28,7 +28,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.10.0",
     "morgan": "^1.10.0",
-    "nodemailer": "^9.0.3",
+    "nodemailer": "^10.0.9",
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "swagger-ui-express": "^5.0.1",
