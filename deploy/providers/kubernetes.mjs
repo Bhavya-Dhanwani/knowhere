@@ -33,7 +33,10 @@ function imageOverride({ imageName, tag }) {
 }
 
 // writes <worktree>/deploy-overlay and applies it to the environment's cluster
-export async function applyStack(ctx, { builds, kubeContext, publicUrl, voiceUrl, tolerateSpot, externalS3 }) {
+export async function applyStack(
+  ctx,
+  { builds, kubeContext, publicUrl, voiceUrl, tolerateSpot, externalS3 }
+) {
   const dir = path.join(ctx.cwd, 'deploy-overlay');
   mkdirSync(dir, { recursive: true });
   if (!existsSync(path.join(ctx.cwd, 'k8s', 'secrets.yml'))) {
@@ -190,11 +193,14 @@ export async function ingressAddress(ctx, kubeContext) {
 export function kubernetesDeploy({ registry, push, kubeContext, tolerateSpot = () => false }) {
   return async (ctx) => {
     const context = kubeContext(ctx);
-    const builds = ctx.rollbackOf?.images || (await buildImages(ctx, { defaultRepo: registry(ctx), push }));
+    ctx.step('images');
+    const builds =
+      ctx.rollbackOf?.images || (await buildImages(ctx, { defaultRepo: registry(ctx), push }));
     let publicUrl = ctx.cfg.publicUrl;
     if (!publicUrl && ctx.provider !== 'local') {
       publicUrl = `http://${await ingressAddress(ctx, context)}`;
     }
+    ctx.step('apply');
     await applyStack(ctx, {
       builds,
       kubeContext: context,
@@ -203,6 +209,10 @@ export function kubernetesDeploy({ registry, push, kubeContext, tolerateSpot = (
       tolerateSpot: tolerateSpot(ctx),
       externalS3: ctx.cfg.mediaInS3 === 'yes'
     });
-    return { kubeContext: context, images: builds, outputs: { appUrl: publicUrl || 'http://localhost:3000' } };
+    return {
+      kubeContext: context,
+      images: builds,
+      outputs: { appUrl: publicUrl || 'http://localhost:3000' }
+    };
   };
 }

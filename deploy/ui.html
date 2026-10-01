@@ -1,258 +1,2312 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Deploy Manager</title>
-<style>
-  :root { --bg:#f7f7f5; --card:#fff; --ink:#18181b; --muted:#71717a; --line:#e4e4e7; --soft:#f4f4f5; --ok:#047857; --okbg:#ecfdf5; --bad:#b91c1c; --badbg:#fef2f2; --run:#1d4ed8; --runbg:#eff6ff; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:12px; padding:12px 20px; background:#ffffffe6; backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
-  header b { font-size:15px; } .logo { width:28px; height:28px; border-radius:8px; background:var(--ink); color:#fff; display:grid; place-items:center; font-weight:700; }
-  main { display:grid; grid-template-columns: 380px minmax(0,1fr); gap:16px; padding:16px 20px; max-width:1500px; margin:0 auto; }
-  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden; }
-  .card h2 { margin:0; padding:12px 16px; font-size:14px; border-bottom:1px solid var(--line); background:#fafafa; display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  .pad { padding:14px 16px; } .stack > * + * { margin-top:12px; }
-  label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
-  input, select { width:100%; height:36px; border:1px solid var(--line); border-radius:10px; padding:0 10px; font:inherit; background:#fff; color:var(--ink); }
-  input:focus, select:focus { outline:none; border-color:#a1a1aa; }
-  button { height:32px; border-radius:9px; border:1px solid var(--line); background:#fff; color:var(--ink); padding:0 12px; font:inherit; font-weight:500; cursor:pointer; }
-  button:hover { background:var(--soft); } button.primary { background:var(--ink); color:#fff; border-color:var(--ink); } button.primary:hover { background:#27272a; }
-  button.danger { color:var(--bad); } button:disabled { opacity:.5; cursor:not-allowed; }
-  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .badge { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; background:var(--soft); color:var(--muted); }
-  .succeeded,.live { background:var(--okbg); color:var(--ok); } .failed,.destroyed,.interrupted { background:var(--badbg); color:var(--bad); } .running { background:var(--runbg); color:var(--run); }
-  .muted { color:var(--muted); } .mono { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; }
-  .env { border:1px solid var(--line); border-radius:12px; padding:12px; } .env + .env { margin-top:10px; }
-  .env .t { font-weight:600; } .env a { color:var(--ink); }
-  table { width:100%; border-collapse:collapse; } th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { font-size:12px; color:var(--muted); font-weight:500; background:#fafafa; } tr.sel td { background:#fafafa; }
-  .scroll { max-height:340px; overflow:auto; }
-  pre { margin:0; padding:12px 16px; height:420px; overflow:auto; background:#0c0c0e; color:#e4e4e7; font:12px/1.5 ui-monospace,Consolas,monospace; white-space:pre-wrap; word-break:break-word; }
-  .tabs button { border:none; background:transparent; height:28px; } .tabs button.on { background:#fff; border:1px solid var(--line); }
-  .warn { background:#fffbeb; color:#92400e; border:1px solid #fde68a; border-radius:10px; padding:8px 10px; font-size:12px; }
-  .pods td { padding:6px 12px; }
-  .plans-wrap { max-width:1500px; margin:0 auto; padding:16px 20px 0; }
-  .plans { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
-  .plan { display:flex; flex-direction:column; gap:10px; background:#fff; border:1px solid var(--line); border-radius:16px; padding:16px; }
-  .plan.chosen { border-color:var(--ink); box-shadow:0 0 0 1px var(--ink); }
-  .plan .price { font-size:26px; font-weight:700; letter-spacing:-.02em; } .plan .price small { font-size:13px; font-weight:500; color:var(--muted); }
-  .plan h3 { margin:0; font-size:16px; } .plan p { margin:0; }
-  .plan ul { margin:0; padding-left:18px; } .plan li { margin:2px 0; }
-  .kv { display:grid; grid-template-columns:auto 1fr; gap:2px 10px; font-size:13px; } .kv dt { color:var(--muted); } .kv dd { margin:0; }
-  .lim li { color:#92400e; } .runs li { color:#3f3f46; }
-  details summary { cursor:pointer; color:var(--muted); font-size:12px; }
-  .chip { height:28px; border-radius:999px; padding:0 12px; } .chip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
-  .cmp td, .cmp th { white-space:nowrap; } .cmp td.wrap { white-space:normal; min-width:180px; }
-  .yes { color:var(--ok); font-weight:600; } .no { color:var(--muted); }
-</style>
-</head>
-<body>
-<header>
-  <div class="logo">K</div><b>Knowhere deploy manager</b>
-  <span id="running" class="badge"></span>
-  <span class="muted" style="margin-left:auto" id="clock"></span>
-</header>
-<div class="plans-wrap stack">
-  <section class="card">
-    <h2>Plans &amp; pricing <span class="muted" style="font-weight:400" id="pricingNote"></span></h2>
-    <div class="pad stack">
-      <div class="row">
-        <span class="row" id="cloudChips"></span>
-        <span class="muted" style="margin-left:auto">Budget ≤ $</span>
-        <input id="budget" type="number" min="0" placeholder="any" style="width:110px" />
-        <span class="muted">/ month</span>
-      </div>
-      <div class="plans" id="plans"></div>
-    </div>
-  </section>
-  <section class="card">
-    <h2>Compare plans <span class="muted" style="font-weight:400">cheapest first</span></h2>
-    <div class="scroll" style="max-height:none"><table class="cmp"><thead><tr><th>Plan</th><th>Cloud</th><th>$/month</th><th>Kubernetes</th><th>Capacity</th><th>Nodes</th><th>Spot</th><th>Survives a node failure</th><th>First deploy</th><th>Best for</th><th></th></tr></thead><tbody id="compare"></tbody></table></div>
-  </section>
-</div>
-<main>
-  <div class="stack">
-    <section class="card">
-      <h2>New deployment <span class="badge" id="chosenPlan" style="display:none"></span></h2>
-      <div class="pad stack">
-        <div><label for="platform">Platform</label><select id="platform"></select></div>
-        <div id="missing"></div>
-        <div id="fields" class="stack"></div>
-        <button class="primary" id="deployBtn">Deploy</button>
-        <p class="muted" style="margin:0;font-size:12px">The first deploy of an environment, or a deploy with different credentials than last time, provisions everything from scratch.</p>
-      </div>
-    </section>
-    <section class="card">
-      <h2>Environments</h2>
-      <div class="pad" id="envs"></div>
-    </section>
-  </div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Knowhere Deploy</title>
+    <style>
+      :root {
+        --bg: #f6f6f4;
+        --surface: #ffffff;
+        --sunken: #f1f1ee;
+        --ink: #17171a;
+        --muted: #6b6b73;
+        --faint: #a1a1aa;
+        --line: #e6e6e2;
+        --accent: #4f46e5;
+        --accent-soft: #eef0ff;
+        --ok: #0f8a5f;
+        --ok-soft: #e8f7f0;
+        --bad: #c2362f;
+        --bad-soft: #fdf0ef;
+        --warn: #9a6200;
+        --warn-soft: #fff6e0;
+        --shadow: 0 1px 2px #0000000a, 0 4px 16px #0000000a;
+        --r: 14px;
+        --mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #0f0f11;
+          --surface: #18181b;
+          --sunken: #121214;
+          --ink: #f2f2f3;
+          --muted: #a0a0a8;
+          --faint: #6b6b73;
+          --line: #2a2a2e;
+          --accent: #8b85ff;
+          --accent-soft: #23224a;
+          --ok: #3ccf91;
+          --ok-soft: #10291f;
+          --bad: #ff7a70;
+          --bad-soft: #341716;
+          --warn: #f5b84a;
+          --warn-soft: #2f2410;
+          --shadow: none;
+          color-scheme: dark;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.55 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      .mono {
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .small {
+        font-size: 13px;
+      }
+      .hidden {
+        display: none !important;
+      }
 
-  <div class="stack" style="min-width:0">
-    <section class="card">
-      <h2>History <span class="muted" style="font-weight:400">every deploy, rollback and teardown</span></h2>
-      <div class="scroll">
-        <table><thead><tr><th>When</th><th>Environment</th><th>Action</th><th>Status</th><th>Source</th><th>Took</th><th></th></tr></thead><tbody id="history"></tbody></table>
-      </div>
-    </section>
-    <section class="card">
-      <h2>
-        <span class="row tabs"><button id="tabDeploy" class="on">Deployment log</button><button id="tabApp">Application logs</button></span>
-        <span class="muted mono" id="logTitle"></span>
-      </h2>
-      <div id="appBar" class="pad row" style="display:none;border-bottom:1px solid var(--line)">
-        <select id="appEnv" style="max-width:320px"></select>
-        <select id="appTarget" style="max-width:320px"></select>
-        <button id="appGo">Stream</button><button id="podsBtn">Pods</button>
-      </div>
-      <div id="pods" style="display:none" class="scroll"></div>
-      <pre id="log">Select a deployment to see its log.</pre>
-    </section>
-  </div>
-</main>
-<script>
-// token from the URL fragment (never sent to the server in requests for the page)
-const token = (location.hash.match(/token=([a-f0-9]+)/) || [])[1] || sessionStorage.getItem('deployToken') || '';
-if (token) { sessionStorage.setItem('deployToken', token); history.replaceState(null, '', location.pathname); }
-const $ = (id) => document.getElementById(id);
-const el = (tag, props = {}, ...kids) => { const e = document.createElement(tag); Object.assign(e, props); kids.forEach((k) => e.append(k)); return e; };
-const api = async (path, body) => {
-  const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'x-deploy-token': token, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
-  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
-};
-const ago = (t) => { if (!t) return ''; const s = (Date.now() - new Date(t)) / 1000; return s < 60 ? `${s|0}s ago` : s < 3600 ? `${(s/60)|0}m ago` : s < 86400 ? `${(s/3600)|0}h ago` : new Date(t).toLocaleString(); };
-const took = (d) => d.finishedAt ? `${Math.round((new Date(d.finishedAt) - new Date(d.startedAt)) / 1000)}s` : '';
-let state = { providers: [], deployments: [], environments: {}, plans: [] }, stream, selected;
-let cloud = 'all', chosenPlan = null;
-const CLOUD = { aws: 'AWS', gcp: 'Google Cloud', azure: 'Azure', local: 'Local' };
-const survives = (p) => /Survives|absorbed|SLA/.test(p.reliability);
-const spotty = (p) => p.cfg.spot === 'yes';
-function visiblePlans() {
-  const max = Number($('budget').value) || Infinity;
-  return state.plans.filter((p) => (cloud === 'all' || p.provider === cloud) && p.monthly <= max).sort((a, b) => a.monthly - b.monthly);
-}
-function usePlan(p) {
-  chosenPlan = p; $('platform').value = p.provider; renderForm();
-  for (const [k, v] of Object.entries(p.cfg)) { const input = $(`f-${k}`); if (input) input.value = v; }
-  $('chosenPlan').style.display = ''; $('chosenPlan').textContent = `${p.name} · ~$${p.monthly}/mo`;
-  renderPlans(); document.querySelector('main').scrollIntoView({ behavior: 'smooth' });
-}
-function renderPlans() {
-  const plans = visiblePlans();
-  $('plans').replaceChildren(...(plans.length ? plans.map((p) => el('article', { className: `plan ${chosenPlan?.id === p.id ? 'chosen' : ''}` },
-    el('div', { className: 'row' }, el('span', { className: 'badge', textContent: CLOUD[p.provider] }), ...(spotty(p) ? [el('span', { className: 'badge running', textContent: 'spot' })] : []), ...(survives(p) ? [el('span', { className: 'badge succeeded', textContent: 'high availability' })] : [])),
-    el('h3', { textContent: p.name }), el('p', { className: 'muted', textContent: p.tagline }),
-    el('div', { className: 'price' }, `$${p.monthly}`, el('small', { textContent: ' / month (approx.)' })),
-    el('dl', { className: 'kv' }, ...[['Kubernetes', p.specs.kubernetes], ['Capacity', p.specs.capacity], ['Nodes', p.specs.nodes], ['Reliability', p.reliability], ['Scaling', p.scaling], ['Best for', p.bestFor], ['First deploy', `~${p.setupMinutes} min`]].flatMap(([k, v]) => [el('dt', { textContent: k }), el('dd', { textContent: v })])),
-    el('div', {}, el('strong', { textContent: 'What runs where' }), el('ul', { className: 'runs' }, ...p.runs.map((r) => el('li', { textContent: r })))),
-    el('div', {}, el('strong', { textContent: 'Limitations' }), el('ul', { className: 'lim' }, ...p.limitations.map((r) => el('li', { textContent: r })))),
-    el('details', {}, el('summary', { textContent: 'Cost breakdown' }), el('table', {}, el('tbody', {}, ...p.breakdown.map(([item, cost]) => el('tr', {}, el('td', { textContent: item }), el('td', { style: 'text-align:right', className: 'mono', textContent: `$${cost}` }))), el('tr', {}, el('td', {}, el('b', { textContent: 'Total' })), el('td', { style: 'text-align:right', className: 'mono', textContent: `$${p.monthly}` }))))),
-    el('button', { className: 'primary', textContent: chosenPlan?.id === p.id ? 'Selected ✓' : 'Use this plan', onclick: () => usePlan(p) })
-  )) : [el('p', { className: 'muted', textContent: 'No plan fits that budget. Raise it, or check the Local plan.' })]));
-  $('compare').replaceChildren(...plans.map((p) => el('tr', { className: chosenPlan?.id === p.id ? 'sel' : '' },
-    el('td', {}, el('b', { textContent: p.name })), el('td', { textContent: CLOUD[p.provider] }), el('td', { className: 'mono', textContent: `$${p.monthly}` }),
-    el('td', { textContent: p.specs.kubernetes }), el('td', { textContent: p.specs.capacity }), el('td', { textContent: p.specs.nodes }),
-    el('td', { className: spotty(p) ? 'yes' : 'no', textContent: spotty(p) ? 'yes' : 'no' }), el('td', { className: survives(p) ? 'yes' : 'no', textContent: survives(p) ? 'yes' : 'no' }),
-    el('td', { textContent: `~${p.setupMinutes} min` }), el('td', { className: 'wrap', textContent: p.bestFor }),
-    el('td', {}, el('button', { textContent: 'Use', onclick: () => usePlan(p) })))));
-}
-function renderChips() {
-  $('cloudChips').replaceChildren(...['all', 'aws', 'gcp', 'azure', 'local'].map((c) => el('button', { className: `chip ${cloud === c ? 'on' : ''}`, textContent: c === 'all' ? 'All clouds' : CLOUD[c], onclick: () => { cloud = c; renderChips(); renderPlans(); } })));
-}
+      /* header */
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: color-mix(in srgb, var(--bg) 85%, transparent);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--line);
+      }
+      .bar {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 16px 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+      }
+      .logo {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        background: var(--ink);
+        color: var(--bg);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+      }
+      .pill {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        font-size: 13px;
+        color: var(--muted);
+        cursor: default;
+      }
+      .pill.busy {
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .pill .mini {
+        width: 72px;
+        height: 4px;
+        border-radius: 4px;
+        background: var(--sunken);
+        overflow: hidden;
+      }
+      .pill .mini i {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+        transition: width 0.6s ease;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--faint);
+        flex: none;
+      }
+      .dot.live,
+      .dot.succeeded {
+        background: var(--ok);
+      }
+      .dot.failed,
+      .dot.interrupted {
+        background: var(--bad);
+      }
+      .dot.destroyed {
+        background: var(--faint);
+      }
+      .dot.running {
+        background: var(--accent);
+        box-shadow: 0 0 0 0 var(--accent);
+        animation: ping 1.6s infinite;
+      }
+      @keyframes ping {
+        0% {
+          box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
+        }
+        100% {
+          box-shadow: 0 0 0 8px transparent;
+        }
+      }
 
-function renderForm() {
-  const p = state.providers.find((x) => x.id === $('platform').value) || state.providers[0];
-  if (!p) return;
-  $('missing').replaceChildren(...(p.missing.length ? [el('div', { className: 'warn', textContent: `Not installed here: ${p.missing.join(', ')}` })] : []));
-  const saved = JSON.parse(localStorage.getItem(`cfg:${p.id}`) || '{}');
-  $('fields').replaceChildren(...p.fields.map((f) => el('div', {}, el('label', { textContent: f.label + (f.required ? ' *' : ''), htmlFor: `f-${f.key}` }), el('input', { id: `f-${f.key}`, value: saved[f.key] ?? f.default ?? '', placeholder: f.default || '' }))));
-}
-function renderEnvs() {
-  const envs = Object.values(state.environments);
-  $('envs').replaceChildren(...(envs.length ? envs.map((e) => {
-    const url = e.outputs?.AppUrl || e.outputs?.appUrl;
-    return el('div', { className: 'env' },
-      el('div', { className: 'row' }, el('span', { className: 't', textContent: e.label }), el('span', { className: `badge ${e.status}`, textContent: e.status })),
-      el('div', { className: 'mono muted', textContent: e.envId }),
-      ...(e.cfg?.planId ? [el('div', { style: 'font-size:12px' }, 'Plan: ', el('b', { textContent: (state.plans.find((p) => p.id === e.cfg.planId) || {}).name || e.cfg.planId }))] : []),
-      el('div', { className: 'muted', style: 'font-size:12px', textContent: `as ${e.identity?.display || '?'} · updated ${ago(e.updatedAt)}` }),
-      ...(url && /^https?:\/\//.test(url) ? [el('a', { href: url, target: '_blank', rel: 'noopener', textContent: url, className: 'mono' })] : []),
-      el('div', { className: 'row', style: 'margin-top:8px' },
-        el('button', { textContent: 'Logs & pods', disabled: !e.kubeContext || e.status === 'destroyed', onclick: () => { showApp(); $('appEnv').value = e.envId; loadTargets(); } }),
-        el('button', { className: 'danger', textContent: 'Destroy', disabled: e.status === 'destroyed' || !!state.running, onclick: async () => {
-          if (!confirm(`Tear down everything in ${e.envId}? This deletes the cloud resources.`)) return;
-          try { openLog((await api('/api/destroy', { envId: e.envId })).id); refresh(); } catch (err) { alert(err.message); } } })));
-  }) : [el('p', { className: 'muted', style: 'margin:0', textContent: 'Nothing deployed yet.' })]));
-  $('appEnv').replaceChildren(...envs.filter((e) => e.kubeContext && e.status !== 'destroyed').map((e) => el('option', { value: e.envId, textContent: `${e.label} · ${e.envId}` })));
-}
-function renderHistory() {
-  const live = new Set(Object.values(state.environments).map((e) => e.current));
-  $('history').replaceChildren(...state.deployments.map((d) => el('tr', { className: d.id === selected ? 'sel' : '' },
-    el('td', { title: d.startedAt, textContent: ago(d.startedAt) }),
-    el('td', { className: 'mono', textContent: d.envId || d.provider }),
-    el('td', { textContent: d.kind + (d.rollbackOf ? ` → ${d.rollbackOf}` : '') }),
-    el('td', {}, el('span', { className: `badge ${d.status}`, textContent: d.status + (live.has(d.id) ? ' · live' : ''), title: d.error || '' })),
-    el('td', { className: 'mono', textContent: (d.commit || '').slice(0, 10) + (d.dirty ? ' *' : ''), title: d.dirty ? 'includes uncommitted changes' : '' }),
-    el('td', { textContent: took(d) }),
-    el('td', { className: 'row' },
-      el('button', { textContent: 'Log', onclick: () => openLog(d.id) }),
-      ...(d.status === 'succeeded' && d.kind !== 'destroy' && !live.has(d.id) ? [el('button', { textContent: 'Roll back here', disabled: !!state.running, onclick: async () => {
-        if (!confirm(`Redeploy the exact version from ${d.id} to ${d.envId}?`)) return;
-        try { openLog((await api('/api/rollback', { id: d.id })).id); refresh(); } catch (err) { alert(err.message); } } })] : [])))));
-}
-function openLog(id) {
-  showDeployLog(); selected = id; stream?.close(); $('log').textContent = ''; $('logTitle').textContent = id;
-  stream = new EventSource(`/api/logs?id=${encodeURIComponent(id)}&token=${token}`);
-  stream.addEventListener('log', (e) => { const log = $('log'); const end = log.scrollTop + log.clientHeight >= log.scrollHeight - 30; log.textContent += JSON.parse(e.data); if (end) log.scrollTop = log.scrollHeight; });
-  stream.addEventListener('end', () => { stream.close(); refresh(); });
-  renderHistory();
-}
-function showDeployLog() { $('tabDeploy').classList.add('on'); $('tabApp').classList.remove('on'); $('appBar').style.display = 'none'; $('pods').style.display = 'none'; }
-function showApp() { $('tabApp').classList.add('on'); $('tabDeploy').classList.remove('on'); $('appBar').style.display = 'flex'; }
-async function loadTargets() {
-  const env = $('appEnv').value; if (!env) return;
-  try {
-    const { pods, deployments } = await api(`/api/pods?env=${encodeURIComponent(env)}`);
-    $('appTarget').replaceChildren(...deployments.map((d) => el('option', { value: `deployment/${d}`, textContent: d })), ...pods.map((p) => el('option', { value: `pod/${p.name}`, textContent: `pod ${p.name}` })));
-    $('pods').replaceChildren(el('table', { className: 'pods' }, el('tbody', {}, ...pods.map((p) => el('tr', {},
-      el('td', { className: 'mono', textContent: p.name }), el('td', {}, el('span', { className: `badge ${p.ready ? 'succeeded' : p.phase === 'Pending' ? 'running' : 'failed'}`, textContent: p.ready ? 'ready' : p.phase })),
-      el('td', { className: 'muted', textContent: `${p.restarts} restarts` }), el('td', { className: 'muted', textContent: ago(p.startedAt) }))))));
-  } catch (err) { $('log').textContent = err.message; }
-}
-function streamApp() {
-  const env = $('appEnv').value, target = $('appTarget').value; if (!env || !target) return;
-  stream?.close(); $('log').textContent = ''; $('logTitle').textContent = target;
-  stream = new EventSource(`/api/app-logs?env=${encodeURIComponent(env)}&target=${encodeURIComponent(target)}&token=${token}`);
-  stream.addEventListener('log', (e) => { const log = $('log'); log.textContent += JSON.parse(e.data); if (log.textContent.length > 400000) log.textContent = log.textContent.slice(-300000); log.scrollTop = log.scrollHeight; });
-  stream.addEventListener('end', () => stream.close());
-}
-async function refresh() {
-  try {
-    state = await api('/api/state');
-    if (!$('platform').options.length) { $('platform').replaceChildren(...state.providers.map((p) => el('option', { value: p.id, textContent: p.label }))); renderForm(); renderChips(); renderPlans(); $('pricingNote').textContent = state.pricingNote; }
-    $('running').textContent = state.running ? `running ${state.running}` : 'idle'; $('running').className = `badge ${state.running ? 'running' : ''}`;
-    $('deployBtn').disabled = !!state.running;
-    renderEnvs(); renderHistory();
-  } catch (err) { $('log').textContent = `${err.message}\nOpen the exact URL printed by "node deploy/cli.mjs ui" (it carries the access token).`; }
-}
-$('platform').onchange = () => { chosenPlan = null; $('chosenPlan').style.display = 'none'; renderForm(); renderPlans(); };
-$('budget').oninput = renderPlans;
-$('deployBtn').onclick = async () => {
-  const p = $('platform').value, prov = state.providers.find((x) => x.id === p);
-  const cfg = Object.fromEntries(prov.fields.map((f) => [f.key, $(`f-${f.key}`).value.trim()]));
-  if (chosenPlan && chosenPlan.provider === p) cfg.planId = chosenPlan.id;
-  const missing = prov.fields.filter((f) => f.required && !cfg[f.key]); if (missing.length) return alert(`Fill in: ${missing.map((f) => f.label).join(', ')}`);
-  localStorage.setItem(`cfg:${p}`, JSON.stringify(cfg));
-  try { openLog((await api('/api/deploy', { provider: p, cfg })).id); refresh(); } catch (err) { alert(err.message); }
-};
-$('tabDeploy').onclick = () => { showDeployLog(); if (selected) openLog(selected); };
-$('tabApp').onclick = () => { showApp(); loadTargets(); };
-$('appEnv').onchange = loadTargets; $('appGo').onclick = streamApp;
-$('podsBtn').onclick = () => { const s = $('pods').style; s.display = s.display === 'none' ? 'block' : 'none'; loadTargets(); };
-refresh(); setInterval(refresh, 5000); setInterval(() => { $('clock').textContent = new Date().toLocaleTimeString(); }, 1000);
-</script>
-</body>
+      main {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 32px 24px 96px;
+        display: grid;
+        gap: 32px;
+      }
+      .tabs {
+        justify-self: start;
+        max-width: 100%;
+        overflow-x: auto;
+        display: inline-flex;
+        gap: 4px;
+        padding: 4px;
+        border-radius: 12px;
+        background: var(--sunken);
+        border: 1px solid var(--line);
+      }
+      .tabs button {
+        white-space: nowrap;
+        border: 0;
+        background: transparent;
+        height: 36px;
+        padding: 0 18px;
+        border-radius: 9px;
+        color: var(--muted);
+        font-weight: 550;
+      }
+      .tabs button.on {
+        background: var(--surface);
+        color: var(--ink);
+        box-shadow: var(--shadow);
+      }
+      .section-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      .section-head h2 {
+        font-size: 20px;
+        letter-spacing: -0.015em;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--r);
+        box-shadow: var(--shadow);
+      }
+      .pad {
+        padding: 24px;
+      }
+      .stack > * + * {
+        margin-top: 16px;
+      }
+      .stack-lg > * + * {
+        margin-top: 24px;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .grow {
+        flex: 1;
+      }
+
+      /* controls */
+      button {
+        font: inherit;
+        height: 40px;
+        padding: 0 16px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink);
+        font-weight: 550;
+        cursor: pointer;
+        transition:
+          background 0.15s,
+          border-color 0.15s,
+          transform 0.05s;
+      }
+      button:hover {
+        background: var(--sunken);
+      }
+      button:active {
+        transform: translateY(1px);
+      }
+      button.primary {
+        background: var(--ink);
+        color: var(--bg);
+        border-color: var(--ink);
+      }
+      button.primary:hover {
+        opacity: 0.9;
+      }
+      button.accent {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+      button.ghost {
+        border-color: transparent;
+        background: transparent;
+        color: var(--muted);
+      }
+      button.ghost:hover {
+        color: var(--ink);
+        background: var(--sunken);
+      }
+      button.danger {
+        color: var(--bad);
+      }
+      button.danger:hover {
+        background: var(--bad-soft);
+        border-color: var(--bad-soft);
+      }
+      button.big {
+        height: 48px;
+        padding: 0 24px;
+        font-size: 16px;
+      }
+      button.sm {
+        height: 32px;
+        padding: 0 12px;
+        font-size: 13px;
+        border-radius: 8px;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .field label {
+        display: block;
+        font-size: 13px;
+        font-weight: 550;
+        margin-bottom: 6px;
+      }
+      .field .help {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .field .err {
+        font-size: 12.5px;
+        color: var(--bad);
+        margin-top: 6px;
+      }
+      input,
+      select {
+        width: 100%;
+        height: 42px;
+        padding: 0 12px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink);
+        font: inherit;
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      input:focus,
+      select:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+      input.bad {
+        border-color: var(--bad);
+      }
+      input:disabled,
+      select:disabled {
+        background: var(--sunken);
+        color: var(--muted);
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 20px;
+      }
+      details > summary {
+        cursor: pointer;
+        list-style: none;
+        color: var(--muted);
+        font-weight: 550;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        user-select: none;
+      }
+      details > summary::-webkit-details-marker {
+        display: none;
+      }
+      details > summary::before {
+        content: '›';
+        display: inline-block;
+        transition: transform 0.2s;
+        font-size: 18px;
+        line-height: 1;
+      }
+      details[open] > summary::before {
+        transform: rotate(90deg);
+      }
+      .group-title {
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .note {
+        padding: 12px 16px;
+        border-radius: 10px;
+        font-size: 13.5px;
+        background: var(--sunken);
+        color: var(--muted);
+      }
+      .note.warn {
+        background: var(--warn-soft);
+        color: var(--warn);
+      }
+      .note.bad {
+        background: var(--bad-soft);
+        color: var(--bad);
+      }
+      .note.ok {
+        background: var(--ok-soft);
+        color: var(--ok);
+      }
+      .chip {
+        height: 34px;
+        padding: 0 14px;
+        border-radius: 999px;
+        font-size: 13.5px;
+      }
+      .chip.on {
+        background: var(--ink);
+        color: var(--bg);
+        border-color: var(--ink);
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        background: var(--sunken);
+        color: var(--muted);
+      }
+      .badge.ok {
+        background: var(--ok-soft);
+        color: var(--ok);
+      }
+      .badge.bad {
+        background: var(--bad-soft);
+        color: var(--bad);
+      }
+      .badge.run {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      /* progress */
+      .progress {
+        overflow: hidden;
+        animation: rise 0.35s ease;
+      }
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      .ph {
+        display: flex;
+        align-items: start;
+        gap: 16px;
+      }
+      .ph h3 {
+        font-size: 18px;
+        letter-spacing: -0.01em;
+      }
+      .pct {
+        margin-left: auto;
+        font-size: 40px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+      .pct small {
+        font-size: 18px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .track {
+        position: relative;
+        height: 10px;
+        border-radius: 10px;
+        background: var(--sunken);
+        overflow: hidden;
+      }
+      .fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 0;
+        border-radius: 10px;
+        background: var(--accent);
+        transition:
+          width 0.8s cubic-bezier(0.2, 0.7, 0.2, 1),
+          background 0.3s;
+      }
+      .fill.run::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent, #ffffff55, transparent);
+        animation: shimmer 1.6s infinite;
+      }
+      .fill.ok {
+        background: var(--ok);
+      }
+      .fill.bad {
+        background: var(--bad);
+      }
+      @keyframes shimmer {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(100%);
+        }
+      }
+      .steps {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .step {
+        position: relative;
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 16px;
+        padding: 10px 0;
+        align-items: start;
+      }
+      .step:not(:last-child)::before {
+        content: '';
+        position: absolute;
+        left: 13px;
+        top: 38px;
+        bottom: -8px;
+        width: 2px;
+        background: var(--line);
+      }
+      .step.done:not(:last-child)::before {
+        background: var(--ok);
+      }
+      .ico {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 14px;
+        font-weight: 700;
+        border: 2px solid var(--line);
+        background: var(--surface);
+        color: var(--faint);
+        position: relative;
+        z-index: 1;
+      }
+      .step.done .ico {
+        border-color: var(--ok);
+        background: var(--ok);
+        color: #fff;
+        animation: pop 0.35s ease;
+      }
+      .step.failed .ico {
+        border-color: var(--bad);
+        background: var(--bad);
+        color: #fff;
+      }
+      .step.skipped .ico {
+        border-style: dashed;
+      }
+      .step.active .ico {
+        border-color: var(--accent-soft);
+      }
+      .step.active .ico::after {
+        content: '';
+        position: absolute;
+        inset: -2px;
+        border-radius: 50%;
+        border: 2px solid transparent;
+        border-top-color: var(--accent);
+        animation: spin 0.9s linear infinite;
+      }
+      .step.active .ico i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        animation: breathe 1.4s ease-in-out infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @keyframes breathe {
+        50% {
+          transform: scale(0.55);
+          opacity: 0.6;
+        }
+      }
+      @keyframes pop {
+        0% {
+          transform: scale(0.6);
+        }
+        70% {
+          transform: scale(1.12);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+      .step .t {
+        font-weight: 550;
+        padding-top: 3px;
+      }
+      .step.pending .t,
+      .step.skipped .t {
+        color: var(--muted);
+      }
+      .step .d {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 2px;
+        overflow-wrap: anywhere;
+      }
+      .step .sub {
+        height: 4px;
+        border-radius: 4px;
+        background: var(--sunken);
+        margin-top: 8px;
+        overflow: hidden;
+        max-width: 360px;
+      }
+      .step .sub i {
+        display: block;
+        height: 100%;
+        background: var(--accent);
+        transition: width 0.6s ease;
+      }
+      .step .s {
+        font-size: 12.5px;
+        color: var(--faint);
+        padding-top: 5px;
+      }
+      pre.log {
+        margin: 0;
+        max-height: 440px;
+        overflow: auto;
+        padding: 16px 20px;
+        border-radius: 12px;
+        background: #0d0d10;
+        color: #d7d7dc;
+        font: 12.5px/1.6 var(--mono);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      pre.tail {
+        max-height: none;
+      }
+
+      /* environments */
+      .env + .env {
+        margin-top: 16px;
+      }
+      .env-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .env-head h3 {
+        font-size: 17px;
+        letter-spacing: -0.01em;
+      }
+      .meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+        gap: 16px 24px;
+        margin-top: 20px;
+      }
+      .meta dt {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 2px;
+      }
+      .meta dd {
+        margin: 0;
+        font-weight: 550;
+        overflow-wrap: anywhere;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid var(--line);
+      }
+      .panel {
+        margin-top: 20px;
+        padding: 24px;
+        border-radius: 12px;
+        background: var(--sunken);
+        animation: rise 0.25s ease;
+      }
+      .secret {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 20px;
+      }
+      .secret + .secret {
+        margin-top: 12px;
+      }
+      .kv-row {
+        display: grid;
+        grid-template-columns: minmax(160px, 260px) 1fr;
+        gap: 12px;
+        align-items: center;
+      }
+      .kv-row + .kv-row {
+        margin-top: 10px;
+      }
+      #progressBox {
+        scroll-margin-top: 88px;
+      }
+      @media (max-width: 640px) {
+        .tabs button {
+          padding: 0 12px;
+        }
+        .kv-row {
+          grid-template-columns: 1fr;
+          gap: 6px;
+        }
+        .pct {
+          font-size: 30px;
+        }
+        .bar,
+        main {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+        .pad {
+          padding: 20px;
+        }
+      }
+      .empty {
+        text-align: center;
+        padding: 56px 24px;
+      }
+      .empty h3 {
+        font-size: 18px;
+        margin-bottom: 8px;
+      }
+
+      /* plans */
+      .plans {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 16px;
+      }
+      .plan {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 22px;
+        border-radius: var(--r);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        cursor: pointer;
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s,
+          transform 0.15s;
+      }
+      .plan:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+      }
+      .plan.chosen {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+      .plan h3 {
+        font-size: 16px;
+      }
+      .price {
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+      .price small {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--muted);
+      }
+      .plan ul {
+        margin: 0;
+        padding-left: 18px;
+        font-size: 13.5px;
+      }
+      .plan li + li {
+        margin-top: 4px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: middle;
+      }
+      th {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      tbody tr {
+        transition: background 0.15s;
+      }
+      tbody tr.click {
+        cursor: pointer;
+      }
+      tbody tr.click:hover,
+      tr.sel {
+        background: var(--sunken);
+      }
+      .scroll-x {
+        overflow-x: auto;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <div class="brand">
+          <div class="logo">K</div>
+          Knowhere Deploy
+        </div>
+        <div class="pill" id="pill">
+          <span class="dot" id="pillDot"></span><span id="pillText">Idle</span
+          ><span class="mini hidden" id="pillMini"><i></i></span>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <div class="tabs" role="tablist" id="tabs">
+        <button data-tab="envs" class="on">Environments</button>
+        <button data-tab="new">New deployment</button>
+        <button data-tab="history">History</button>
+      </div>
+
+      <section id="progressBox" class="hidden"></section>
+
+      <section data-view="envs">
+        <div class="section-head">
+          <h2>Environments</h2>
+          <span class="muted small">Everything you have deployed, and what you can do with it</span>
+        </div>
+        <div id="envs"></div>
+      </section>
+
+      <section data-view="new" class="hidden stack-lg">
+        <div>
+          <div class="section-head">
+            <h2>1. Choose a plan</h2>
+            <div class="row">
+              <span class="row" id="cloudChips"></span>
+              <span class="row small muted"
+                >Max $<input
+                  id="budget"
+                  type="number"
+                  min="0"
+                  placeholder="any"
+                  style="width: 96px; height: 34px"
+                />/mo</span
+              >
+            </div>
+          </div>
+          <div class="plans" id="plans"></div>
+          <p class="muted small" style="margin-top: 12px" id="pricingNote"></p>
+          <details style="margin-top: 16px">
+            <summary>Compare all plans side by side</summary>
+            <div class="card scroll-x" style="margin-top: 12px">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Plan</th>
+                    <th>Cloud</th>
+                    <th>$/mo</th>
+                    <th>Capacity</th>
+                    <th>Nodes</th>
+                    <th>Spot</th>
+                    <th>High availability</th>
+                    <th>First deploy</th>
+                  </tr>
+                </thead>
+                <tbody id="compare"></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+        <div>
+          <div class="section-head">
+            <h2>2. Settings</h2>
+            <span class="badge run hidden" id="chosenPlan"></span>
+          </div>
+          <div class="card pad stack-lg">
+            <div class="field" style="max-width: 420px">
+              <label for="platform">Platform</label
+              ><select id="platform"></select>
+            </div>
+            <div id="missing"></div>
+            <div id="newForm"></div>
+            <div class="row">
+              <button class="primary big" id="deployBtn">Deploy</button
+              ><span class="muted small" id="deployHint"
+                >A first deploy sets everything up from scratch.</span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section data-view="history" class="hidden">
+        <div class="section-head">
+          <h2>History</h2>
+          <span class="muted small"
+            >Every deploy, update, rollback, secret change and teardown. Click one to see its
+            progress.</span
+          >
+        </div>
+        <div class="card scroll-x">
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>What</th>
+                <th>Environment</th>
+                <th>When</th>
+                <th>Took</th>
+                <th>Code</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="history"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      // token from the URL fragment (never sent to the server in requests for the page)
+      const token =
+        (location.hash.match(/token=([a-f0-9]+)/) || [])[1] ||
+        sessionStorage.getItem('deployToken') ||
+        '';
+      if (token) {
+        sessionStorage.setItem('deployToken', token);
+        history.replaceState(null, '', location.pathname);
+      }
+      const $ = (id) => document.getElementById(id);
+      const el = (tag, props = {}, ...kids) => {
+        const e = document.createElement(tag);
+        for (const [k, v] of Object.entries(props))
+          k === 'style'
+            ? (e.style.cssText = v)
+            : k.startsWith('data-')
+              ? e.setAttribute(k, v)
+              : (e[k] = v);
+        kids.flat().forEach((k) => k != null && e.append(k));
+        return e;
+      };
+      const api = async (path, body) => {
+        const r = await fetch(path, {
+          method: body ? 'POST' : 'GET',
+          headers: { 'x-deploy-token': token, 'content-type': 'application/json' },
+          body: body ? JSON.stringify(body) : undefined
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || r.statusText);
+        return j;
+      };
+      const ago = (t) => {
+        if (!t) return '';
+        const s = (Date.now() - new Date(t)) / 1000;
+        return s < 60
+          ? 'just now'
+          : s < 3600
+            ? `${(s / 60) | 0} min ago`
+            : s < 86400
+              ? `${(s / 3600) | 0} h ago`
+              : new Date(t).toLocaleDateString();
+      };
+      const dur = (ms) => {
+        const s = Math.max(0, ms / 1000) | 0;
+        return s < 60
+          ? `${s}s`
+          : s < 3600
+            ? `${(s / 60) | 0}m ${s % 60}s`
+            : `${(s / 3600) | 0}h ${((s % 3600) / 60) | 0}m`;
+      };
+      const took = (d) =>
+        d.finishedAt
+          ? dur(new Date(d.finishedAt) - new Date(d.startedAt))
+          : d.status === 'running'
+            ? dur(Date.now() - new Date(d.startedAt))
+            : '';
+      const CLOUD = { aws: 'AWS', gcp: 'Google Cloud', azure: 'Azure', local: 'Local' };
+      const KIND = {
+        deploy: 'Deploy',
+        rollback: 'Rollback',
+        destroy: 'Destroy',
+        secrets: 'Secrets'
+      };
+      const kindLabel = (d) =>
+        d.kind === 'secrets'
+          ? `Secrets · ${d.secretName}`
+          : d.kind === 'rollback'
+            ? `Rollback to ${d.rollbackOf}`
+            : KIND[d.kind] || d.kind;
+      const statusBadge = (s) =>
+        el(
+          'span',
+          {
+            className: `badge ${s === 'succeeded' || s === 'live' ? 'ok' : s === 'running' ? 'run' : /failed|interrupted/.test(s) ? 'bad' : ''}`
+          },
+          el('span', { className: `dot ${s}` }),
+          s
+        );
+      const LOCKED = new Set([
+        'region',
+        'profile',
+        'kubeContext',
+        'project',
+        'location',
+        'resourceGroup',
+        'zone',
+        'locationType'
+      ]);
+
+      let state = { providers: [], deployments: [], environments: {}, plans: [] };
+      let tab = 'envs',
+        focus = null,
+        seenRunning = null,
+        cloud = 'all',
+        chosenPlan = null;
+      const openPanel = {}; // envId -> 'settings' | 'secrets' | 'logs'
+      const logs = {};
+      let stream,
+        logFor = null;
+
+      /* ---------------------------------------------------------------- tabs */
+      function show(t) {
+        tab = t;
+        document
+          .querySelectorAll('#tabs button')
+          .forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
+        document
+          .querySelectorAll('[data-view]')
+          .forEach((v) => v.classList.toggle('hidden', v.dataset.view !== t));
+      }
+      $('tabs').onclick = (e) => e.target.dataset.tab && show(e.target.dataset.tab);
+
+      /* ---------------------------------------------------------------- progress */
+      const WEIGHT = {
+        check: 0.5,
+        source: 0.5,
+        provision: 2,
+        media: 1.5,
+        images: 3,
+        resources: 7,
+        connect: 0.5,
+        destroy: 7,
+        apply: 3,
+        secrets: 1,
+        sync: 1.5
+      };
+      function progressOf(d, text = '') {
+        const steps = d.steps || [];
+        const at = {};
+        let from = 0,
+          last = -1;
+        steps.forEach((s, i) => {
+          let p = text.indexOf(`» step: ${s.id}\n`, from);
+          if (p < 0 && s.match) p = text.indexOf(s.match, from);
+          if (p >= 0) {
+            at[s.id] = p;
+            from = p;
+            last = i;
+          }
+        });
+        const end = d.status !== 'running';
+        const items = steps.map((s, i) => {
+          let st =
+            i < last
+              ? at[s.id] != null
+                ? 'done'
+                : 'skipped'
+              : i === last
+                ? end
+                  ? d.status === 'succeeded'
+                    ? 'done'
+                    : 'failed'
+                  : 'active'
+                : end && d.status === 'succeeded'
+                  ? 'skipped'
+                  : 'pending';
+          const seg =
+            at[s.id] != null
+              ? text.slice(
+                  at[s.id],
+                  i < steps.length - 1 && at[steps[i + 1]?.id] != null
+                    ? at[steps[i + 1].id]
+                    : undefined
+                )
+              : '';
+          return { ...s, st, ...detailOf(s.id, seg, d) };
+        });
+        const total = items.reduce((t, s) => t + (WEIGHT[s.id] || 1), 0);
+        let doneW = 0;
+        for (const s of items) {
+          const w = WEIGHT[s.id] || 1;
+          doneW +=
+            s.st === 'done' || s.st === 'skipped'
+              ? w
+              : s.st === 'active' || s.st === 'failed'
+                ? w * (s.frac ?? 0.3)
+                : 0;
+        }
+        const pct =
+          d.status === 'succeeded' ? 100 : Math.min(99, Math.round((doneW / (total || 1)) * 100));
+        return { items, pct, current: items[last] };
+      }
+      // what a step is doing right now, read from its part of the log
+      function detailOf(id, seg, d) {
+        if (id === 'resources' || id === 'destroy' || id === 'media') {
+          const counts = [...seg.matchAll(/\|\s*(\d+)\/(\d+)\s*\|/g)];
+          const lines = [
+            ...seg.matchAll(
+              /\|\s*\d+\/\d+\s*\|[^|\n]*\|\s*([A-Z_]+)\s*\|\s*([\w:-]+)\s*\|\s*([^\n(]+?)\s*(?:\(|\n)/g
+            )
+          ];
+          const now = lines.find((l) => /FAILED/.test(l[1])) || lines.at(-1);
+          if (!counts.length)
+            return {
+              detail: now
+                ? `${pretty(now[1])} ${now[3]}`
+                : id === 'destroy'
+                  ? 'Starting…'
+                  : 'Preparing the change set…'
+            };
+          const [, n, m] = counts.at(-1).map(Number);
+          const frac = id === 'destroy' ? Math.max(0, 1 - n / m) : n / m;
+          return {
+            frac,
+            detail: `${id === 'destroy' ? `${m - n} of ${m} removed` : `${n} of ${m} resources`}${now ? ` · ${pretty(now[1])} ${now[3]}` : ''}`
+          };
+        }
+        if (id === 'images') {
+          const built = new Set(
+            [
+              ...seg.matchAll(
+                /(?:Built|Published|naming to \S+\/)\s*(Image-[\w-]+|[\w-]+-service|frontend|judge-runner)/g
+              )
+            ].map((m) => m[1])
+          ).size;
+          const started = new Set([...seg.matchAll(/Building (Image-[\w-]+)/g)].map((m) => m[1]))
+            .size;
+          return {
+            frac: started ? Math.min(0.95, built / Math.max(started, 10)) : undefined,
+            detail: built
+              ? `${built} image${built > 1 ? 's' : ''} ready`
+              : started
+                ? `Building ${started}…`
+                : 'Checking what changed…'
+          };
+        }
+        return {};
+      }
+      const pretty = (s) =>
+        ({
+          CREATE_IN_PROGRESS: 'Creating',
+          CREATE_COMPLETE: 'Created',
+          UPDATE_IN_PROGRESS: 'Updating',
+          UPDATE_COMPLETE: 'Updated',
+          DELETE_IN_PROGRESS: 'Deleting',
+          DELETE_COMPLETE: 'Deleted',
+          CREATE_FAILED: 'Failed',
+          ROLLBACK_IN_PROGRESS: 'Rolling back',
+          UPDATE_COMPLETE_CLEANUP_IN_PROGRESS: 'Cleaning up'
+        })[s] || s.toLowerCase().replace(/_/g, ' ');
+
+      let shownPct = 0,
+        pctAnim;
+      function tweenPct(node, to) {
+        cancelAnimationFrame(pctAnim);
+        const from = shownPct,
+          t0 = performance.now();
+        const step = (t) => {
+          const k = Math.min(1, (t - t0) / 700);
+          shownPct = Math.round(from + (to - from) * (1 - (1 - k) ** 3));
+          node.firstChild.textContent = shownPct;
+          if (k < 1) pctAnim = requestAnimationFrame(step);
+        };
+        pctAnim = requestAnimationFrame(step);
+      }
+      function renderProgress() {
+        const box = $('progressBox');
+        const d = focus && state.deployments.find((x) => x.id === focus);
+        if (!d) return box.classList.add('hidden');
+        box.classList.remove('hidden');
+        const text = logs[d.id] || '';
+        const p = progressOf(d, text);
+        const running = d.status === 'running';
+        const title = running
+          ? p.current?.label
+            ? `${p.current.label}…`
+            : 'Starting…'
+          : d.status === 'succeeded'
+            ? `${kindLabel(d)} finished`
+            : `${kindLabel(d)} ${d.status}`;
+        let card = box.firstChild;
+        if (!card || card.dataset.id !== d.id) {
+          shownPct = 0;
+          card = el(
+            'div',
+            { className: 'card pad progress stack-lg', 'data-id': d.id },
+            el(
+              'div',
+              { className: 'ph' },
+              el(
+                'div',
+                { className: 'stack', style: 'gap:4px' },
+                el(
+                  'div',
+                  { className: 'row small muted' },
+                  el('span', { className: 'k' }),
+                  el('span', {}, '·'),
+                  el('span', { className: 'mono e' })
+                ),
+                el('h3', { className: 't' }),
+                el('div', { className: 'small muted m' })
+              ),
+              el('div', { className: 'pct' }, '0', el('small', {}, '%'))
+            ),
+            el('div', { className: 'track' }, el('div', { className: 'fill' })),
+            el('ol', { className: 'steps' }),
+            el('div', { className: 'fail' }),
+            el(
+              'div',
+              { className: 'row' },
+              el(
+                'details',
+                { className: 'grow', ontoggle: (e) => e.target.open && scrollLog(card) },
+                el('summary', {}, 'Full log'),
+                el('pre', { className: 'log', style: 'margin-top:12px' })
+              ),
+              el(
+                'button',
+                {
+                  className: 'ghost sm x',
+                  onclick: () => {
+                    focus = null;
+                    renderProgress();
+                  }
+                },
+                'Close'
+              )
+            )
+          );
+          box.replaceChildren(card);
+        }
+        card.querySelector('.k').textContent = kindLabel(d);
+        card.querySelector('.e').textContent = d.envId || d.provider;
+        card.querySelector('.t').textContent = title;
+        card.querySelector('.m').textContent =
+          `${running ? 'Running for' : 'Took'} ${took(d)} · started ${new Date(d.startedAt).toLocaleTimeString()}`;
+        const pct = card.querySelector('.pct');
+        if (Number(pct.firstChild.textContent) !== p.pct) tweenPct(pct, p.pct);
+        const fill = card.querySelector('.fill');
+        fill.style.width = `${Math.max(p.pct, 2)}%`;
+        fill.className = `fill ${running ? 'run' : d.status === 'succeeded' ? 'ok' : 'bad'}`;
+        card
+          .querySelector('.steps')
+          .replaceChildren(
+            ...p.items.map((s) =>
+              el(
+                'li',
+                { className: `step ${s.st}` },
+                el(
+                  'div',
+                  { className: 'ico' },
+                  s.st === 'done'
+                    ? '✓'
+                    : s.st === 'failed'
+                      ? '✕'
+                      : s.st === 'active'
+                        ? el('i')
+                        : s.st === 'skipped'
+                          ? '–'
+                          : ''
+                ),
+                el(
+                  'div',
+                  {},
+                  el('div', { className: 't' }, s.label),
+                  s.detail && (s.st === 'active' || s.st === 'failed')
+                    ? el('div', { className: 'd' }, s.detail)
+                    : null,
+                  s.st === 'active' && s.frac != null
+                    ? el(
+                        'div',
+                        { className: 'sub' },
+                        el('i', { style: `width:${Math.round(s.frac * 100)}%` })
+                      )
+                    : null
+                ),
+                el(
+                  'div',
+                  { className: 's' },
+                  s.st === 'skipped' ? 'not needed' : s.st === 'pending' ? 'waiting' : ''
+                )
+              )
+            )
+          );
+        const fail = card.querySelector('.fail');
+        if (/failed|interrupted/.test(d.status)) {
+          const tail = text
+            .split('\n')
+            .filter((l) => l.trim() && !/^\s+at /.test(l))
+            .slice(-12)
+            .join('\n');
+          fail.replaceChildren(
+            el(
+              'div',
+              { className: 'stack' },
+              el(
+                'div',
+                { className: 'note bad', style: 'white-space:pre-wrap' },
+                d.error || 'Failed'
+              ),
+              el('div', { className: 'small muted' }, 'Last lines of the log'),
+              el('pre', { className: 'log tail' }, tail)
+            )
+          );
+        } else fail.replaceChildren();
+        card.querySelector('.x').classList.toggle('hidden', running);
+        const pre = card.querySelector('pre.log:not(.tail)');
+        const end = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 40;
+        if (pre.textContent.length !== text.length) {
+          pre.textContent = text;
+          if (end) pre.scrollTop = pre.scrollHeight;
+        }
+      }
+      const scrollLog = (card) => {
+        const pre = card.querySelector('pre.log');
+        pre.scrollTop = pre.scrollHeight;
+      };
+
+      let raf;
+      const soon = () => {
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => {
+          renderProgress();
+          renderPill();
+        });
+      };
+      function follow(id, { scroll = true } = {}) {
+        focus = id;
+        if (logFor !== id) {
+          stream?.close();
+          logFor = id;
+          logs[id] = '';
+          stream = new EventSource(`/api/logs?id=${encodeURIComponent(id)}&token=${token}`);
+          stream.addEventListener('log', (e) => {
+            logs[id] = (logs[id] || '') + JSON.parse(e.data);
+            soon();
+          });
+          stream.addEventListener('end', () => {
+            stream.close();
+            refresh();
+          });
+        }
+        renderProgress();
+        if (scroll) $('progressBox').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      function renderPill() {
+        const d = state.running && state.deployments.find((x) => x.id === state.running);
+        $('pill').classList.toggle('busy', !!d);
+        $('pillDot').className = `dot ${d ? 'running' : ''}`;
+        $('pillMini').classList.toggle('hidden', !d);
+        if (!d) return ($('pillText').textContent = 'Idle');
+        const p = progressOf(d, logs[d.id] || '');
+        $('pillText').textContent = `${kindLabel(d)} · ${p.pct}%`;
+        $('pillMini').firstChild.style.width = `${p.pct}%`;
+      }
+      $('pill').onclick = () => state.running && follow(state.running);
+
+      /* ---------------------------------------------------------------- forms */
+      function fieldsForm(prov, values, { lock = false, idPrefix } = {}) {
+        const groups = { basic: [], domain: [], advanced: [] };
+        for (const f of prov.fields) groups[f.group || 'basic'].push(f);
+        const input = (f) => {
+          const id = `${idPrefix}-${f.key}`,
+            v = values[f.key] ?? f.default ?? '';
+          const disabled = lock && LOCKED.has(f.key);
+          const ctl = f.options
+            ? el(
+                'select',
+                { id, disabled },
+                ...f.options.map(([val, label]) =>
+                  el('option', { value: val, textContent: label, selected: val === v })
+                ),
+                ...(!f.options.some(([val]) => val === v) && v
+                  ? [el('option', { value: v, textContent: v, selected: true })]
+                  : [])
+              )
+            : el('input', {
+                id,
+                value: v,
+                placeholder: f.default || '',
+                disabled,
+                spellcheck: false,
+                autocomplete: 'off'
+              });
+          if (f.options) ctl.value = v;
+          const err = el('div', { className: 'err hidden' });
+          const check = () => {
+            const bad = fieldError(f, ctl.value);
+            ctl.classList?.toggle('bad', !!bad);
+            err.textContent = bad || '';
+            err.classList.toggle('hidden', !bad);
+            return !bad;
+          };
+          ctl.onblur = check;
+          ctl.oninput = () => ctl.classList.contains('bad') && check();
+          ctl._check = check;
+          return el(
+            'div',
+            { className: 'field' },
+            el(
+              'label',
+              { htmlFor: id },
+              f.label,
+              f.required ? el('span', { className: 'muted' }, ' *') : null
+            ),
+            ctl,
+            f.help
+              ? el('div', { className: 'help' }, disabled ? 'Fixed for this environment' : f.help)
+              : disabled
+                ? el('div', { className: 'help' }, 'Fixed for this environment')
+                : null,
+            err
+          );
+        };
+        return el(
+          'div',
+          { className: 'stack-lg' },
+          el('div', { className: 'grid2' }, groups.basic.map(input)),
+          groups.domain.length
+            ? el(
+                'div',
+                { className: 'stack' },
+                el('div', { className: 'group-title' }, 'Domain · optional'),
+                el('div', { className: 'grid2' }, groups.domain.map(input))
+              )
+            : null,
+          groups.advanced.length
+            ? el(
+                'details',
+                {},
+                el('summary', {}, 'Advanced settings'),
+                el(
+                  'div',
+                  { className: 'grid2', style: 'margin-top:16px' },
+                  groups.advanced.map(input)
+                )
+              )
+            : null
+        );
+      }
+      function fieldError(f, raw) {
+        const v = String(raw ?? '').trim();
+        if (!v) return f.required ? 'Required' : '';
+        return f.pattern && !new RegExp(f.pattern, f.flags).test(v)
+          ? `Should be ${f.hint || 'valid'}`
+          : '';
+      }
+      function readForm(prov, idPrefix) {
+        let ok = true;
+        const cfg = {};
+        for (const f of prov.fields) {
+          const c = $(`${idPrefix}-${f.key}`);
+          if (!c) continue;
+          if (!c._check()) ok = false;
+          cfg[f.key] = c.value.trim();
+        }
+        return ok ? cfg : null;
+      }
+
+      /* ---------------------------------------------------------------- new deployment */
+      const survives = (p) => /Survives|absorbed|SLA/.test(p.reliability);
+      function visiblePlans() {
+        const max = Number($('budget').value) || Infinity;
+        return state.plans
+          .filter((p) => (cloud === 'all' || p.provider === cloud) && p.monthly <= max)
+          .sort((a, b) => a.monthly - b.monthly);
+      }
+      function usePlan(p) {
+        chosenPlan = p;
+        $('platform').value = p.provider;
+        const saved = savedCfg(p.provider);
+        renderNewForm({ ...saved, ...p.cfg });
+        $('chosenPlan').classList.remove('hidden');
+        $('chosenPlan').textContent = `${p.name} · ~$${p.monthly}/mo`;
+        renderPlans();
+      }
+      function renderPlans() {
+        const plans = visiblePlans();
+        $('plans').replaceChildren(
+          ...(plans.length
+            ? plans.map((p) =>
+                el(
+                  'article',
+                  {
+                    className: `plan ${chosenPlan?.id === p.id ? 'chosen' : ''}`,
+                    onclick: () => usePlan(p)
+                  },
+                  el(
+                    'div',
+                    { className: 'row', style: 'gap:6px' },
+                    el('span', { className: 'badge' }, CLOUD[p.provider]),
+                    p.cfg.spot === 'yes' ? el('span', { className: 'badge run' }, 'spot') : null,
+                    survives(p) ? el('span', { className: 'badge ok' }, 'high availability') : null
+                  ),
+                  el(
+                    'div',
+                    {},
+                    el('h3', {}, p.name),
+                    el('p', { className: 'muted small', style: 'margin-top:4px' }, p.tagline)
+                  ),
+                  el('div', { className: 'price' }, `$${p.monthly}`, el('small', {}, ' / month')),
+                  el(
+                    'ul',
+                    {},
+                    el('li', {}, p.specs.capacity),
+                    el('li', {}, p.specs.nodes),
+                    el('li', {}, `First deploy ~${p.setupMinutes} min`)
+                  ),
+                  el(
+                    'details',
+                    { onclick: (e) => e.stopPropagation() },
+                    el('summary', { className: 'small' }, 'Details'),
+                    el(
+                      'div',
+                      { className: 'stack small', style: 'margin-top:12px' },
+                      el('div', {}, el('b', {}, 'Best for: '), p.bestFor),
+                      el(
+                        'div',
+                        {},
+                        el('b', {}, 'What runs where'),
+                        el(
+                          'ul',
+                          {},
+                          p.runs.map((r) => el('li', {}, r))
+                        )
+                      ),
+                      el(
+                        'div',
+                        {},
+                        el('b', {}, 'Limitations'),
+                        el(
+                          'ul',
+                          {},
+                          p.limitations.map((r) => el('li', {}, r))
+                        )
+                      ),
+                      el(
+                        'table',
+                        {},
+                        el(
+                          'tbody',
+                          {},
+                          p.breakdown.map(([item, cost]) =>
+                            el(
+                              'tr',
+                              {},
+                              el('td', { style: 'padding:6px 0' }, item),
+                              el(
+                                'td',
+                                { className: 'mono', style: 'padding:6px 0;text-align:right' },
+                                `$${cost}`
+                              )
+                            )
+                          )
+                        )
+                      )
+                    )
+                  )
+                )
+              )
+            : [
+                el(
+                  'div',
+                  { className: 'note' },
+                  'No plan fits that budget. Raise it, or look at the Local plan.'
+                )
+              ])
+        );
+        $('compare').replaceChildren(
+          ...plans.map((p) =>
+            el(
+              'tr',
+              {
+                className: `click ${chosenPlan?.id === p.id ? 'sel' : ''}`,
+                onclick: () => usePlan(p)
+              },
+              el('td', {}, el('b', {}, p.name)),
+              el('td', {}, CLOUD[p.provider]),
+              el('td', { className: 'mono' }, `$${p.monthly}`),
+              el('td', {}, p.specs.capacity),
+              el('td', {}, p.specs.nodes),
+              el('td', {}, p.cfg.spot === 'yes' ? 'yes' : 'no'),
+              el('td', {}, survives(p) ? 'yes' : 'no'),
+              el('td', {}, `~${p.setupMinutes} min`)
+            )
+          )
+        );
+      }
+      function renderChips() {
+        $('cloudChips').replaceChildren(
+          ...['all', 'aws', 'gcp', 'azure', 'local'].map((c) =>
+            el(
+              'button',
+              {
+                className: `chip ${cloud === c ? 'on' : ''}`,
+                onclick: () => {
+                  cloud = c;
+                  renderChips();
+                  renderPlans();
+                }
+              },
+              c === 'all' ? 'All' : CLOUD[c]
+            )
+          )
+        );
+      }
+      const savedCfg = (id) => {
+        try {
+          return JSON.parse(localStorage.getItem(`cfg:${id}`) || '{}');
+        } catch {
+          return {};
+        }
+      };
+      function renderNewForm(values) {
+        const p = state.providers.find((x) => x.id === $('platform').value) || state.providers[0];
+        if (!p) return;
+        $('missing').replaceChildren(
+          ...(p.missing.length
+            ? [
+                el(
+                  'div',
+                  { className: 'note warn' },
+                  `Install and sign in first: ${p.missing.join(', ')}`
+                )
+              ]
+            : [])
+        );
+        $('newForm').replaceChildren(fieldsForm(p, values || savedCfg(p.id), { idPrefix: 'new' }));
+      }
+      $('platform').onchange = () => {
+        chosenPlan = null;
+        $('chosenPlan').classList.add('hidden');
+        renderNewForm();
+        renderPlans();
+      };
+      $('budget').oninput = renderPlans;
+      $('deployBtn').onclick = async () => {
+        const prov = state.providers.find((x) => x.id === $('platform').value);
+        const cfg = readForm(prov, 'new');
+        if (!cfg) return;
+        if (chosenPlan?.provider === prov.id) cfg.planId = chosenPlan.id;
+        try {
+          localStorage.setItem(`cfg:${prov.id}`, JSON.stringify(cfg));
+        } catch {}
+        try {
+          const { id } = await api('/api/deploy', { provider: prov.id, cfg });
+          await refresh();
+          follow(id);
+        } catch (err) {
+          alert(err.message);
+        }
+      };
+
+      /* ---------------------------------------------------------------- environments */
+      function renderEnvs() {
+        const envs = Object.values(state.environments).sort(
+          (a, b) =>
+            (a.status === 'destroyed') - (b.status === 'destroyed') ||
+            new Date(b.updatedAt) - new Date(a.updatedAt)
+        );
+        const busy = !!state.running;
+        if (!envs.length) {
+          return $('envs').replaceChildren(
+            el(
+              'div',
+              { className: 'card empty' },
+              el('h3', {}, 'Nothing deployed yet'),
+              el(
+                'p',
+                { className: 'muted', style: 'margin-bottom:24px' },
+                'Pick a plan and deploy. Progress shows up here, step by step.'
+              ),
+              el('button', { className: 'primary', onclick: () => show('new') }, 'New deployment')
+            )
+          );
+        }
+        // keep open panels (typed secrets, scroll) across the 5 s refresh: only rebuild what changed
+        const key = (e) =>
+          JSON.stringify([
+            e.status,
+            e.updatedAt,
+            e.commit,
+            e.cfg,
+            e.outputs,
+            openPanel[e.envId],
+            busy
+          ]);
+        const box = $('envs');
+        const have = new Map([...box.children].map((c) => [c.dataset.env, c]));
+        const next = envs.map((e) => {
+          const c = have.get(e.envId);
+          return c && c.dataset.key === key(e) ? c : envCard(e, busy, key(e));
+        });
+        if (next.some((c, i) => box.children[i] !== c) || box.children.length !== next.length)
+          box.replaceChildren(...next);
+      }
+      function envCard(e, busy, k) {
+        const url = e.outputs?.AppUrl || e.outputs?.appUrl;
+        const dead = e.status === 'destroyed';
+        const prov = state.providers.find((p) => p.id === e.provider);
+        const planOpt = prov?.fields
+          .find((f) => f.key === 'plan')
+          ?.options?.find(([v]) => v === e.cfg?.plan);
+        const plan =
+          (state.plans.find((p) => p.id === e.cfg?.planId) || {}).name || planOpt?.[1] || '';
+        const last = state.deployments.find((d) => d.envId === e.envId && d.kind !== 'secrets');
+        const panel = openPanel[e.envId];
+        const toggle = (name) => {
+          openPanel[e.envId] = panel === name ? null : name;
+          renderEnvs();
+        };
+        const card = el(
+          'article',
+          { className: 'card pad env', 'data-env': e.envId, 'data-key': k },
+          el(
+            'div',
+            { className: 'env-head' },
+            el('span', { className: `dot ${e.status}` }),
+            el('h3', {}, `${CLOUD[e.provider] || e.label}${plan ? ` · ${plan}` : ''}`),
+            statusBadge(e.status),
+            el('span', { className: 'grow' }),
+            url && /^https?:\/\//.test(url) && !dead
+              ? el(
+                  'a',
+                  { href: url, target: '_blank', rel: 'noopener' },
+                  el('button', { className: 'accent sm' }, 'Open app ↗')
+                )
+              : null
+          ),
+          el('div', { className: 'mono muted small', style: 'margin-top:6px' }, e.envId),
+          el(
+            'dl',
+            { className: 'meta' },
+            ...[
+              ['Address', url && /^https?:\/\//.test(url) ? url : e.cfg?.domainName || '—'],
+              ['Domain', e.cfg?.domainName || e.cfg?.publicUrl || 'Not set'],
+              ['Code version', e.commit ? e.commit.slice(0, 10) : '—'],
+              [
+                'Last change',
+                `${ago(e.updatedAt || e.destroyedAt)}${last && last.status !== 'succeeded' ? ` · last attempt ${last.status}` : ''}`
+              ],
+              ['Signed in as', (e.identity?.display || '').replace(/ \(.*/, '') || '—']
+            ].map(([dt, dd]) => el('div', {}, el('dt', {}, dt), el('dd', {}, dd)))
+          ),
+          el(
+            'div',
+            { className: 'actions' },
+            dead
+              ? el(
+                  'button',
+                  { className: 'primary', disabled: busy, onclick: () => update(e, {}) },
+                  'Deploy again'
+                )
+              : el(
+                  'button',
+                  {
+                    className: 'primary',
+                    disabled: busy,
+                    title: 'Deploys the code as it is in your working tree now',
+                    onclick: () => update(e, {})
+                  },
+                  'Update to latest code'
+                ),
+            el(
+              'button',
+              {
+                disabled: busy || dead,
+                className: panel === 'settings' ? 'on' : '',
+                onclick: () => toggle('settings')
+              },
+              'Domain & settings'
+            ),
+            el('button', { disabled: dead, onclick: () => toggle('secrets') }, 'Secrets'),
+            el(
+              'button',
+              { disabled: !e.kubeContext || dead, onclick: () => toggle('logs') },
+              'Logs & pods'
+            ),
+            last
+              ? el('button', { className: 'ghost', onclick: () => follow(last.id) }, 'Last run')
+              : null,
+            el('span', { className: 'grow' }),
+            el(
+              'button',
+              { className: 'danger', disabled: busy || dead, onclick: () => destroyEnv(e) },
+              'Destroy'
+            )
+          ),
+          panel === 'settings' && prov ? settingsPanel(e, prov) : null,
+          panel === 'secrets' ? secretsPanel(e) : null,
+          panel === 'logs' ? logsPanel(e) : null
+        );
+        return card;
+      }
+      async function update(e, changes) {
+        try {
+          const { id } = await api('/api/update', { envId: e.envId, cfg: changes });
+          openPanel[e.envId] = null;
+          await refresh();
+          follow(id);
+        } catch (err) {
+          alert(err.message);
+        }
+      }
+      async function destroyEnv(e) {
+        if (
+          prompt(`This deletes every cloud resource in ${e.envId}.\nType DESTROY to confirm.`) !==
+          'DESTROY'
+        )
+          return;
+        try {
+          const { id } = await api('/api/destroy', { envId: e.envId });
+          await refresh();
+          follow(id);
+        } catch (err) {
+          alert(err.message);
+        }
+      }
+      function settingsPanel(e, prov) {
+        const prefix = `set-${btoa(e.envId).replace(/\W/g, '')}`;
+        const summary = el(
+          'div',
+          { className: 'small muted' },
+          'Change what you need, then save. Only the changes are deployed.'
+        );
+        const panel = el(
+          'div',
+          { className: 'panel stack-lg' },
+          el('div', {}, el('h3', { style: 'font-size:16px' }, 'Domain & settings'), summary),
+          fieldsForm(prov, e.cfg || {}, { lock: true, idPrefix: prefix }),
+          el(
+            'div',
+            { className: 'row' },
+            el(
+              'button',
+              {
+                className: 'primary',
+                onclick: () => {
+                  const cfg = readForm(prov, prefix);
+                  if (!cfg) return;
+                  const changes = Object.fromEntries(
+                    Object.entries(cfg).filter(
+                      ([k, v]) => !LOCKED.has(k) && v !== String(e.cfg?.[k] ?? '')
+                    )
+                  );
+                  if (!Object.keys(changes).length)
+                    return (summary.textContent = 'Nothing changed yet.');
+                  if (
+                    !confirm(
+                      `Deploy with these changes?\n\n${Object.entries(changes)
+                        .map(
+                          ([k, v]) =>
+                            `${prov.fields.find((f) => f.key === k)?.label || k}: ${v || '(blank)'}`
+                        )
+                        .join('\n')}`
+                    )
+                  )
+                    return;
+                  update(e, changes);
+                }
+              },
+              'Save and deploy'
+            ),
+            el(
+              'button',
+              {
+                className: 'ghost',
+                onclick: () => {
+                  openPanel[e.envId] = null;
+                  renderEnvs();
+                }
+              },
+              'Cancel'
+            )
+          )
+        );
+        return panel;
+      }
+      function secretsPanel(e) {
+        const body = el(
+          'div',
+          { className: 'stack' },
+          el('div', { className: 'muted small' }, 'Loading secrets…')
+        );
+        const panel = el(
+          'div',
+          { className: 'panel stack' },
+          el(
+            'div',
+            {},
+            el('h3', { style: 'font-size:16px' }, 'Secrets'),
+            el(
+              'div',
+              { className: 'small muted' },
+              'Values are write-only: they are never shown here or written to any log. Leave a box empty to keep its current value.'
+            )
+          ),
+          body
+        );
+        api(`/api/secrets?env=${encodeURIComponent(e.envId)}`)
+          .then(({ supported, secrets }) => {
+            if (!supported)
+              return body.replaceChildren(
+                el(
+                  'div',
+                  { className: 'note' },
+                  'On this platform the app reads its secrets from k8s/secrets.yml. Edit that file, then click "Update to latest code".'
+                )
+              );
+            if (!secrets.length)
+              return body.replaceChildren(
+                el(
+                  'div',
+                  { className: 'note' },
+                  'No secrets listed yet. They appear after the first successful deploy.'
+                )
+              );
+            body.replaceChildren(
+              ...secrets.map((s) => {
+                const set = s.keys.filter((k) => k.set).length;
+                const inputs = {};
+                const extraKey = el('input', {
+                  placeholder: 'NEW_KEY',
+                  spellcheck: false,
+                  autocomplete: 'off'
+                });
+                const extraVal = el('input', {
+                  type: 'password',
+                  placeholder: 'value',
+                  autocomplete: 'new-password'
+                });
+                return el(
+                  'div',
+                  { className: 'secret stack' },
+                  el(
+                    'div',
+                    { className: 'row' },
+                    el('b', { className: 'mono' }, `knowhere/${s.name}`),
+                    el(
+                      'span',
+                      {
+                        className: `badge ${s.error ? 'bad' : set === s.keys.length && set ? 'ok' : 'run'}`
+                      },
+                      s.error ? 'cannot read' : `${set} of ${s.keys.length} set`
+                    )
+                  ),
+                  s.error ? el('div', { className: 'note bad small' }, s.error) : null,
+                  el(
+                    'div',
+                    {},
+                    ...s.keys.map((k) =>
+                      el(
+                        'div',
+                        { className: 'kv-row' },
+                        el(
+                          'div',
+                          { className: 'row', style: 'gap:8px' },
+                          el('span', { className: `dot ${k.set ? 'live' : 'failed'}` }),
+                          el('span', { className: 'mono' }, k.key)
+                        ),
+                        (inputs[k.key] = el('input', {
+                          type: 'password',
+                          placeholder: k.set ? 'unchanged' : 'not set yet',
+                          autocomplete: 'new-password'
+                        }))
+                      )
+                    ),
+                    el('div', { className: 'kv-row' }, extraKey, extraVal)
+                  ),
+                  el(
+                    'div',
+                    { className: 'row' },
+                    el(
+                      'button',
+                      {
+                        className: 'primary sm',
+                        disabled: !!state.running,
+                        onclick: async () => {
+                          const values = Object.fromEntries(
+                            Object.entries(inputs)
+                              .map(([k, i]) => [k, i.value])
+                              .filter(([, v]) => v)
+                          );
+                          if (extraKey.value.trim() && extraVal.value)
+                            values[extraKey.value.trim()] = extraVal.value;
+                          if (!Object.keys(values).length) return alert('Type at least one value.');
+                          try {
+                            const { id } = await api('/api/secrets', {
+                              envId: e.envId,
+                              name: s.name,
+                              values
+                            });
+                            Object.values(inputs).forEach((i) => (i.value = ''));
+                            extraVal.value = '';
+                            await refresh();
+                            follow(id);
+                          } catch (err) {
+                            alert(err.message);
+                          }
+                        }
+                      },
+                      'Save'
+                    ),
+                    el('span', { className: 'small muted' }, 'Services restart to load new values.')
+                  )
+                );
+              })
+            );
+          })
+          .catch((err) => body.replaceChildren(el('div', { className: 'note bad' }, err.message)));
+        return panel;
+      }
+      function logsPanel(e) {
+        const target = el('select', { style: 'max-width:340px' });
+        const pods = el('div');
+        const out = el('pre', { className: 'log' }, 'Pick a service and press Stream.');
+        let es;
+        const load = async () => {
+          try {
+            const r = await api(`/api/pods?env=${encodeURIComponent(e.envId)}`);
+            target.replaceChildren(
+              ...r.deployments.map((d) => el('option', { value: `deployment/${d}` }, d)),
+              ...r.pods.map((p) => el('option', { value: `pod/${p.name}` }, `pod ${p.name}`))
+            );
+            pods.replaceChildren(
+              el(
+                'div',
+                { className: 'card scroll-x' },
+                el(
+                  'table',
+                  {},
+                  el(
+                    'thead',
+                    {},
+                    el(
+                      'tr',
+                      {},
+                      el('th', {}, 'Pod'),
+                      el('th', {}, 'State'),
+                      el('th', {}, 'Restarts'),
+                      el('th', {}, 'Started')
+                    )
+                  ),
+                  el(
+                    'tbody',
+                    {},
+                    r.pods.map((p) =>
+                      el(
+                        'tr',
+                        {},
+                        el('td', { className: 'mono' }, p.name),
+                        el(
+                          'td',
+                          {},
+                          statusBadge(
+                            p.ready ? 'live' : p.phase === 'Pending' ? 'running' : 'failed'
+                          )
+                        ),
+                        el('td', {}, String(p.restarts)),
+                        el('td', { className: 'muted' }, ago(p.startedAt))
+                      )
+                    )
+                  )
+                )
+              )
+            );
+          } catch (err) {
+            pods.replaceChildren(el('div', { className: 'note bad' }, err.message));
+          }
+        };
+        load();
+        return el(
+          'div',
+          { className: 'panel stack' },
+          el(
+            'div',
+            { className: 'row' },
+            el('h3', { style: 'font-size:16px' }, 'Logs & pods'),
+            el('span', { className: 'grow' }),
+            el('button', { className: 'sm', onclick: load }, 'Refresh')
+          ),
+          pods,
+          el(
+            'div',
+            { className: 'row' },
+            target,
+            el(
+              'button',
+              {
+                className: 'sm primary',
+                onclick: () => {
+                  es?.close();
+                  out.textContent = '';
+                  es = new EventSource(
+                    `/api/app-logs?env=${encodeURIComponent(e.envId)}&target=${encodeURIComponent(target.value)}&token=${token}`
+                  );
+                  es.addEventListener('log', (m) => {
+                    out.textContent += JSON.parse(m.data);
+                    if (out.textContent.length > 400000)
+                      out.textContent = out.textContent.slice(-300000);
+                    out.scrollTop = out.scrollHeight;
+                  });
+                  es.addEventListener('end', () => es.close());
+                }
+              },
+              'Stream'
+            )
+          ),
+          out
+        );
+      }
+
+      /* ---------------------------------------------------------------- history */
+      function renderHistory() {
+        const live = new Set(Object.values(state.environments).map((e) => e.current));
+        $('history').replaceChildren(
+          ...(state.deployments.length
+            ? state.deployments.map((d) =>
+                el(
+                  'tr',
+                  {
+                    className: `click ${d.id === focus ? 'sel' : ''}`,
+                    onclick: () => follow(d.id)
+                  },
+                  el('td', { style: 'width:28px' }, el('span', { className: `dot ${d.status}` })),
+                  el(
+                    'td',
+                    {},
+                    el('div', { style: 'font-weight:550' }, kindLabel(d)),
+                    el(
+                      'div',
+                      { className: 'small muted' },
+                      d.status + (live.has(d.id) ? ' · live now' : '')
+                    )
+                  ),
+                  el('td', { className: 'mono small' }, d.envId || d.provider),
+                  el('td', { className: 'small', title: d.startedAt }, ago(d.startedAt)),
+                  el('td', { className: 'small' }, took(d)),
+                  el(
+                    'td',
+                    {
+                      className: 'mono small',
+                      title: d.dirty ? 'includes uncommitted changes' : ''
+                    },
+                    (d.commit || '').slice(0, 8) + (d.dirty ? ' *' : '')
+                  ),
+                  el(
+                    'td',
+                    {},
+                    d.status === 'succeeded' &&
+                      !['destroy', 'secrets'].includes(d.kind) &&
+                      !live.has(d.id)
+                      ? el(
+                          'button',
+                          {
+                            className: 'sm',
+                            disabled: !!state.running,
+                            onclick: async (ev) => {
+                              ev.stopPropagation();
+                              if (
+                                !confirm(`Redeploy the exact version from ${d.id} to ${d.envId}?`)
+                              )
+                                return;
+                              try {
+                                const { id } = await api('/api/rollback', { id: d.id });
+                                await refresh();
+                                follow(id);
+                              } catch (err) {
+                                alert(err.message);
+                              }
+                            }
+                          },
+                          'Roll back here'
+                        )
+                      : null
+                  )
+                )
+              )
+            : [
+                el(
+                  'tr',
+                  {},
+                  el(
+                    'td',
+                    { colSpan: 7, className: 'muted', style: 'text-align:center;padding:40px' },
+                    'No runs yet.'
+                  )
+                )
+              ])
+        );
+      }
+
+      /* ---------------------------------------------------------------- refresh */
+      async function refresh() {
+        try {
+          state = await api('/api/state');
+          if (!$('platform').options.length) {
+            $('platform').replaceChildren(
+              ...state.providers.map((p) => el('option', { value: p.id }, p.label))
+            );
+            renderNewForm();
+            renderChips();
+            renderPlans();
+            $('pricingNote').textContent = state.pricingNote || '';
+          }
+          // a job that starts (here or from the CLI) takes over the progress view once
+          if (state.running && seenRunning !== state.running) {
+            seenRunning = state.running;
+            follow(state.running, { scroll: false });
+          }
+          if (!focus && !state.running) {
+            const last = state.deployments[0];
+            if (last && Date.now() - new Date(last.finishedAt || 0) < 10 * 60e3)
+              follow(last.id, { scroll: false });
+          }
+          $('deployBtn').disabled = !!state.running;
+          $('deployHint').textContent = state.running
+            ? 'Another run is in progress. One at a time.'
+            : 'A first deploy sets everything up from scratch.';
+          renderEnvs();
+          renderHistory();
+          renderProgress();
+          renderPill();
+        } catch (err) {
+          $('envs').replaceChildren(
+            el(
+              'div',
+              { className: 'note bad' },
+              `${err.message}. Open the exact address printed by "pnpm deployer" (it carries the access token).`
+            )
+          );
+        }
+      }
+      refresh();
+      setInterval(refresh, 4000);
+    </script>
+  </body>
 </html>

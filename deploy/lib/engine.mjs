@@ -1,7 +1,17 @@
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { PROVIDERS } from '../providers/index.mjs';
 import { bus, has, run } from './run.mjs';
-import { artifacts, dropSecrets, load, logFile, newId, snapshot, update, worktree } from './state.mjs';
+import {
+  artifacts,
+  dropSecrets,
+  load,
+  logFile,
+  newId,
+  REPO,
+  snapshot,
+  update,
+  worktree
+} from './state.mjs';
 
 // ponytail: one job at a time across all environments; parallel deploys to different clouds
 // would need a lock per environment instead
@@ -23,7 +33,8 @@ update((s) => {
     if (d.status === 'running' && !(d.pid && alive(d.pid))) {
       Object.assign(d, {
         status: 'interrupted',
-        error: 'The deploy manager stopped while this was running. Check the log, then deploy or roll back again.',
+        error:
+          'The deploy manager stopped while this was running. Check the log, then deploy or roll back again.',
         finishedAt: new Date().toISOString()
       });
     }
@@ -50,11 +61,23 @@ async function execute(id, job) {
     bus.emit(id, line);
   };
   const provider = PROVIDERS[job.provider];
+  // the UI's progress view: every step this job goes through, marked in the log as "» step: <id>"
+  const step = (s) => note(`step: ${s}`);
+  const steps = (fresh) => [
+    { id: 'check', label: 'Check tools and sign-in' },
+    ...(job.kind === 'secrets' ? [] : [{ id: 'source', label: 'Snapshot the code' }]),
+    ...(fresh && !['destroy', 'secrets'].includes(job.kind)
+      ? [{ id: 'provision', label: provider?.provisionLabel || 'Set up the environment' }]
+      : []),
+    ...(provider?.steps?.(job) || [])
+  ];
   const record = {
     id,
-    kind: job.kind, // deploy | rollback | destroy
+    kind: job.kind, // deploy | rollback | destroy | secrets
     provider: job.provider,
     cfg: job.cfg,
+    steps: steps(false),
+    ...(job.secretName ? { secretName: job.secretName } : {}),
     status: 'running',
     pid: process.pid,
     startedAt: new Date().toISOString(),
@@ -62,10 +85,16 @@ async function execute(id, job) {
   };
   update((s) => s.deployments.unshift(record));
   const patch = (fields) =>
-    update((s) => Object.assign(s.deployments.find((d) => d.id === id), fields));
+    update((s) =>
+      Object.assign(
+        s.deployments.find((d) => d.id === id),
+        fields
+      )
+    );
 
   let source;
   try {
+    step('check');
     if (!provider) throw new Error(`Unknown platform "${job.provider}".`);
     const missing = [];
     for (const cli of provider.requires) if (!(await has(cli))) missing.push(cli);
@@ -88,6 +117,24 @@ async function execute(id, job) {
     // a new environment, or different credentials than last time: set everything up again and
     // redeploy every resource, not just the changes
     const fresh = !envBefore || envBefore.identity?.principal !== identity.principal;
+    patch({ steps: steps(fresh) });
+    if (job.kind === 'secrets') {
+      if (!envBefore) throw new Error(`Unknown environment ${envId}.`);
+      await provider.putSecret(
+        {
+          cfg: job.cfg,
+          env: envBefore,
+          note,
+          step,
+          run: (c, a, o = {}) => run(c, a, { cwd: REPO, ...o, env: { ...penv, ...o.env }, log, id })
+        },
+        job.secretName,
+        job.values
+      );
+      patch({ status: 'succeeded', finishedAt: new Date().toISOString() });
+      note('secrets saved');
+      return;
+    }
     if (fresh && job.kind !== 'destroy') {
       note(
         envBefore
@@ -97,12 +144,20 @@ async function execute(id, job) {
     }
 
     // source: a fresh snapshot of the working tree, or the one recorded by the target deployment
-    if (job.rollbackOf) source = { commit: job.rollbackOf.commit, head: job.rollbackOf.head, dirty: job.rollbackOf.dirty };
+    step('source');
+    if (job.rollbackOf)
+      source = {
+        commit: job.rollbackOf.commit,
+        head: job.rollbackOf.head,
+        dirty: job.rollbackOf.dirty
+      };
     else if (job.kind === 'destroy') source = { commit: envBefore?.commit };
     else source = await snapshot(id);
     if (!source.commit) throw new Error('No recorded source for this environment.');
     patch({ commit: source.commit, head: source.head, dirty: source.dirty });
-    note(`source ${source.commit.slice(0, 12)}${source.dirty ? ' (includes uncommitted changes)' : ''}`);
+    note(
+      `source ${source.commit.slice(0, 12)}${source.dirty ? ' (includes uncommitted changes)' : ''}`
+    );
     const cwd = await worktree(source.commit);
 
     const ctx = {
@@ -112,6 +167,7 @@ async function execute(id, job) {
       identity,
       fresh,
       cwd,
+      step,
       art: artifacts(id),
       rollbackOf: job.rollbackOf,
       note,
@@ -121,10 +177,17 @@ async function execute(id, job) {
     if (job.kind === 'destroy') {
       await provider.destroy(ctx);
       update((s) => {
-        s.environments[envId] = { ...s.environments[envId], status: 'destroyed', destroyedAt: new Date().toISOString() };
+        s.environments[envId] = {
+          ...s.environments[envId],
+          status: 'destroyed',
+          destroyedAt: new Date().toISOString()
+        };
       });
     } else {
-      if (fresh) await provider.provision(ctx);
+      if (fresh) {
+        step('provision');
+        await provider.provision(ctx);
+      }
       const result = (await provider.deploy(ctx)) || {};
       patch({ images: result.images, outputs: result.outputs, kubeContext: result.kubeContext });
       update((s) => {
@@ -132,7 +195,11 @@ async function execute(id, job) {
           envId,
           provider: provider.id,
           label: provider.label,
-          identity: { display: identity.display, principal: identity.principal, account: identity.account },
+          identity: {
+            display: identity.display,
+            principal: identity.principal,
+            account: identity.account
+          },
           cfg: job.cfg,
           kubeContext: result.kubeContext,
           outputs: result.outputs,
@@ -166,7 +233,9 @@ export function checkConfig(provider, cfg) {
   const problems = p.fields.flatMap((f) => {
     const v = String(cfg[f.key] ?? '').trim();
     if (!v) return f.required ? [`${f.label}: required`] : [];
-    return f.pattern && !f.pattern.test(v) ? [`${f.label}: "${v}" is not ${f.hint || 'valid'}`] : [];
+    return f.pattern && !f.pattern.test(v)
+      ? [`${f.label}: "${v}" is not ${f.hint || 'valid'}`]
+      : [];
   });
   if (problems.length) throw new Error(`Fix these settings first:\n- ${problems.join('\n- ')}`);
 }
@@ -176,12 +245,48 @@ export function deploy(provider, cfg) {
   return start({ kind: 'deploy', provider, cfg });
 }
 
+// same environment, same settings (plus any changes, e.g. a domain): deploys the current code
+export function redeploy(envId, changes = {}) {
+  const env = load().environments[envId];
+  if (!env) throw new Error(`Unknown environment ${envId}.`);
+  const cfg = { ...env.cfg, ...changes };
+  checkConfig(env.provider, cfg);
+  return start({ kind: 'deploy', provider: env.provider, cfg });
+}
+
+// values only ever live in this job's memory: never in the history, the log or a file
+export function setSecret(envId, secretName, values) {
+  const env = load().environments[envId];
+  if (!env || env.status === 'destroyed') throw new Error(`No live environment ${envId}.`);
+  if (!PROVIDERS[env.provider].putSecret)
+    throw new Error('On this platform, secrets come from k8s/secrets.yml: edit it, then Update.');
+  if (!/^[\w-]+$/.test(secretName || '')) throw new Error('Bad secret name.');
+  const clean = Object.fromEntries(
+    Object.entries(values || {}).filter(
+      ([k, v]) => /^[A-Za-z_][\w.-]*$/.test(k) && typeof v === 'string' && v !== ''
+    )
+  );
+  if (!Object.keys(clean).length) throw new Error('Enter at least one value.');
+  return start({
+    kind: 'secrets',
+    provider: env.provider,
+    cfg: env.cfg,
+    secretName,
+    values: clean
+  });
+}
+
 export function rollback(deploymentId) {
   const target = load().deployments.find((d) => d.id === deploymentId);
   if (!target || target.kind === 'destroy' || target.status !== 'succeeded' || !target.commit) {
     throw new Error('Only a successful deployment can be rolled back to.');
   }
-  return start({ kind: 'rollback', provider: target.provider, cfg: target.cfg, rollbackOf: target });
+  return start({
+    kind: 'rollback',
+    provider: target.provider,
+    cfg: target.cfg,
+    rollbackOf: target
+  });
 }
 
 export function destroy(envId) {

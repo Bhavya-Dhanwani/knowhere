@@ -3,6 +3,7 @@
 //   node deploy/cli.mjs ui [port]                     local web UI (default http://127.0.0.1:4545)
 //   node deploy/cli.mjs deploy <aws|gcp|azure|local> key=value ...
 //   node deploy/cli.mjs history
+//   node deploy/cli.mjs update <environmentId> [key=value ...]   new code (and settings) on an environment
 //   node deploy/cli.mjs rollback <deploymentId>
 //   node deploy/cli.mjs destroy <environmentId>
 import http from 'node:http';
@@ -15,7 +16,7 @@ import { PROVIDERS } from './providers/index.mjs';
 import { PLANS, PRICING_NOTE } from './plans.mjs';
 import { bus, has } from './lib/run.mjs';
 import { load, logFile } from './lib/state.mjs';
-import { current, deploy, destroy, rollback } from './lib/engine.mjs';
+import { current, deploy, destroy, redeploy, rollback, setSecret } from './lib/engine.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const [cmd, ...args] = process.argv.slice(2);
@@ -33,6 +34,8 @@ if (cmd === 'deploy') {
   if (!provider) throw new Error(`Platform must be one of: ${Object.keys(PROVIDERS).join(', ')}`);
   const cfg = Object.fromEntries(provider.fields.map((f) => [f.key, f.default || '']));
   await follow(deploy(args[0], { ...cfg, ...kv(args.slice(1)) }));
+} else if (cmd === 'update') {
+  await follow(redeploy(args[0], kv(args.slice(1))));
 } else if (cmd === 'rollback') {
   await follow(rollback(args[0]));
 } else if (cmd === 'destroy') {
@@ -47,7 +50,12 @@ if (cmd === 'deploy') {
 } else if (cmd === 'ui') {
   serve(Number(args[0]) || 4545);
 } else {
-  console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 7).join('\n'));
+  console.log(
+    readFileSync(fileURLToPath(import.meta.url), 'utf8')
+      .split('\n')
+      .slice(1, 7)
+      .join('\n')
+  );
 }
 
 /* ------------------------------------------------------------------ local UI */
@@ -57,7 +65,9 @@ function serve(port) {
   const token = randomBytes(24).toString('hex');
   const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
   const tokenOk = (t) =>
-    typeof t === 'string' && t.length === token.length && timingSafeEqual(Buffer.from(t), Buffer.from(token));
+    typeof t === 'string' &&
+    t.length === token.length &&
+    timingSafeEqual(Buffer.from(t), Buffer.from(token));
 
   const send = (res, status, body) => {
     res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -85,11 +95,13 @@ function serve(port) {
       if (url.pathname === '/') {
         res.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',
-          'content-security-policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'",
+          'content-security-policy':
+            "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'",
           'x-frame-options': 'DENY'
         });
         return res.end(readFileSync(path.join(here, 'ui.html'), 'utf8'));
       }
+      if (url.pathname === '/favicon.ico') return res.writeHead(204).end();
       if (!tokenOk(req.headers['x-deploy-token'] || url.searchParams.get('token'))) {
         return send(res, 401, { error: 'bad token' });
       }
@@ -99,15 +111,43 @@ function serve(port) {
             Object.values(PROVIDERS).map(async (p) => ({
               id: p.id,
               label: p.label,
-              fields: p.fields,
-              missing: (await Promise.all(p.requires.map(async (c) => ((await has(c)) ? null : c)))).filter(Boolean)
+              // patterns as strings, so the form can check values before sending them
+              fields: p.fields.map((f) => ({
+                ...f,
+                pattern: f.pattern?.source,
+                flags: f.pattern?.flags
+              })),
+              secrets: !!p.putSecret,
+              missing: (
+                await Promise.all(p.requires.map(async (c) => ((await has(c)) ? null : c)))
+              ).filter(Boolean)
             }))
           );
-          return send(res, 200, { ...load(), running: current(), providers, plans: PLANS, pricingNote: PRICING_NOTE });
+          return send(res, 200, {
+            ...load(),
+            running: current(),
+            providers,
+            plans: PLANS,
+            pricingNote: PRICING_NOTE
+          });
         }
         if (req.method === 'POST' && url.pathname === '/api/deploy') {
           const b = await readBody(req);
           return send(res, 200, { id: deploy(b.provider, b.cfg || {}) });
+        }
+        if (req.method === 'POST' && url.pathname === '/api/update') {
+          const b = await readBody(req);
+          return send(res, 200, { id: redeploy(b.envId, b.cfg || {}) });
+        }
+        if (req.method === 'POST' && url.pathname === '/api/secrets') {
+          const b = await readBody(req);
+          return send(res, 200, { id: setSecret(b.envId, b.name, b.values) });
+        }
+        if (url.pathname === '/api/secrets') {
+          const env = load().environments[url.searchParams.get('env') || ''];
+          const p = env && PROVIDERS[env.provider];
+          if (!p?.listSecrets) return send(res, 200, { supported: false, secrets: [] });
+          return send(res, 200, { supported: true, secrets: await p.listSecrets(env) });
         }
         if (req.method === 'POST' && url.pathname === '/api/rollback') {
           return send(res, 200, { id: rollback((await readBody(req)).id) });
@@ -118,7 +158,8 @@ function serve(port) {
         // a deployment's log: everything so far, then live lines until it ends
         if (url.pathname === '/api/logs') {
           const id = url.searchParams.get('id') || '';
-          if (!/^[\w-]+$/.test(id) || !existsSync(logFile(id))) return send(res, 404, { error: 'no such log' });
+          if (!/^[\w-]+$/.test(id) || !existsSync(logFile(id)))
+            return send(res, 404, { error: 'no such log' });
           const emit = sse(res);
           emit('log', readFileSync(logFile(id), 'utf8'));
           if (current() !== id) return emit('end', {});
@@ -136,9 +177,13 @@ function serve(port) {
           const kube = (what) =>
             new Promise((resolve) => {
               let o = '';
-              const p = spawn('kubectl', ['get', what, '--context', env.kubeContext, '-o', 'json'], {
-                shell: process.platform === 'win32'
-              });
+              const p = spawn(
+                'kubectl',
+                ['get', what, '--context', env.kubeContext, '-o', 'json'],
+                {
+                  shell: process.platform === 'win32'
+                }
+              );
               p.stdout.on('data', (d) => (o += d));
               p.on('close', () => resolve(JSON.parse(o || '{"items":[]}').items || []));
             });
@@ -151,7 +196,10 @@ function serve(port) {
             restarts: (p.status.containerStatuses || []).reduce((t, c) => t + c.restartCount, 0),
             startedAt: p.status.startTime
           }));
-          return send(res, 200, { pods, deployments: deployItems.map((d) => d.metadata.name).sort() });
+          return send(res, 200, {
+            pods,
+            deployments: deployItems.map((d) => d.metadata.name).sort()
+          });
         }
         if (url.pathname === '/api/app-logs') {
           const target = url.searchParams.get('target') || '';
@@ -159,7 +207,16 @@ function serve(port) {
           const emit = sse(res);
           const p = spawn(
             'kubectl',
-            ['logs', '-f', '--tail=300', '--all-containers', '--prefix', '--context', env.kubeContext, target],
+            [
+              'logs',
+              '-f',
+              '--tail=300',
+              '--all-containers',
+              '--prefix',
+              '--context',
+              env.kubeContext,
+              target
+            ],
             { shell: process.platform === 'win32' }
           );
           p.stdout.on('data', (d) => emit('log', String(d)));
