@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { CfnOutput, Fn, Stack, StackProps, Tags } from 'aws-cdk-lib';
+import { CfnOutput, Fn, Size, Stack, StackProps, Tags } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as eks from 'aws-cdk-lib/aws-eks';
@@ -93,6 +93,8 @@ export class KnowhereStack extends Stack {
       clusterName: 'knowhere',
       version: eks.KubernetesVersion.V1_35,
       kubectlLayer: new KubectlV35Layer(this, 'Kubectl'),
+      // new AWS accounts cap Lambda memory at 512 MB (CDK's default for this handler is 1 GB)
+      kubectlMemory: Size.mebibytes(512),
       vpc,
       vpcSubnets: [nodeSubnets],
       defaultCapacity: 0,
